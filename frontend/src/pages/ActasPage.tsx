@@ -15,7 +15,7 @@ import {
   Table,
   type Column,
 } from '@/components/ui';
-import { getApiErrorMessage, modulosCajaApi, modulosClienteApi, type ModuloCajaInput } from '@/lib/api';
+import { getApiErrorMessage, modulosCajaApi, type ModuloCajaInput } from '@/lib/api';
 import { validCaja } from '@/lib/validation';
 import { useAuthStore } from '@/stores/authStore';
 import type { ModuloCaja } from '@/types';
@@ -76,12 +76,6 @@ export default function ActasPage() {
   const cajasQuery = useQuery({
     queryKey: ['modulos-caja', 'list', id],
     queryFn: () => modulosCajaApi.list(id as string).then((res) => res.data),
-    enabled: Boolean(id),
-  });
-
-  const moduloQuery = useQuery({
-    queryKey: ['modulos-cliente', 'get', id],
-    queryFn: () => modulosClienteApi.get(id as string).then((res) => res.data),
     enabled: Boolean(id),
   });
 
@@ -168,15 +162,7 @@ export default function ActasPage() {
 
   const openNuevaCaja = () => {
     setEditingCaja(null);
-    const codigoModulo = moduloQuery.data?.codigo ?? '';
-    const actaModulo = moduloQuery.data?.acta_transferencia_modulo ?? '';
-    // Prefijo de caja: los 3 primeros dígitos del código del módulo + "C" (ej. 015C).
-    const prefijoCaja = /^\d{1,3}$/.test(codigoModulo) ? `${codigoModulo.padStart(3, '0')}C` : '';
-    setCajaForm({
-      ...EMPTY_CAJA_FORM,
-      caja_modulo: prefijoCaja,
-      acta_trans_caja: actaModulo,
-    });
+    setCajaForm({ ...EMPTY_CAJA_FORM });
     setCajaErrors({});
     setModalOpen(true);
   };
