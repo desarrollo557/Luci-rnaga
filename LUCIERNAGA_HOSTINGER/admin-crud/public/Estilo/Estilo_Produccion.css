@@ -1,0 +1,244 @@
+
+@import url('https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap');
+
+
+body {
+    font-family: 'Roboto', Arial, sans-serif;
+    background: #f4f4f4;
+    margin: 0;
+    padding: 20px;
+    color: #333;
+}
+
+h1 {
+    text-align: center;
+    color: #222;
+    font-weight: 700;
+    margin-bottom: 20px;
+}
+
+#header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 15px 25px;
+    background: linear-gradient(90deg, #1c1c1c, #2a2a2a);
+    color: white;
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2);
+}
+
+#header a {
+    color: #cfcfcf;
+    text-decoration: none;
+    font-weight: 500;
+    transition: color 0.3s ease-in-out;
+}
+
+#header a:hover {
+    color: #ffffff;
+    text-decoration: underline;
+}
+
+/* Contenedor para DataTable */
+#dataTable_wrapper {
+    margin: 20px auto;
+    width: 90%;
+    overflow-x: auto;
+}
+
+table.dataTable {
+    width: 100%;
+    margin: auto;
+    border-collapse: collapse;
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+    background: #fff;
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+table.dataTable th, table.dataTable td {
+    padding: 12px;
+    text-align: center; /* Texto centrado horizontalmente */
+    vertical-align: middle; /* Centrado vertical */
+    font-size: 16px;
+    border-bottom: 1px solid #e0e0e0;
+}
+
+#dataTable_wrapper table thead th {
+    text-align: center;
+    vertical-align: middle; 
+}
+
+
+table.dataTable th {
+    background: linear-gradient(90deg, #1c1c1c, #2a2a2a);
+    color: white;
+    font-weight: 700;
+}
+
+table.dataTable tr:nth-child(even) {
+    background-color: #f9f9f9;
+}
+
+table.dataTable tr:hover {
+    background-color: #e0e0e0;
+    transition: background-color 0.3s ease;
+}
+
+/* Estilos para el formulario de edición */
+#editForm {
+    max-width: 600px;
+    margin: 20px auto;
+    padding: 30px;
+    background: #fff;
+    border-radius: 8px;
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+    display: none;
+}
+
+#editForm input, #editForm button {
+    width: 100%;
+    padding: 12px;
+    margin: 10px 0;
+    border: 1px solid #d0d0d0;
+    border-radius: 5px;
+    font-size: 16px;
+}
+
+#editForm button {
+    background: #333;
+    color: white;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background-color 0.3s ease-in-out;
+}
+
+#editForm button:hover {
+    background: #444;
+}
+
+/* Responsiveness */
+@media screen and (max-width: 1024px) {
+    #header {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+
+    #dataTable_wrapper {
+        width: 95%;
+    }
+
+    #editForm {
+        max-width: 80%;
+    }
+}
+
+@media screen and (max-width: 768px) {
+    body {
+        padding: 10px;
+    }
+
+    #header {
+        padding: 10px;
+        text-align: center;
+    }
+
+    h1 {
+        font-size: 22px;
+    }
+
+    #dataTable_wrapper {
+        width: 100%;
+    }
+
+    table.dataTable th, table.dataTable td {
+        padding: 8px;
+        font-size: 14px;
+    }
+
+    #editForm {
+        max-width: 90%;
+        padding: 20px;
+    }
+
+    #editForm input, #editForm button {
+        padding: 8px;
+    }
+}
+
+@media screen and (max-width: 480px) {
+    body {
+        padding: 5px;
+    }
+
+    #header {
+        flex-direction: column;
+        padding: 5px;
+    }
+
+    h1 {
+        font-size: 18px;
+    }
+
+    #dataTable_wrapper {
+        width: 100%;
+    }
+
+    table.dataTable th, table.dataTable td {
+        padding: 5px;
+        font-size: 12px;
+    }
+
+    #editForm {
+        max-width: 100%;
+        padding: 15px;
+    }
+
+    #editForm input, #editForm button {
+        padding: 5px;
+    }
+}
+/* Estilos generales para el formulario */
+#formulario-registro {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin: 10px auto;
+    padding: 10px;
+    width: 80%;
+    justify-content: flex-end;
+    align-items: flex-start;
+}
+
+#formulario-registro .form-group {
+    display: flex;
+    flex-direction: column;
+    width: 22%;
+}
+
+#formulario-registro .form-group label {
+    font-weight: 500;
+    color: #555;
+    font-size: 14px;
+    margin-bottom: 5px;
+}
+
+#formulario-registro .form-group input {
+    padding: 8px;
+    font-size: 14px;
+    border: 1px solid #ccc;
+    border-radius: 5px;
+    background: #fff;
+}
+
+@media screen and (max-width: 768px) {
+    #formulario-registro {
+        flex-direction: column;
+        justify-content: center;
+    }
+
+    #formulario-registro .form-group {
+        width: 100%;
+    }
+}
+

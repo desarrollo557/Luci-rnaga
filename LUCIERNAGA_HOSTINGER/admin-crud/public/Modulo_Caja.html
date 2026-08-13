@@ -1,0 +1,159 @@
+﻿<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Asignación de Módulos de Caja</title>
+    <link rel="stylesheet" href="/Estilo/Estilo_Caja.css">
+</head>
+<body>
+    <header>
+        <div class="dropdown">
+            <button id="insertar-modulo-cliente">Insertar Módulo de Caja</button>
+        </div>
+	<button id="btn_regreso">Regresar</button>
+
+        <h1>Bienvenido, <span id="usuario-nombre"></span></h1>
+	<button id="btn_Calidad">Asignacion de Cajas</button>
+        <button id="salir-sesion">Salir Sesión</button>
+    </header>
+
+    <div id="buscador">
+        <h2 class="TITULO">CAJAS - <span id="entidadRemitenteTitulo"></span></h2>
+        <input type="text" id="input-buscador" placeholder="Buscar por entidad remitente o código...">
+        <p id="numeroestado"></p> <!-- Aquí se mostrará el contador -->
+    </div>
+    
+    <div id="contenedor-modulos"></div>
+
+    <!-- Modal para el formulario de inserción de módulos de caja -->
+    <div id="modalFormularioCaja" class="modalFormulario">
+        <h2>Insertar Módulo de Caja</h2>
+        <input type="text" id="prefijo" placeholder="Prefijo (ej. 123C)">
+        <input type="number" id="numeroDesde" placeholder="Número inicial (6 dígitos)" min="0" max="999999" maxlength="6" oninput="this.value = this.value.slice(0, 6)">
+        <input type="number" id="numeroHasta" placeholder="Número final (6 dígitos)" min="0" max="999999" maxlength="6" oninput="this.value = this.value.slice(0, 6)">
+        <input type="text" id="entidadRemitenteCaja" placeholder="Entidad Remitente">
+        <input type="text" id="actaTransCaja" placeholder="Acta de Transferencia">
+        <input type="date" id="fechaTransCaja" placeholder="Fecha de Transferencia (YYYY-MM-DD)"> 
+        <input type="text" id="entidadProductoraCaja" placeholder="Entidad Productora">
+        <input type="text" id="unidadAdministrativaCaja" placeholder="Unidad Administrativa">
+        <input type="text" id="oficinaProductoraCaja" placeholder="Oficina Productora">
+        <input type="text" id="objetoCaja" placeholder="Objeto de la Caja">
+        <select id="estadocaja" class="input-caja">
+            <option value="EN PROCESO">EN PROCESO</option>
+            <option value="TERMINADA">FINALIZADO</option>
+        </select>
+        
+        <button id="boton-tecnica">Mostrar/Ocultar Técnica</button>
+        <div id="usuarios-tecnica" style="display: none;">
+            <!-- Los checkboxes se llenarán dinámicamente aquí -->
+        </div>
+        
+        <button id="boton-calidad">Mostrar/Ocultar Calidad</button>
+        <div id="usuarios-calidad" style="display: none;">
+            <!-- Los checkboxes se llenarán dinámicamente aquí -->
+        </div>
+
+        <div class="modal-buttons">
+            <button id="guardarModuloCaja" class="btn-accion">Guardar</button>
+            <button id="cerrarModalFormulario" class="btn-cerrar">Cerrar</button>
+        </div>
+    </div>
+
+    <div id="modalSeleccionUsuario" class="modal" style="display:none;">
+        <div class="modal-content">
+            <h2>Seleccionar Usuario <span id="rol-usuario-modal"></span></h2>
+            <!-- Campo de búsqueda -->
+            <input type="text" id="buscarUsuario" placeholder="Buscar usuario..." style="width: 100%; padding: 8px; margin-bottom: 10px;">
+            <!-- Lista de usuarios con scroll -->
+            <ul id="listaUsuariosTecnica" class="scrollable-list"></ul>
+            <div class="modal-buttons">
+                <button id="agregarSeleccionados" class="btn-accion">Agregar</button>
+                <button id="eliminarSeleccionados" class="btn-accion">Eliminar</button>
+            </div>
+            <button id="cerrarModal" class="btn-cerrar">Cerrar</button>
+        </div>
+    </div>
+
+    <!-- Modal para editar el módulo de caja -->
+    <div id="modalEditarModuloCaja" class="modalFormulario" style="display: none;">
+        <h2>Editar Módulo de Caja</h2>
+        <input type="text" id="editarCajaModulo" placeholder="Nombre del módulo de caja">
+        <input type="text" id="editarEntidadRemitenteCaja" placeholder="Entidad Remitente de la caja">
+        <input type="text" id="editarActaTransCaja" placeholder="Acta de Transferencia">
+        <input type="date" id="editarFechaTransCaja" placeholder="Fecha de Transferencia">
+        <input type="text" id="editarEntidadProductoraCaja" placeholder="Entidad Productora de la caja">
+        <input type="text" id="editarUnidadAdministrativaCaja" placeholder="Unidad Administrativa de la caja">
+        <input type="text" id="editarOficinaProductoraCaja" placeholder="Oficina Productora de la caja">
+        <input type="text" id="editarObjetoCaja" placeholder="Objeto de la caja">
+        <input type="text" id="editarestadoCaja" placeholder="Estado de la caja">
+    
+        <div class="modal-buttons">
+            <button id="guardarEdicionModuloCaja" class="btn-accion">Guardar</button>
+            <button id="cerrarModalEditar" class="btn-cerrar">Cerrar</button>
+        </div>
+    </div>
+
+    <div id="paginacion" class="paginacion">
+        <button id="prevPage" class="disabled" onclick="cambiarPagina('prev')">Anterior</button>
+        <span id="currentPage">Página 1</span>
+        <button id="nextPage" onclick="cambiarPagina('next')">Siguiente</button>
+        <br>
+        <input type="number" id="paginaInput" min="1" placeholder="Ingresa un número de página" />
+        <button id="goToPage" onclick="irAPagina()">Ir</button>
+        <p id="mensajeErrorPagina" style="color: red; display: none;">Número de página no válido</p>
+    </div>
+
+
+	<div id="modalAsignarCajasCalidad" class="modal_calidad">
+        <div class="modal-content_calidad">
+            <span class="close">&times;</span>
+            <h2>Asignar Cajas a Calidad</h2>
+    
+            <!-- Rango de cajas -->
+            <div id="divRangoCalidad">
+                <label for="cajaInicioCalidad">Caja Desde:</label>
+                <input type="text" id="cajaInicioCalidad" placeholder="Ej: 01" />
+            </div>
+    
+            <div id="divRangoCalidad">
+                <label for="cajaFinCalidad">Caja Hasta:</label>
+                <input type="text" id="cajaFinCalidad" placeholder="Ej: 04" />
+            </div>
+    
+            <hr>
+    
+            <!-- Lista de usuarios de Calidad -->
+            <div id="usuariosCalidad">
+                <!-- Los usuarios de Calidad se llenarán aquí -->
+            </div>
+    
+            <!-- Botón para asignar cajas -->
+            <button id="btnAsignarCajasCalidad">Asignar Cajas a Calidad</button>
+        </div>
+    </div>
+    
+
+
+
+
+
+
+
+    
+    <script src="Modulo_Caja.js"></script>
+    <script>
+        // Búsqueda de usuarios en el modal de selección de usuarios
+        document.getElementById('buscarUsuario').addEventListener('input', function() {
+            const filter = this.value.toLowerCase();
+            const listaUsuarios = document.getElementById('listaUsuariosTecnica');
+            const usuarios = listaUsuarios.getElementsByTagName('li');
+
+            Array.from(usuarios).forEach(usuario => {
+                const nombreUsuario = usuario.textContent || usuario.innerText;
+                usuario.style.display = nombreUsuario.toLowerCase().indexOf(filter) > -1 ? '' : 'none';
+            });
+        });
+    </script>
+</body>
+</html>

@@ -1,0 +1,117 @@
+import type { FuidCreateDto } from '../types/index.js';
+
+export const FUID_COLUMNS = [
+  'fecha_del_dato',
+  'n_orden',
+  'codigo',
+  'entidad_remitente',
+  'entidad_productora',
+  'unidad_administrativa',
+  'oficina_productora',
+  'objeto',
+  'serie',
+  'subserie',
+  'numero_de_orden_interno',
+  'accionado_procesado',
+  'accionado_denunciante',
+  'identificacion',
+  'asunto',
+  'radicado',
+  'numero_doc',
+  'numero_doc_hasta',
+  'fecha_inicial',
+  'fecha_final',
+  'caja',
+  'upd',
+  'tomo',
+  'otro',
+  'caja_interna',
+  'folios',
+  'soporte',
+  'frecuencia',
+  'elaborado_por',
+  'nro_acta_transferible',
+  'fecha_transferencia',
+  'notas',
+  'sede',
+  'tiempo',
+  'historial_y_cambios',
+  'cambio_calidad',
+  'sede_calidad',
+  'asunto_2',
+  'asunto_3',
+] as const;
+
+/** Valores en el mismo orden que FUID_COLUMNS para INSERT/UPDATE. */
+export function fuidValues(dto: FuidCreateDto): unknown[] {
+  const nullable = (v: unknown): unknown => (v == null || v === '' ? null : v);
+  return [
+    dto.fecha_del_dato ?? null,
+    dto.n_orden ?? null,
+    dto.codigo ?? null,
+    dto.entidad_remitente ?? null,
+    dto.entidad_productora ?? null,
+    dto.unidad_administrativa ?? null,
+    dto.oficina_productora ?? null,
+    dto.objeto ?? null,
+    dto.serie ?? null,
+    dto.subserie ?? null,
+    dto.numero_de_orden_interno ?? null,
+    dto.accionado_procesado ?? null,
+    dto.accionado_denunciante ?? null,
+    dto.identificacion ?? null,
+    dto.asunto ?? null,
+    dto.radicado ?? null,
+    dto.numero_doc ?? null,
+    dto.numero_doc_hasta ?? null,
+    nullable(dto.fecha_inicial),
+    nullable(dto.fecha_final),
+    dto.caja ?? null,
+    dto.upd ?? null,
+    dto.tomo ?? null,
+    dto.otro ?? null,
+    dto.caja_interna ?? null,
+    nullable(dto.folios),
+    dto.soporte ?? null,
+    dto.frecuencia ?? null,
+    dto.elaborado_por ?? null,
+    nullable(dto.nro_acta_transferible),
+    nullable(dto.fecha_transferencia),
+    dto.notas ?? null,
+    dto.sede ?? null,
+    dto.tiempo ?? null,
+    dto.historial_y_cambios ?? null,
+    dto.cambio_calidad ?? null,
+    dto.sede_calidad ?? null,
+    dto.asunto_2 ?? null,
+    dto.asunto_3 ?? null,
+  ];
+}
+
+/** Fragmento UPDATE para ON DUPLICATE KEY UPDATE (sin los dos puntos). */
+export function fuidOnDuplicateUpdate(): string {
+  return FUID_COLUMNS.map((col) => `${col} = VALUES(${col})`).join(', ');
+}
+
+/** Campos permitidos para autocompletado. */
+export const SUGGESTION_FIELDS = [
+  'entidad_productora',
+  'codigo',
+  'unidad_administrativa',
+  'oficina_productora',
+  'objeto',
+  'serie',
+  'asunto_2',
+  'subserie',
+  'radicado',
+  'numero_doc',
+  'numero_doc_hasta',
+  'caja_interna',
+  'notas',
+] as const;
+
+export type SuggestionField = (typeof SUGGESTION_FIELDS)[number];
+
+export function isSuggestionField(field: string): field is SuggestionField {
+  return (SUGGESTION_FIELDS as readonly string[]).includes(field);
+}

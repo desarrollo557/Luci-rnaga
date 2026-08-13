@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Inventario </title>
+    <link rel="stylesheet" href="/Estilo/Estilo_Inventario.css">
+    <!-- Incluye DataTables CSS si planeas usar DataTables -->
+    <link rel="stylesheet" href="https://cdn.datatables.net/1.10.21/css/jquery.dataTables.min.css">
+</head>
+<body>
+    <header>
+        <button id="modulos-btn-inventario">Modulos</button>
+        <h2>CONTROL DE RECEPCIÓN DE ARCHIVOS TRANSFERIDOS PARA INVENTARIO</h2>
+        <button id="salir-btn-inventario">Salir</button>
+    </header>
+
+    <!-- Botón para mostrar el formulario -->
+    <div style="text-align: center; margin: 20px 0;">
+        <button id="toggle-form-btn">Formulario</button>
+    </div>
+    <div id="formulario_inventario" style="display: none;">
+        <form id="addForm" class="form-inventario-table">
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="codigoCliente">Código del Cliente:</label>
+                    <input type="text" id="codigoCliente" name="CODIGO_DEL_CLIENTE" required>
+                </div>
+    
+                <div class="form-group">
+                    <label for="cliente">Cliente:</label>
+                    <input type="text" id="cliente" name="CLIENTE" required>
+                </div>
+    
+                <div class="form-group">
+                    <label for="noActa">No Acta:</label>
+                    <input type="text" id="noActa" name="No_ACTA" required>
+                </div>
+    
+                <div class="form-group">
+                    <label for="fechaTransferencia">Fecha Transferencia:</label>
+                    <input type="date" id="fechaTransferencia" name="FECHA_TRANSFERENCIA" required>
+                </div>
+            </div>
+    
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="x200">X200:</label>
+                    <input type="number" id="x200" name="X200" required>
+                </div>
+    
+                <div class="form-group">
+                    <label for="x300">X300:</label>
+                    <input type="number" id="x300" name="X300" required>
+                </div>
+    
+                <div class="form-group">
+                    <label for="x400">X400:</label>
+                    <input type="number" id="x400" name="X400" required>
+                </div>
+    
+                <div class="form-group">
+                    <label for="nc">NC:</label>
+                    <input type="number" id="nc" name="NC" required>
+                </div>
+            </div>
+    
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="totalCajas">Total Cajas:</label>
+                    <input type="number" id="totalCajas" name="TOTAL_CAJAS" required>
+                </div>
+    
+                <div class="form-group">
+                    <label for="anexos">Anexos:</label>
+                    <input type="text" id="anexos" name="ANEXOS">
+                </div>
+    
+                <div class="form-group">
+                    <label for="fechaEntregaCustodia">Fecha Entrega Custodia:</label>
+                    <input type="date" id="fechaEntregaCustodia" name="FECHA_ENTREGA_CUSTODIA">
+                </div>
+    
+                <div class="form-group">
+                    <label for="funcionario">Funcionario:</label>
+                    <input type="text" id="funcionario" name="FUNCIONARIO" required>
+                </div>
+            </div>
+    
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="estadoInventario">Estado del Inventario:</label>
+                    <input type="text" id="estadoInventario" name="ESTADO_DEL_INVENTARIO">
+                </div>
+    
+                <div class="form-group">
+                    <label for="cajasProcesadas">Cajas Procesadas:</label>
+                    <input type="number" id="cajasProcesadas" name="CAJAS_PROCESADAS">
+                </div>
+    
+                <div class="form-group">
+                    <label for="cajaIniciar">Caja Iniciar:</label>
+                    <input type="text" id="cajaIniciar" name="CAJA_INICIAR">
+                </div>
+    
+                <div class="form-group">
+                    <label for="cajaFin">Caja Fin:</label>
+                    <input type="text" id="cajaFin" name="CAJ_FIN">
+                </div>
+            </div>
+    
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="registrosProcesados">Registros Procesados:</label>
+                    <input type="number" id="registrosProcesados" name="REGISTROS_PROCESADOS">
+                </div>
+    
+                <div class="form-group">
+                    <label for="fechaEntrega">Fecha Entrega:</label>
+                    <input type="date" id="fechaEntrega" name="FECHA_ENTREGA">
+                </div>
+    
+                <div class="form-group">
+                    <label for="inicioInventario">Inicio Inventario:</label>
+                    <input type="date" id="inicioInventario" name="INICIO_INVENTARIO">
+                </div>
+    
+                <div class="form-group">
+                    <label for="finInventario">Fin Inventario:</label>
+                    <input type="date" id="finInventario" name="FIN_INVENTARIO">
+                </div>
+            </div>
+    
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="estadoEntrega">Estado Entrega:</label>
+                    <input type="text" id="estadoEntrega" name="ESTADO_ENTREGA">
+                </div>
+    
+                <div class="form-group">
+                    <label for="mesEntregaPaca">Mes Entrega PACA:</label>
+                    <input type="text" id="mesEntregaPaca" name="MES_ENTREGA_PACA">
+                </div>
+            </div>
+    
+            <button type="submit" class="btn-agregar">Agregar Registro</button>
+        </form>
+    </div>
+    
+    <div class="table-container-inventario">
+        <table id="inventario-table" class="display">
+            <thead>
+                <tr>
+                    <th>ITEMS</th>
+                    <th>CODIGO DEL CLIENTE</th>
+                    <th>CLIENTE</th>
+                    <th>No ACTA</th>
+                    <th>FECHA TRANSFERENCIA</th>
+                    <th>X200</th>
+                    <th>X300</th>
+                    <th>X400</th>
+                    <th>NC</th>
+                    <th>TOTAL CAJAS</th>
+                    <th>ANEXOS</th>
+                    <th>FECHA ENTREGA CUSTODIA</th>
+                    <th>FUNCIONARIO</th>
+                    <th>ESTADO DEL INVENTARIO</th>
+                    <th>CAJAS PROCESADAS</th>
+                    <th>CAJA INICIAR</th>
+                    <th>CAJ FIN</th>
+                    <th>REGISTROS PROCESADOS</th>
+                    <th>FECHA ENTREGA</th>
+                    <th>INICIO INVENTARIO</th>
+                    <th>FIN INVENTARIO</th>
+                    <th>ESTADO ENTREGA</th>
+                    <th>MES ENTREGA PACA</th>
+                    <th>Acciones</th> 
+                </tr>
+            </thead>
+            <tbody>
+                <!-- Aquí se llenarán los datos desde la base de datos -->
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Incluye jQuery y DataTables si planeas usar DataTables -->
+    <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+    <script src="https://cdn.datatables.net/1.10.21/js/jquery.dataTables.min.js"></script>
+    <script src="Inventario.js"></script>
+
+    <script>
+        // Función para mostrar/ocultar el formulario al hacer clic en el botón "Formulario"
+        document.getElementById("toggle-form-btn").addEventListener("click", function() {
+            const formContainer = document.getElementById("formulario_inventario");
+            if (formContainer.style.display === "none" || formContainer.style.display === "") {
+                formContainer.style.display = "block";
+            } else {
+                formContainer.style.display = "none";
+            }
+        });
+    </script>
+
+<script>
+    // Redireccionar a inventario.html al hacer clic en el botón
+    document.getElementById("modulos-btn-inventario").addEventListener("click", function() {
+        window.location.href = "TecnicaReal.html";
+    });
+</script>
+
+
+
+</body>
+</html>

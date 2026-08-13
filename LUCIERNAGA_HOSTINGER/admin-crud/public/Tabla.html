@@ -1,0 +1,339 @@
+﻿<!DOCTYPE html>
+<html lang="es">
+<head>
+    <link rel="stylesheet" href="/Estilo/Estilo_Tabla.css">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Datos FUID</title>
+
+     <!-- 1. jQuery (Siempre primero) -->
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    
+    <!-- 2. DataTables CSS Base -->
+    <link rel="stylesheet" href="https://cdn.datatables.net/1.12.1/css/jquery.dataTables.min.css">
+    
+    <!-- 3. DataTables Extensions CSS -->
+    <link rel="stylesheet" href="https://cdn.datatables.net/buttons/2.2.3/css/buttons.dataTables.min.css">
+    <link rel="stylesheet" href="https://cdn.datatables.net/scroller/2.1.1/css/scroller.dataTables.min.css">
+    <link rel="stylesheet" href="https://cdn.datatables.net/fixedcolumns/4.2.1/css/fixedColumns.dataTables.min.css">
+    
+    <!-- 4. DataTables JS Base -->
+    <script src="https://cdn.datatables.net/1.12.1/js/jquery.dataTables.min.js"></script>
+    
+    <!-- 5. DataTables Extensions JS -->
+    <script src="https://cdn.datatables.net/buttons/2.2.3/js/dataTables.buttons.min.js"></script>
+    <script src="https://cdn.datatables.net/buttons/2.2.3/js/buttons.html5.min.js"></script>
+    <script src="https://cdn.datatables.net/scroller/2.1.1/js/dataTables.scroller.min.js"></script>
+    <script src="https://cdn.datatables.net/fixedcolumns/4.2.1/js/dataTables.fixedColumns.min.js"></script>
+    
+    <!-- 6. Dependencias para Exportación -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <link rel="stylesheet" href="https://cdn.datatables.net/1.12.1/css/dataTables.bootstrap5.min.css">
+    <script src="https://cdn.datatables.net/1.12.1/js/dataTables.bootstrap5.min.js"></script>
+    
+    <!-- 7. SweetAlert2 (opcional) -->
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    
+    <!-- 8. Tu archivo JS (con defer) -->
+    <script src="Tabla.js" defer></script>
+
+
+</head>
+
+
+<body>
+    
+    <div id="header">
+        <a href="Principal_modulo.html">Módulos</a>
+
+        <a href="Login.html">Salir Sesión</a>
+    </div>
+
+    <h1>REVISION TECNICA DE CALIDAD</h1>
+
+    <div id="formulario-registro">
+        <!-- Campo Caja  inicio-->
+        <div class="form-group">
+            <label for="cajaInicio">Caja Inicial</label>
+            <input type="text" id="cajaInicio" name="cajaInicio" class="form-control" readonly >
+        </div>
+    
+    
+        <!-- Campo Caja Fin -->
+        <div class="form-group">
+            <label for="cajaFin">Caja Fin</label>
+            <input type="text" id="cajaFin" name="cajaFin" class="form-control"  readonly>
+        </div>
+    
+        <!-- Campo UPD Inicio -->
+        <div class="form-group">
+            <label for="updInicio">UPD Inicio</label>
+            <input type="text" id="updInicio" name="updInicio" class="form-control" readonly>
+        </div>
+    
+        <!-- Campo UPD Fin -->
+        <div class="form-group">
+            <label for="updFin">UPD Fin</label>
+            <input type="text" id="updFin" name="updFin" class="form-control" readonly>
+        </div>
+
+          <!-- Campo Registro total de caja -->
+        <div class="form-group">
+            <label for="cajatotal">Cajas Encontradas</label>
+            <input type="text" id="cajatotal" name="cajatotal" class="form-control"  readonly>
+        </div>
+    
+        <!-- Campo Registro -->
+        <div class="form-group">
+            <label for="registro">Registro</label>
+            <input type="text" id="registro" name="registro" class="form-control"  readonly>
+        </div>
+
+        
+        
+    </div>
+     <div id="dataTable_wrapper">
+    <table id="dataTable" class="display nowrap">
+        <tbody>
+            <!-- Los datos se llenarán dinámicamente con DataTables -->
+        </tbody>
+    </table>
+</div>
+
+    <div class="pagination-input-container" style="margin-top: 10px; text-align: center;">
+        <input type="number" id="pageInput" placeholder="Ir a página..." class="form-control" style="width: 100px; display: inline-block; margin-right: 5px;">
+    </div>
+    
+    <script>
+        $(document).ready(function() {
+            $('#pageInput').on('input', function() {
+                const pagina = parseInt($(this).val()); // Obtener el número de página ingresado
+                const paginasTotales = $('#dataTable').DataTable().page.info().pages; // Obtener el número total de páginas
+        
+                // Validar si el número de página es válido
+                if (!isNaN(pagina) && pagina > 0 && pagina <= paginasTotales) {
+                    $('#dataTable').DataTable().page(pagina - 1).draw('page'); // Ir a la página especificada
+                } else if ($(this).val() === "") {
+                    // Si el campo está vacío, no hacer nada
+                    return;
+                } else {
+                    alert('Número de página no válido. Ingresa un valor entre 1 y ' + paginasTotales + '.');
+                }
+            });
+        });
+    </script>
+    
+    
+
+    <!-- Formulario para Editar Registro -->
+    <form id="editForm">
+        <input type="hidden" id="editId">
+    <button type="submit">Actualizar</button>
+
+    <!-- Campos siempre visibles -->
+    <label for="editFechaDelDato">Fecha de Inventario</label>
+    <input type="date" id="editFechaDelDato" placeholder="Fecha del Dato" readonly>
+
+    <label for="editNOrden">Nro de Orden</label>
+    <input type="text" id="editNOrden" placeholder="Número de Orden">
+
+    <label for="editCodigo">Código</label>
+    <input type="text" id="editCodigo" placeholder="Código">
+
+    <label for="editEntidadRemitente">Entidad Remitente</label>
+    <input type="text" id="editEntidadRemitente" placeholder="Entidad Remitente">
+
+    <label for="editEntidadProductora">Entidad Productora</label>
+    <input type="text" id="editEntidadProductora" placeholder="Entidad Productora">
+
+    <label for="editUnidadAdministrativa">Unidad Administrativa</label>
+    <input type="text" id="editUnidadAdministrativa" placeholder="Unidad Administrativa">
+
+    <label for="editOficinaProductora">Oficina Productora</label>
+    <input type="text" id="editOficinaProductora" placeholder="Oficina Productora">
+
+    <label for="editObjeto">Objeto</label>
+    <input type="text" id="editObjeto" placeholder="Objeto">
+
+    <label for="editSerie">Serie</label>
+    <input type="text" id="editSerie" placeholder="Serie">
+
+    <label for="editSubserie">Subserie</label>
+    <input type="text" id="editSubserie" placeholder="Subserie">
+
+    <label for="editAsunto">Asunto</label>
+    <input type="text" id="editAsunto" placeholder="Asunto">
+
+ 
+        <!-- Campos exclusivos Santa Marta -->
+    <label for="editnumero_de_orden_interno" class="hidde-santa-marta">Número de Orden Interno</label>
+    <input type="text" id="editnumero_de_orden_interno" placeholder="Número de Orden Interno" class="hidde-santa-marta">
+
+    <label for="editaccionado_procesado" class="hidde-santa-marta">Accionado Procesado</label>
+    <input type="text" id="editaccionado_procesado" placeholder="Accionado Procesado" class="hidde-santa-marta">
+
+    <label for="editaccionado_denunciante" class="hidde-santa-marta">Accionado Denunciante</label>
+    <input type="text" id="editaccionado_denunciante" placeholder="Accionado Denunciante" class="hidde-santa-marta">
+
+    <label for="editidentificacion" class="hidde-santa-marta">Identificacion</label>
+    <input type="text" id="editidentificacion" placeholder="Identificacion" class="hidde-santa-marta">
+
+
+    <!-- Campos compartidos, con etiquetas dinámicas -->
+    <label for="editNumeroDoc" id="labelNumeroDoc">NUMERO DOCUMENTO DESDE</label>
+    <input type="text" id="editNumeroDoc" placeholder="Número de Documento Desde">
+
+    <label for="editNumeroDocHasta" id="labelNumeroDocHasta">NUMERO DOCUMENTO HASTA</label>
+    <input type="text" id="editNumeroDocHasta" placeholder="Número de Documento Hasta">
+
+    <label for="editFechaInicial" class="hidde-otras-sedes">Fecha Inicial</label>
+    <input type="date" id="editFechaInicial" placeholder="Fecha Inicial" class="hidde-otras-sedes">
+
+    <label for="editFechaFinal" class="hidde-otras-sedes">Fecha Final</label>
+    <input type="date" id="editFechaFinal" placeholder="Fecha Final" class="hidde-otras-sedes">
+
+    <label for="editCaja">Caja</label>
+    <input type="text" id="editCaja" placeholder="Caja">
+
+    <label for="editUpd">UPD</label>
+    <input type="text" id="editUpd" placeholder="UPD">
+
+    <label for="editTomo">Tomo</label>
+    <input type="text" id="editTomo" placeholder="Tomo">
+
+    <label for="editOtro">Otro</label>
+    <input type="text" id="editOtro" placeholder="Otro">
+
+    <label for="editCajaInterna">Caja Interna</label>
+    <input type="text" id="editCajaInterna" placeholder="Caja Interna">
+
+    <label for="editFolios">Folios</label>
+    <input type="text" id="editFolios" placeholder="Folios">
+
+    <label for="editSoporte">Soporte</label>
+    <input type="text" id="editSoporte" placeholder="Soporte">
+
+    <label for="editFrecuencia">Frecuencia</label>
+    <input type="text" id="editFrecuencia" placeholder="Frecuencia">
+
+    <label for="editElaboradoPor">Elaborado Por</label>
+    <input type="text" id="editElaboradoPor" placeholder="Elaborado Por" readonly>
+
+    <label for="editNroActaTransferible">Número Acta Transferible</label>
+    <input type="text" id="editNroActaTransferible" placeholder="Número Acta Transferible">
+
+    <label for="editFechaTransferencia">Fecha Transferencia</label>
+    <input type="date" id="editFechaTransferencia" placeholder="Fecha Transferencia">
+
+    <label for="editNotas" id="labelNotas">NOTAS</label>
+    <input type="text" id="editNotas" placeholder="Notas">
+
+    <label for="editsede">Sede</label>
+    <input type="text" id="editsede" placeholder="Sede" readonly>
+
+    <label for="edittiempo">Tiempo</label>
+    <input type="time" id="edittiempo" placeholder="Tiempo" readonly>
+
+    <label for="edithistorial_y_cambios">Cambios</label>
+    <input type="text" id="edithistorial_y_cambios" placeholder="Historial" readonly>
+
+    <label for="editcambio_calidad">Elaborado Por Calidad</label>
+    <input type="text" id="editcambio_calidad" placeholder="Elaborado por Calidad" readonly>
+
+    <label for="editsede_calidad">Sede Calidad</label>
+    <input type="text" id="editsede_calidad" placeholder="Sede de Calidad" readonly>
+
+        
+    </form>
+
+</body>
+
+
+
+<script>
+    document.addEventListener("DOMContentLoaded", function () {
+        // Selecciona todos los campos de texto del formulario editForm
+        const textFields = document.querySelectorAll("#editForm input[type='text']");
+    
+        textFields.forEach(field => {
+            // Agrega un evento de entrada a cada campo
+            field.addEventListener("input", function () {
+                // Remueve espacios al principio del valor
+                this.value = this.value.replace(/^\s+/, "");
+    
+                // Remueve cualquier doble espacio en el valor
+                this.value = this.value.replace(/\s{2,}/g, " ");
+    
+                // Convierte el texto a mayúsculas
+                this.value = this.value.toUpperCase();
+            });
+        });
+    });
+    </script>
+    <script>
+$('#dataTable').on('draw.dt', function () {
+    $('#dataTable tbody tr').each(function () {
+        let elaboradoCalidadCell = $(this).find("td").eq(33); // Ajusta este índice si es necesario
+        if (elaboradoCalidadCell.text().trim() !== "") {
+            $(this).css("background-color", "#e9f7e5"); // Verde más claro
+        }
+    });
+});
+
+</script>
+
+
+<style>
+/* Ocultar campos según la clase */
+.hidde-santa-marta, .hidde-otras-sedes {
+    display: none;
+}
+</style>
+
+<script>
+document.addEventListener("DOMContentLoaded", async () => {
+    let currentUserSede = "";
+
+    try {
+        const res = await fetch('/currentUser');
+        if(res.ok){
+            const data = await res.json();
+            currentUserSede = data.sede || "OTRA SEDE";
+        }
+    } catch(err){
+        console.error("Error obteniendo sede:", err);
+        currentUserSede = "OTRA SEDE";
+    }
+
+    if(currentUserSede === "SANTA MARTA-PROYECTO"){
+        // Mostrar campos Santa Marta quitando la clase hidde-santa-marta
+        document.querySelectorAll('.hidde-santa-marta').forEach(el => el.style.display = 'block');
+        // Ocultar campos de otras sedes
+        document.querySelectorAll('.hidde-otras-sedes').forEach(el => el.style.display = 'none');
+
+        // Cambiar etiquetas dinámicas
+        document.getElementById('labelNumeroDoc').textContent = "INICIAL";
+        document.getElementById('labelNumeroDocHasta').textContent = "FINAL";
+        document.getElementById('labelNotas').textContent = "OBSERVACIONES";
+
+    } else {
+        // Mostrar campos de otras sedes
+        document.querySelectorAll('.hidde-otras-sedes').forEach(el => el.style.display = 'block');
+        // Ocultar campos Santa Marta
+        document.querySelectorAll('.hidde-santa-marta').forEach(el => el.style.display = 'none');
+
+        // Cambiar etiquetas dinámicas
+        document.getElementById('labelNumeroDoc').textContent = "NUMERO DOCUMENTO DESDE";
+        document.getElementById('labelNumeroDocHasta').textContent = "NUMERO DOCUMENTO HASTA";
+        document.getElementById('labelNotas').textContent = "NOTAS";
+    }
+});
+
+
+
+
+</script>
+
+    
+</html>

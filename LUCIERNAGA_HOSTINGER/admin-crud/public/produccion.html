@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Produccion De Rendimiento Diaria</title>
+    <link rel="stylesheet" href="/Estilo/Estilo_Produccion.css">
+    
+    <!-- DataTables CSS -->
+    <link rel="stylesheet" href="https://cdn.datatables.net/1.12.1/css/jquery.dataTables.min.css">
+    <!-- DataTables Buttons CSS -->
+    <link rel="stylesheet" href="https://cdn.datatables.net/buttons/2.2.3/css/buttons.dataTables.min.css">
+    <!-- jQuery -->
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script src="https://cdn.datatables.net/1.12.1/js/jquery.dataTables.min.js"></script>
+    <!-- DataTables Buttons JS -->
+    <script src="https://cdn.datatables.net/buttons/2.2.3/js/dataTables.buttons.min.js"></script>
+    <script src="https://cdn.datatables.net/buttons/2.2.3/js/buttons.html5.min.js"></script>
+    <!-- JS-XLSX for Excel export -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.1.3/jszip.min.js"></script>
+    <script src="https://cdn.datatables.net/buttons/2.2.3/js/buttons.html5.min.js"></script>
+    <!-- SweetAlert2 for Alerts -->
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+</head>
+<body>
+    <div id="header">
+        <a href="Principal_modulo.html">Módulos</a>
+        <a href="https://luciernaga.siar.com.co/">Salir Sesión</a>
+    </div>
+    <h1>PRODUCCION DE RENDIMIENTO DIARIA</h1>
+
+    <div id="formulario-registro">
+        <!-- Campo Caja  inicio-->
+        <div class="form-group">
+            <label for="cajaInicio">Caja Inicial</label>
+            <input type="text" id="cajaInicio" name="cajaInicio" class="form-control" readonly >
+        </div>
+    
+    
+        <!-- Campo Caja Fin -->
+        <div class="form-group">
+            <label for="cajaFin">Caja Fin</label>
+            <input type="text" id="cajaFin" name="cajaFin" class="form-control"  readonly>
+        </div>
+    
+        <!-- Campo UPD Inicio -->
+        <div class="form-group">
+            <label for="updInicio">UPD Inicio</label>
+            <input type="text" id="updInicio" name="updInicio" class="form-control" readonly>
+        </div>
+    
+        <!-- Campo UPD Fin -->
+        <div class="form-group">
+            <label for="updFin">UPD Fin</label>
+            <input type="text" id="updFin" name="updFin" class="form-control" readonly>
+        </div>
+
+          <!-- Campo Registro total de caja -->
+        <div class="form-group">
+            <label for="cajatotal">Cajas Encontradas</label>
+            <input type="text" id="cajatotal" name="cajatotal" class="form-control"  readonly>
+        </div>
+    
+        <!-- Campo Registro -->
+        <div class="form-group">
+            <label for="registro">Registro</label>
+            <input type="text" id="registro" name="registro" class="form-control"  readonly>
+        </div>
+        <div class="form-group">
+            <label for="Caja_Finalizada">Cajas Finalizadas</label>
+            <input type="text" id="Caja_Finalizada" name="Caja_Finalizada" class="form-control"  readonly>
+        </div>
+        <div class="form-group">
+            <label for="Caja_Proceso">Cajas En Proceso</label>
+            <input type="text" id="Caja_Proceso" name="Caja_Proceso" class="form-control"  readonly>
+        </div>
+
+        
+        
+    </div>
+
+    
+
+   <table id="dataTable" class="display nowrap" style="width:100%">
+        <thead>
+            <tr></tr>
+        </thead>
+        <tbody></tbody>
+    </table>
+
+
+<div class="pagination-input-container" style="margin-top: 10px; text-align: center;">
+    <input type="number" id="pageInput" placeholder="Ir a página..." class="form-control" style="width: 100px; display: inline-block; margin-right: 5px;">
+</div>
+
+<!-- SOLO ESTO: -->
+<script src="Produccion.js"></script>
+
+
+    <script>
+    $(document).ready(function() {
+        // Esperar a que DataTable se inicialice desde Produccion.js
+        setTimeout(function() {
+            $('#pageInput').on('input', function() {
+                const tabla = $('#dataTable').DataTable();
+                const pagina = parseInt($(this).val());
+                const paginasTotales = tabla.page.info().pages;
+
+                if (!isNaN(pagina) && pagina > 0 && pagina <= paginasTotales) {
+                    tabla.page(pagina - 1).draw('page');
+                } else if ($(this).val() === "") {
+                    return;
+                } else {
+                    alert('Número de página no válido. Ingresa un valor entre 1 y ' + paginasTotales + '.');
+                }
+            });
+        }, 1000); // Dar tiempo a que se inicialice DataTable
+    });
+</script>
+</body>
+</html>

@@ -1,0 +1,183 @@
+/* Estilo general */
+body {
+    font-family: Arial, sans-serif;
+    background-color: #f4f4f9; /* Fondo claro */
+    margin: 0;
+    padding: 20px;
+}
+
+/* Header */
+header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 20px;
+    background-color: #333333; /* Fondo oscuro del header */
+    color: white;
+    border-bottom: 4px solid #555; /* Añadir una línea de separación */
+}
+
+header h1 {
+    margin: 0;
+    font-size: 24px;
+}
+
+/* Botones del header */
+#modulos-btn-inventario, #salir-btn-inventario {
+    color: white;
+    background-color: #555; /* Color de fondo para botones */
+    border: none;
+    padding: 10px 20px;
+    cursor: pointer;
+    border-radius: 5px;
+    font-size: 16px;
+    transition: background-color 0.3s ease;
+}
+
+#modulos-btn-inventario:hover, #salir-btn-inventario:hover {
+    background-color: #777;
+}
+
+/* Botón para mostrar el formulario */
+#toggle-form-btn {
+    color: white;
+    background-color: #333333;
+    border: none;
+    padding: 10px 20px;
+    cursor: pointer;
+    border-radius: 5px;
+    font-size: 16px;
+    transition: background-color 0.3s ease;
+}
+
+#toggle-form-btn:hover {
+    background-color: #555;
+}
+
+/* Contenedor del formulario */
+.form-inventario-table {
+    width: 100%;
+    max-width: 1200px;
+    margin: 20px auto;
+    background-color: white;
+    padding: 20px;
+    border-radius: 10px;
+    box-shadow: 0 0 15px rgba(0, 0, 0, 0.1);
+    box-sizing: border-box;
+}
+
+.form-inventario-table h2 {
+    text-align: center;
+    color: #333333;
+    margin-bottom: 20px;
+}
+
+/* Estilos de las filas y campos */
+.form-row {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 15px;
+    margin-bottom: 20px;
+}
+
+.form-group {
+    display: flex;
+    flex-direction: column;
+}
+
+.form-group label {
+    font-weight: bold;
+    color: #555;
+    margin-bottom: 5px;
+}
+
+.form-group input {
+    padding: 10px;
+    border: 1px solid #ccc;
+    border-radius: 5px;
+    font-size: 16px;
+    box-sizing: border-box;
+}
+
+/* Botón de agregar */
+.btn-agregar {
+    width: 100%;
+    padding: 10px 0;
+    background-color: #333333;
+    color: white;
+    border: none;
+    border-radius: 5px;
+    font-size: 16px;
+    cursor: pointer;
+    transition: background-color 0.3s ease;
+    margin-top: 20px;
+}
+
+.btn-agregar:hover {
+    background-color: #555;
+}
+
+/* Contenedor de la tabla */
+.table-container-inventario {
+    width: 90%;
+    margin: 20px auto;
+    overflow-x: auto; /* Scroll horizontal */
+    box-sizing: border-box;
+}
+
+/* Estilos para la tabla */
+table {
+    width: 100%;
+    border-collapse: collapse;
+    min-width: 1500px; /* Para forzar el scroll horizontal si es necesario */
+    box-shadow: 0 0 15px rgba(0, 0, 0, 0.1); /* Sombra ligera */
+}
+
+th, td {
+    padding: 10px;
+    text-align: center;
+}
+
+thead th {
+    background-color: #333333;
+    color: white;
+}
+
+tbody tr:nth-child(even) {
+    background-color: #f2f2f2; /* Fondo de filas pares */
+}
+
+tbody tr:hover {
+    background-color: #ddd;
+}
+
+/* Para el botón de acciones en las filas de la tabla */
+.table-container-inventario .acciones-btn {
+    background-color: #555;
+    color: white;
+    padding: 5px 10px;
+    border-radius: 5px;
+    cursor: pointer;
+    transition: background-color 0.3s ease;
+}
+
+.table-container-inventario .acciones-btn:hover {
+    background-color: #777;
+}
+
+/* Responsividad del formulario y tabla */
+@media (max-width: 1200px) {
+    .form-row {
+        grid-template-columns: repeat(2, 1fr); /* Cambia a 2 columnas en pantallas medianas */
+    }
+}
+
+@media (max-width: 768px) {
+    .form-row {
+        grid-template-columns: 1fr; /* Cambia a una columna en pantallas pequeñas */
+    }
+
+    .form-inventario-table {
+        padding: 15px;
+    }
+}

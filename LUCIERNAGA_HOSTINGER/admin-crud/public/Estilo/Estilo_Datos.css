@@ -1,0 +1,279 @@
+body {
+    font-family: Arial, sans-serif;
+    margin: 0;
+    padding: 0;
+    background-color: #f4f4f4;
+}
+
+header {
+    background-color: #333;
+    color: white;
+    padding: 10px 20px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 1px solid #ddd;
+}
+
+header button {
+    background-color: #555;
+    color: white;
+    border: none;
+    padding: 10px 20px;
+    cursor: pointer;
+    font-size: 16px;
+    margin: 0; /* Remover márgenes por defecto */
+}
+
+header button:hover {
+    background-color: #777;
+}
+
+/* Separar los botones de "Módulos" y "Regresar a Cajas" */
+#regresar-btn {
+    margin-left: 15px;
+}
+
+
+table {
+    width: 100%;
+    max-width: 800px;
+    margin: 20px auto;
+    border-collapse: collapse;
+    background-color: white;
+    border-radius: 8px;
+    box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+}
+
+table td, table th {
+    padding: 10px;
+    text-align: left;
+    vertical-align: top;
+    border-bottom: 1px solid #ddd;
+}
+
+table th {
+    background-color: #f4f4f4;
+    font-weight: bold;
+}
+
+#data-table-container {
+    width: 100%;
+    max-width: 1250px;
+    height: 720px;
+    overflow-x: auto;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    padding: 10px;
+    background-color: #fff;
+    box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+    margin: 20px auto;
+    box-sizing: border-box;
+}
+
+#data-table {
+    border-collapse: collapse;
+    width: 100%;
+}
+
+#data-table th, #data-table td {
+    border: 1px solid #ddd;
+    padding: 8px;
+    text-align: left;
+}
+
+#data-table th {
+    background-color: #f4f4f4;
+    font-weight: bold;
+}
+
+#data-table-container::-webkit-scrollbar {
+    height: 8px;
+}
+
+#data-table-container::-webkit-scrollbar-thumb {
+    background-color: #888;
+    border-radius: 4px;
+}
+
+#data-table-container::-webkit-scrollbar-thumb:hover {
+    background-color: #555;
+}
+
+#searchInput {
+    width: calc(100% - 20px);
+    padding: 10px;
+    margin-bottom: 10px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    box-sizing: border-box;
+}
+
+#submit-btn, #toggle-table-btn {
+    display: inline-block;
+    background-color: #333333;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    padding: 10px 20px;
+    font-size: 16px;
+    cursor: pointer;
+    transition: background-color 0.3s, transform 0.2s;
+    text-align: center;
+    margin: 20px auto;
+    display: block;
+}
+
+#submit-btn:hover, #toggle-table-btn:hover {
+    background-color: #555555;
+}
+
+#submit-btn:active, #toggle-table-btn:active {
+    transform: scale(0.98);
+}
+
+form {
+    max-width: 1200px;
+    margin: 20px auto;
+    padding: 20px;
+    background-color: white;
+    border-radius: 8px;
+    box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+}
+
+form > div {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 15px;
+    margin-bottom: 15px;
+}
+
+form > div > div {
+    display: flex;
+    flex-direction: column;
+}
+
+form > div > div > label {
+    margin-bottom: 5px;
+    font-weight: bold;
+}
+
+form > div > div > input, 
+form > div > div > select {
+    padding: 10px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    font-size: 16px;
+}
+
+form > div > div.full-width {
+    grid-column: span 4;
+}
+
+/* Responsiveness */
+@media screen and (max-width: 1024px) {
+    header {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+
+    #data-table-container {
+        width: 95%;
+        height: auto;
+    }
+
+    table {
+        width: 100%;
+    }
+
+    form {
+        max-width: 90%;
+    }
+}
+
+@media screen and (max-width: 768px) {
+    body {
+        padding: 10px;
+    }
+
+    header {
+        text-align: center;
+    }
+
+    h1 {
+        font-size: 22px;
+    }
+
+    form > div {
+        grid-template-columns: repeat(2, 1fr);
+    }
+
+    #data-table-container {
+        width: 100%;
+    }
+
+    table th, table td {
+        padding: 8px;
+        font-size: 14px;
+    }
+
+    form {
+        padding: 15px;
+    }
+}
+
+@media screen and (max-width: 480px) {
+    body {
+        padding: 5px;
+    }
+
+    header {
+        flex-direction: column;
+        padding: 5px;
+    }
+
+    h1 {
+        font-size: 18px;
+    }
+
+    form > div {
+        grid-template-columns: 1fr;
+    }
+
+    table th, table td {
+        padding: 5px;
+        font-size: 12px;
+    }
+
+    form {
+        padding: 10px;
+    }
+}
+#suggestion-box {
+    border: 1px solid #ccc;
+    max-height: 50px;
+    overflow-y: auto;
+    background-color: white;
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    width: 30%;  /* Ajustar al ancho del campo de entrada */
+    position: absolute;
+    z-index: 1000;
+}
+
+#suggestion-box li {
+    padding: 8px;
+    cursor: pointer;
+    border-bottom: 1px solid #ddd;
+}
+
+#suggestion-box li:hover {
+    background-color: #f0f0f0;
+}
+
+ul[id^="suggestion-box-"] li.active {
+    background-color: #e9e9e9;
+}
