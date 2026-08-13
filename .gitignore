@@ -1,4 +1,26 @@
+# Dependencias
 node_modules
+
+# Builds
 dist
+*.tsbuildinfo
+
+# Entorno y secretos
+.env
+.env.*
+!.env.example
+
+# Logs y temporales
 *.log
+*.tmp
+cookies.txt
+
+# Herramientas locales (opencode)
+.atl/
+
+# Editor
+.vscode/
+
+# Sistema
 .DS_Store
+Thumbs.db
