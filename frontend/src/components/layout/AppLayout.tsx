@@ -60,11 +60,13 @@ export default function AppLayout() {
         )}
       >
         <div className="flex h-16 shrink-0 items-center gap-3 border-b border-silver-800 px-5">
-          <img
-            src="/images/logo-luciernaga.png"
-            alt="Logo Luciérnaga"
-            className="size-10 object-contain"
-          />
+          <div className="flex size-10 items-center justify-center rounded-lg bg-white p-1 shadow-sm">
+            <img
+              src="/images/siar.png"
+              alt="Logo SIAR"
+              className="size-8 object-contain"
+            />
+          </div>
           <span className="text-lg font-bold text-white">Luciérnaga</span>
           <button
             type="button"
