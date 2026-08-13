@@ -15,7 +15,7 @@ import {
   Table,
   type Column,
 } from '@/components/ui';
-import { getApiErrorMessage, modulosCajaApi, type ModuloCajaInput } from '@/lib/api';
+import { getApiErrorMessage, modulosCajaApi, modulosClienteApi, type ModuloCajaInput } from '@/lib/api';
 import { validCaja } from '@/lib/validation';
 import { useAuthStore } from '@/stores/authStore';
 import type { ModuloCaja } from '@/types';
@@ -78,6 +78,19 @@ export default function ActasPage() {
     queryFn: () => modulosCajaApi.list(id as string).then((res) => res.data),
     enabled: Boolean(id),
   });
+
+  const moduloQuery = useQuery({
+    queryKey: ['modulos-cliente', 'get', id],
+    queryFn: () => modulosClienteApi.get(id as string).then((res) => res.data),
+    enabled: Boolean(id),
+  });
+
+  const codigoModulo = moduloQuery.data?.codigo ?? '';
+  const actaModulo = moduloQuery.data?.acta_transferencia_modulo ?? '';
+  // Placeholder de caja: prefijo del código del módulo + "C" + 6 ceros (ej. 015C000000).
+  const cajaPlaceholder = /^\d{1,3}$/.test(codigoModulo)
+    ? `${codigoModulo.padStart(3, '0')}C000000`
+    : '000C000000';
 
   const createMutation = useMutation({
     mutationFn: (data: ModuloCajaInput) => modulosCajaApi.create(data),
@@ -281,7 +294,7 @@ export default function ActasPage() {
             value={cajaForm.caja_modulo}
             onChange={(event) => setCajaForm({ ...cajaForm, caja_modulo: event.target.value })}
             error={cajaErrors.caja_modulo}
-            placeholder="000C000000"
+            placeholder={cajaPlaceholder}
           />
           <Input
             label="Entidad Remitente"
@@ -318,6 +331,7 @@ export default function ActasPage() {
             value={cajaForm.acta_trans_caja}
             onChange={(event) => setCajaForm({ ...cajaForm, acta_trans_caja: event.target.value })}
             error={cajaErrors.acta_trans_caja}
+            placeholder={actaModulo || 'Ingrese el número de acta'}
           />
           <Input
             label="Fecha de Transferencia"
