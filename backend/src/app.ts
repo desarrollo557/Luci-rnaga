@@ -11,19 +11,21 @@ import { notFoundHandler, errorHandler } from './middlewares/errorHandler.js';
 
 export const app = express();
 
-// Limitador general (suave): 300 peticiones por IP cada 15 minutos
+// Limitador general: 1000 peticiones por IP cada 15 minutos (configurable por env).
+// Se elevó desde 300 porque cada recarga de página dispara muchas consultas y
+// recargar la app varias veces agotaba el cupo → 429 en toda la API.
 const generalLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  limit: 300,
+  limit: Number(process.env.RATE_LIMIT_GENERAL) || 1000,
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'Demasiadas peticiones. Inténtalo más tarde.' },
 });
 
-// Limitador estricto para login: 10 intentos por minuto
+// Limitador estricto para login: 30 intentos por minuto (configurable por env).
 const loginLimiter = rateLimit({
   windowMs: 60 * 1000,
-  limit: 10,
+  limit: Number(process.env.RATE_LIMIT_LOGIN) || 30,
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'Demasiados intentos de inicio de sesión. Espera un minuto.' },
