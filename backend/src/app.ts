@@ -5,10 +5,29 @@ import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import session from 'express-session';
+import rateLimit from 'express-rate-limit';
 import apiRoutes from './routes/index.js';
 import { notFoundHandler, errorHandler } from './middlewares/errorHandler.js';
 
 export const app = express();
+
+// Limitador general (suave): 300 peticiones por IP cada 15 minutos
+const generalLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 300,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Demasiadas peticiones. Inténtalo más tarde.' },
+});
+
+// Limitador estricto para login: 10 intentos por minuto
+const loginLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  limit: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Demasiados intentos de inicio de sesión. Espera un minuto.' },
+});
 
 app.use(helmet({ crossOriginResourcePolicy: false }));
 app.use(
@@ -35,10 +54,14 @@ app.use(
   }),
 );
 
-// Health check ANTES de los routers (evita que /api/:id lo capture)
+// Health check ANTES de los routers y limitadores (evita que /api/:id lo capture)
 app.get('/api/health', (_req, res) => {
   res.json({ status: 'ok', service: 'luciernaga-api' });
 });
+
+// Rate limit: general sobre toda la API y estricto sobre /api/login
+app.use(generalLimiter);
+app.use('/api/login', loginLimiter);
 
 // API
 app.use('/api', apiRoutes);

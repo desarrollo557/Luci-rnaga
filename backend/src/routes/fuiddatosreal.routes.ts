@@ -1,5 +1,7 @@
 import { Router } from 'express';
 import { isAuthenticated } from '../middlewares/auth.js';
+import { validate } from '../middlewares/validate.js';
+import { createFuidSchema, updateFuidSchema } from '../validators/fuiddatosreal.validator.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import {
   listFuid,
@@ -21,11 +23,11 @@ router.get('/fuiddatosreal', isAuthenticated, asyncHandler(listFuid));
 router.get('/fuiddatosreal/check-duplicate-upd', isAuthenticated, asyncHandler(checkDuplicateUpd));
 router.get('/fuiddatosreal/check-caja-duplicates', isAuthenticated, asyncHandler(checkCajaDuplicates));
 router.post('/fuiddatosreal/marcar-ok', isAuthenticated, asyncHandler(marcarOk));
-router.post('/fuiddatosreal', isAuthenticated, asyncHandler(createFuid));
+router.post('/fuiddatosreal', isAuthenticated, validate(createFuidSchema), asyncHandler(createFuid));
 router.get('/fuiddatosreal/:caja/suggestions/:campo', isAuthenticated, asyncHandler(suggestions));
 router.post('/fuiddatosreal/:caja/:campo', isAuthenticated, asyncHandler(saveSuggestionValue));
 router.get('/fuiddatosreal/:id', isAuthenticated, asyncHandler(getFuid));
-router.put('/fuiddatosreal/:id', isAuthenticated, asyncHandler(updateFuid));
+router.put('/fuiddatosreal/:id', isAuthenticated, validate(updateFuidSchema), asyncHandler(updateFuid));
 router.delete('/fuiddatosreal/:id', isAuthenticated, asyncHandler(deleteFuid));
 
 export default router;

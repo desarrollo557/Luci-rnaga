@@ -1,5 +1,11 @@
 import { Router } from 'express';
 import { isAuthenticated, isLiderOrAdmin } from '../middlewares/auth.js';
+import { validate } from '../middlewares/validate.js';
+import {
+  createModuloClienteSchema,
+  updateModuloClienteSchema,
+} from '../validators/moduloscliente.validator.js';
+import { usuariosOnlySchema } from '../validators/asignaciones.validator.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import {
   listModulosCliente,
@@ -15,20 +21,34 @@ import {
 const router = Router();
 
 router.get('/moduloscliente', isAuthenticated, asyncHandler(listModulosCliente));
-router.post('/moduloscliente', isAuthenticated, isLiderOrAdmin, asyncHandler(createModuloCliente));
-router.put('/moduloscliente/:id', isAuthenticated, isLiderOrAdmin, asyncHandler(updateModuloCliente));
+router.post(
+  '/moduloscliente',
+  isAuthenticated,
+  isLiderOrAdmin,
+  validate(createModuloClienteSchema),
+  asyncHandler(createModuloCliente),
+);
+router.put(
+  '/moduloscliente/:id',
+  isAuthenticated,
+  isLiderOrAdmin,
+  validate(updateModuloClienteSchema),
+  asyncHandler(updateModuloCliente),
+);
 router.delete('/moduloscliente/:id', isAuthenticated, isLiderOrAdmin, asyncHandler(deleteModuloCliente));
 
 router.post(
   '/moduloscliente/:moduloId/agregar',
   isAuthenticated,
   isLiderOrAdmin,
+  validate(usuariosOnlySchema),
   asyncHandler(assignUsersToModulo),
 );
 router.post(
   '/moduloscliente/:moduloId/eliminar',
   isAuthenticated,
   isLiderOrAdmin,
+  validate(usuariosOnlySchema),
   asyncHandler(removeUsersFromModulo),
 );
 router.get('/moduloscliente/:moduloId/usuarios', isAuthenticated, isLiderOrAdmin, asyncHandler(listUsersOfModulo));

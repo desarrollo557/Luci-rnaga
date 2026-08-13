@@ -1,5 +1,8 @@
 import { Router } from 'express';
 import { isAuthenticated, isLiderOrAdmin } from '../middlewares/auth.js';
+import { validate } from '../middlewares/validate.js';
+import { createSubModuloSchema, updateSubModuloSchema } from '../validators/submodulos.validator.js';
+import { asignarUsuariosSchema, usuariosOnlySchema } from '../validators/asignaciones.validator.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import {
   listSubModulos,
@@ -21,18 +24,54 @@ const router = Router();
 
 // Sub-módulos
 router.get('/sub_modulos', isAuthenticated, asyncHandler(listSubModulos));
-router.post('/sub_modulos', isAuthenticated, isLiderOrAdmin, asyncHandler(createSubModulo));
-router.put('/sub_modulos/:id', isAuthenticated, isLiderOrAdmin, asyncHandler(updateSubModulo));
+router.post(
+  '/sub_modulos',
+  isAuthenticated,
+  isLiderOrAdmin,
+  validate(createSubModuloSchema),
+  asyncHandler(createSubModulo),
+);
+router.put(
+  '/sub_modulos/:id',
+  isAuthenticated,
+  isLiderOrAdmin,
+  validate(updateSubModuloSchema),
+  asyncHandler(updateSubModulo),
+);
 router.delete('/sub_modulos/:id', isAuthenticated, isLiderOrAdmin, asyncHandler(deleteSubModulo));
 
 // Asignaciones TÉCNICA
-router.post('/asignacion_tecnica', isAuthenticated, isLiderOrAdmin, asyncHandler(assignTecnica));
-router.post('/asignacion_tecnica/:modulo_id/eliminar', isAuthenticated, isLiderOrAdmin, asyncHandler(removeTecnica));
+router.post(
+  '/asignacion_tecnica',
+  isAuthenticated,
+  isLiderOrAdmin,
+  validate(asignarUsuariosSchema),
+  asyncHandler(assignTecnica),
+);
+router.post(
+  '/asignacion_tecnica/:modulo_id/eliminar',
+  isAuthenticated,
+  isLiderOrAdmin,
+  validate(usuariosOnlySchema),
+  asyncHandler(removeTecnica),
+);
 router.get('/asignacion_tecnica/:modulo_id/usuarios', isAuthenticated, asyncHandler(listTecnicaUsers));
 
 // Asignaciones CALIDAD
-router.post('/asignacion_calidad', isAuthenticated, isLiderOrAdmin, asyncHandler(assignCalidad));
-router.post('/asignacion_calidad/:modulo_id/eliminar', isAuthenticated, isLiderOrAdmin, asyncHandler(removeCalidad));
+router.post(
+  '/asignacion_calidad',
+  isAuthenticated,
+  isLiderOrAdmin,
+  validate(asignarUsuariosSchema),
+  asyncHandler(assignCalidad),
+);
+router.post(
+  '/asignacion_calidad/:modulo_id/eliminar',
+  isAuthenticated,
+  isLiderOrAdmin,
+  validate(usuariosOnlySchema),
+  asyncHandler(removeCalidad),
+);
 router.get('/asignacion_calidad/:modulo_id/usuarios', isAuthenticated, asyncHandler(listCalidadUsers));
 
 // Usuarios por rol y sede (TECNICA/CALIDAD disponibles para asignar)

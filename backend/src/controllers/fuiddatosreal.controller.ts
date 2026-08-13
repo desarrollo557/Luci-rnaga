@@ -111,7 +111,7 @@ export async function createFuid(req: Request, res: Response): Promise<void> {
   } catch (error) {
     await conn.rollback().catch(() => undefined);
     console.error('Error al insertar o actualizar el registro:', error);
-    res.status(500).json({ error: 'Error al insertar o actualizar el registro', message: error instanceof Error ? error.message : String(error) });
+    res.status(500).json({ error: 'Error interno del servidor' });
   } finally {
     conn.release();
   }

@@ -1,5 +1,7 @@
 import { Router } from 'express';
 import { isAuthenticated, isAdmin } from '../middlewares/auth.js';
+import { validate } from '../middlewares/validate.js';
+import { createUserSchema, updateUserSchema } from '../validators/users.validator.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { listUsers, getUser, createUser, updateUser, deleteUser } from '../controllers/users.controller.js';
 
@@ -10,8 +12,8 @@ router.use(isAuthenticated, isAdmin);
 
 router.get('/', asyncHandler(listUsers));
 router.get('/:id', asyncHandler(getUser));
-router.post('/', asyncHandler(createUser));
-router.put('/:id', asyncHandler(updateUser));
+router.post('/', validate(createUserSchema), asyncHandler(createUser));
+router.put('/:id', validate(updateUserSchema), asyncHandler(updateUser));
 router.delete('/:id', asyncHandler(deleteUser));
 
 export default router;
