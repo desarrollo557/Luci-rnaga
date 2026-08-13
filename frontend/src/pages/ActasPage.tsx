@@ -175,7 +175,15 @@ export default function ActasPage() {
 
   const openNuevaCaja = () => {
     setEditingCaja(null);
-    setCajaForm({ ...EMPTY_CAJA_FORM });
+    const codigoModulo = moduloQuery.data?.codigo ?? '';
+    const actaModulo = moduloQuery.data?.acta_transferencia_modulo ?? '';
+    // Prefijo de caja: los 3 primeros dígitos del código del módulo + "C" (ej. 015C).
+    const prefijoCaja = /^\d{1,3}$/.test(codigoModulo) ? `${codigoModulo.padStart(3, '0')}C` : '';
+    setCajaForm({
+      ...EMPTY_CAJA_FORM,
+      caja_modulo: prefijoCaja,
+      acta_trans_caja: actaModulo,
+    });
     setCajaErrors({});
     setModalOpen(true);
   };
