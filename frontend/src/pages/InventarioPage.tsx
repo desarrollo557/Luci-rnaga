@@ -217,7 +217,7 @@ export default function InventarioPage() {
 
       {totalPages > 1 && (
         <div className="flex items-center justify-between">
-          <span className="text-sm text-slate-500">
+          <span className="text-sm text-silver-500">
             Página {page + 1} de {totalPages} ({rows.length} registros)
           </span>
           <div className="flex gap-2">
@@ -254,7 +254,7 @@ export default function InventarioPage() {
       >
         <div className="space-y-6">
           <div>
-            <h3 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-500">Cliente</h3>
+            <h3 className="mb-3 text-sm font-semibold uppercase tracking-wide text-silver-500">Cliente</h3>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <Input
                 label="Código del Cliente"
@@ -270,7 +270,7 @@ export default function InventarioPage() {
           </div>
 
           <div>
-            <h3 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-500">Acta</h3>
+            <h3 className="mb-3 text-sm font-semibold uppercase tracking-wide text-silver-500">Acta</h3>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
               <Input
                 label="N° Acta"
@@ -292,7 +292,7 @@ export default function InventarioPage() {
           </div>
 
           <div>
-            <h3 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-500">Cajas</h3>
+            <h3 className="mb-3 text-sm font-semibold uppercase tracking-wide text-silver-500">Cajas</h3>
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
               <Input
                 label="X200"
@@ -344,7 +344,7 @@ export default function InventarioPage() {
           </div>
 
           <div>
-            <h3 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-500">Proceso</h3>
+            <h3 className="mb-3 text-sm font-semibold uppercase tracking-wide text-silver-500">Proceso</h3>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-3">
               <Input
                 label="Fecha Entrega Custodia"

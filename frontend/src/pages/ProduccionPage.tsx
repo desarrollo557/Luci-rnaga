@@ -55,7 +55,7 @@ export default function ProduccionPage() {
       label: 'Cajas en Producción',
       value: metrics.cajas,
       icon: Boxes,
-      color: 'text-blue-600 bg-blue-50',
+      color: 'text-silver-600 bg-silver-100',
     },
     {
       label: 'Aprobados',
@@ -67,7 +67,7 @@ export default function ProduccionPage() {
       label: 'Pendientes',
       value: metrics.pendientes,
       icon: Clock,
-      color: 'text-slate-600 bg-slate-100',
+      color: 'text-silver-600 bg-silver-100',
     },
   ];
 
@@ -102,8 +102,8 @@ export default function ProduccionPage() {
               <card.icon className="size-6" />
             </div>
             <div>
-              <p className="text-2xl font-bold text-slate-900">{card.value.toLocaleString('es-CO')}</p>
-              <p className="text-sm text-slate-500">{card.label}</p>
+              <p className="text-2xl font-bold text-silver-900">{card.value.toLocaleString('es-CO')}</p>
+              <p className="text-sm text-silver-500">{card.label}</p>
             </div>
           </Card>
         ))}
@@ -111,24 +111,24 @@ export default function ProduccionPage() {
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         <Card>
-          <h3 className="mb-4 text-base font-semibold text-slate-800">Avance de revisión</h3>
+          <h3 className="mb-4 text-base font-semibold text-silver-800">Avance de revisión</h3>
           <div className="mb-2 flex items-center justify-between text-sm">
-            <span className="text-slate-600">{metrics.aprobados.toLocaleString('es-CO')} de {metrics.total.toLocaleString('es-CO')} aprobados</span>
+            <span className="text-silver-600">{metrics.aprobados.toLocaleString('es-CO')} de {metrics.total.toLocaleString('es-CO')} aprobados</span>
             <span className="font-semibold text-primary-700">{metrics.pct}%</span>
           </div>
-          <div className="h-3 overflow-hidden rounded-full bg-slate-100">
+          <div className="h-3 overflow-hidden rounded-full bg-silver-100">
             <div
               className="h-full rounded-full bg-emerald-500 transition-all"
               style={{ width: `${metrics.pct}%` }}
             />
           </div>
 
-          <h4 className="mb-2 mt-6 text-sm font-semibold uppercase tracking-wide text-slate-500">
+          <h4 className="mb-2 mt-6 text-sm font-semibold uppercase tracking-wide text-silver-500">
             Registros por estado de caja
           </h4>
           <div className="space-y-2">
             {Array.from(metrics.porEstadoCaja.entries()).map(([estado, count]) => (
-              <div key={estado} className="flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2 text-sm">
+              <div key={estado} className="flex items-center justify-between rounded-lg bg-silver-50 px-3 py-2 text-sm">
                 <Badge
                   color={
                     estado === 'FINALIZADO' ? 'green' : estado === 'EN PROCESO' ? 'amber' : 'gray'
@@ -136,17 +136,17 @@ export default function ProduccionPage() {
                 >
                   {estado}
                 </Badge>
-                <span className="font-medium text-slate-700">{count.toLocaleString('es-CO')}</span>
+                <span className="font-medium text-silver-700">{count.toLocaleString('es-CO')}</span>
               </div>
             ))}
             {metrics.porEstadoCaja.size === 0 && (
-              <p className="text-sm text-slate-500">Sin datos de estado de caja.</p>
+              <p className="text-sm text-silver-500">Sin datos de estado de caja.</p>
             )}
           </div>
         </Card>
 
         <Card>
-          <h3 className="mb-4 text-base font-semibold text-slate-800">Top digitadores</h3>
+          <h3 className="mb-4 text-base font-semibold text-silver-800">Top digitadores</h3>
           <Table columns={topColumns} data={metrics.top} rowKey={(row) => row.nombre} emptyMessage="Sin registros por usuario" />
         </Card>
       </div>

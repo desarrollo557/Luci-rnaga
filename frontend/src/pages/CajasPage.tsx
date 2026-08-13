@@ -168,7 +168,7 @@ function SeccionAsignacionCaja({ cajaId, rol, label }: SeccionAsignacionCajaProp
   return (
     <Card className="p-4">
       <div className="mb-3 flex items-center justify-between gap-2">
-        <h3 className="text-sm font-semibold text-slate-800">{label}</h3>
+        <h3 className="text-sm font-semibold text-silver-800">{label}</h3>
         <Badge color={isCalidad ? 'green' : 'blue'}>
           {asignadosQuery.data?.length ?? 0} asignados
         </Badge>
@@ -181,19 +181,19 @@ function SeccionAsignacionCaja({ cajaId, rol, label }: SeccionAsignacionCajaProp
       ) : (
         <ul className="max-h-56 space-y-1 overflow-y-auto">
           {usuarios.length === 0 && (
-            <li className="text-sm text-slate-500">No hay usuarios de este rol</li>
+            <li className="text-sm text-silver-500">No hay usuarios de este rol</li>
           )}
           {usuarios.map((usuario) => {
             const isAssigned = asignadosIds.has(usuario.id);
             return (
               <li key={usuario.id}>
-                <label className="flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-sm hover:bg-slate-50">
+                <label className="flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-sm hover:bg-silver-50">
                   <input
                     type="checkbox"
                     checked={selected.has(usuario.id)}
                     onChange={() => toggle(usuario.id)}
                   />
-                  <span className="flex-1 text-slate-700">{usuario.nombre}</span>
+                  <span className="flex-1 text-silver-700">{usuario.nombre}</span>
                   {isAssigned && <Badge color="gray">Asignado</Badge>}
                 </label>
               </li>
@@ -218,8 +218,8 @@ function SeccionAsignacionCaja({ cajaId, rol, label }: SeccionAsignacionCajaProp
       </div>
 
       {isCalidad && (
-        <form onSubmit={handleAsignarRango} className="mt-4 space-y-3 border-t border-slate-100 pt-4">
-          <h4 className="text-sm font-semibold text-slate-700">Asignar por rango</h4>
+        <form onSubmit={handleAsignarRango} className="mt-4 space-y-3 border-t border-silver-100 pt-4">
+          <h4 className="text-sm font-semibold text-silver-700">Asignar por rango</h4>
           <div className="grid grid-cols-2 gap-2">
             <Input
               label="Rango inicio"
@@ -234,18 +234,18 @@ function SeccionAsignacionCaja({ cajaId, rol, label }: SeccionAsignacionCajaProp
               placeholder="000C000000"
             />
           </div>
-          <div className="max-h-40 overflow-y-auto rounded-lg border border-slate-200 p-2">
+          <div className="max-h-40 overflow-y-auto rounded-lg border border-silver-200 p-2">
             {usuarios.map((usuario) => (
               <label
                 key={usuario.id}
-                className="flex cursor-pointer items-center gap-2 rounded px-2 py-1 text-sm hover:bg-slate-50"
+                className="flex cursor-pointer items-center gap-2 rounded px-2 py-1 text-sm hover:bg-silver-50"
               >
                 <input
                   type="checkbox"
                   checked={rangoUsuarios.has(usuario.id)}
                   onChange={() => toggleRango(usuario.id)}
                 />
-                <span className="text-slate-700">{usuario.nombre}</span>
+                <span className="text-silver-700">{usuario.nombre}</span>
               </label>
             ))}
           </div>
@@ -353,34 +353,34 @@ export default function CajasPage() {
           <Card>
             <dl className="grid gap-4 text-sm md:grid-cols-3">
               <div>
-                <dt className="font-medium text-slate-500">Entidad Remitente</dt>
-                <dd className="mt-0.5 text-slate-800">{caja.entidad_remitente_caja}</dd>
+                <dt className="font-medium text-silver-500">Entidad Remitente</dt>
+                <dd className="mt-0.5 text-silver-800">{caja.entidad_remitente_caja}</dd>
               </div>
               <div>
-                <dt className="font-medium text-slate-500">Entidad Productora</dt>
-                <dd className="mt-0.5 text-slate-800">{caja.entidad_productora_caja}</dd>
+                <dt className="font-medium text-silver-500">Entidad Productora</dt>
+                <dd className="mt-0.5 text-silver-800">{caja.entidad_productora_caja}</dd>
               </div>
               <div>
-                <dt className="font-medium text-slate-500">Acta de Transferencia</dt>
-                <dd className="mt-0.5 text-slate-800">{caja.acta_trans_caja}</dd>
+                <dt className="font-medium text-silver-500">Acta de Transferencia</dt>
+                <dd className="mt-0.5 text-silver-800">{caja.acta_trans_caja}</dd>
               </div>
               <div>
-                <dt className="font-medium text-slate-500">Unidad Administrativa</dt>
-                <dd className="mt-0.5 text-slate-800">{caja.unidad_administrativa_caja}</dd>
+                <dt className="font-medium text-silver-500">Unidad Administrativa</dt>
+                <dd className="mt-0.5 text-silver-800">{caja.unidad_administrativa_caja}</dd>
               </div>
               <div>
-                <dt className="font-medium text-slate-500">Oficina Productora</dt>
-                <dd className="mt-0.5 text-slate-800">{caja.oficina_productora_caja}</dd>
+                <dt className="font-medium text-silver-500">Oficina Productora</dt>
+                <dd className="mt-0.5 text-silver-800">{caja.oficina_productora_caja}</dd>
               </div>
               <div>
-                <dt className="font-medium text-slate-500">Fecha de Transferencia</dt>
-                <dd className="mt-0.5 text-slate-800">
+                <dt className="font-medium text-silver-500">Fecha de Transferencia</dt>
+                <dd className="mt-0.5 text-silver-800">
                   {caja.fecha_trans_caja ? caja.fecha_trans_caja.slice(0, 10) : '—'}
                 </dd>
               </div>
               <div className="md:col-span-2">
-                <dt className="font-medium text-slate-500">Objeto</dt>
-                <dd className="mt-0.5 text-slate-800">{caja.objeto_caja}</dd>
+                <dt className="font-medium text-silver-500">Objeto</dt>
+                <dd className="mt-0.5 text-silver-800">{caja.objeto_caja}</dd>
               </div>
             </dl>
           </Card>

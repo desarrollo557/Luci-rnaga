@@ -33,16 +33,16 @@ function getErrorMessage(error: unknown): string {
 function FieldValue({ label, value }: { label: string; value: string | number | null | undefined }) {
   return (
     <div>
-      <dt className="text-xs font-medium text-slate-500">{label}</dt>
-      <dd className="mt-0.5 break-words text-sm text-slate-800">{value ?? '—'}</dd>
+      <dt className="text-xs font-medium text-silver-500">{label}</dt>
+      <dd className="mt-0.5 break-words text-sm text-silver-800">{value ?? '—'}</dd>
     </div>
   );
 }
 
 function Seccion({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <section className="rounded-lg border border-slate-200 bg-slate-50 p-4">
-      <h3 className="text-sm font-semibold text-slate-800">{title}</h3>
+    <section className="rounded-lg border border-silver-200 bg-silver-50 p-4">
+      <h3 className="text-sm font-semibold text-silver-800">{title}</h3>
       <dl className="mt-3 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">{children}</dl>
     </section>
   );
@@ -170,14 +170,14 @@ function RevisionModal({ open, registro, onClose }: RevisionModalProps) {
         ) : (
           <div className="flex items-center gap-2">
             <Badge color="gray">Pendiente</Badge>
-            <span className="text-sm text-slate-500">Este registro aún no ha sido aprobado</span>
+            <span className="text-sm text-silver-500">Este registro aún no ha sido aprobado</span>
           </div>
         )}
 
         <FuidFields registro={registro} />
 
         {canAprobar && !aprobado && (
-          <label className="flex cursor-pointer items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
+          <label className="flex cursor-pointer items-center gap-2 rounded-lg border border-silver-200 bg-silver-50 p-3 text-sm text-silver-700">
             <input
               type="checkbox"
               checked={confirmado}
@@ -418,14 +418,14 @@ export default function RevisionPage() {
         </Card>
       ) : filtered.length === 0 ? (
         <Card className="flex flex-col items-center gap-4 py-12">
-          <p className="text-sm text-slate-500">No hay registros para revisar en esta caja</p>
+          <p className="text-sm text-silver-500">No hay registros para revisar en esta caja</p>
         </Card>
       ) : (
         <>
           <Table columns={columns} data={currentPage} rowKey={(registro) => registro.id} />
 
           <div className="flex items-center justify-between">
-            <p className="text-sm text-slate-500">
+            <p className="text-sm text-silver-500">
               Página {safePage} de {totalPages} · {filtered.length} registros
             </p>
             <div className="flex items-center gap-2">

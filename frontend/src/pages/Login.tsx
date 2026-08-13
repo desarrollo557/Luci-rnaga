@@ -42,7 +42,7 @@ export default function Login() {
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-primary-600 via-primary-500 to-amber-400 p-4">
+    <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-primary-700 via-primary-600 to-silver-900 p-4">
       <div className="w-full max-w-md rounded-2xl bg-white p-8 shadow-xl">
         <div className="mb-6 flex flex-col items-center">
           <img
@@ -50,8 +50,8 @@ export default function Login() {
             alt="Logo Luciérnaga"
             className="mb-4 size-20 object-contain"
           />
-          <h1 className="text-2xl font-bold text-slate-900">Luciérnaga</h1>
-          <p className="mt-1 text-sm text-slate-500">Sistema de gestión FUID</p>
+          <h1 className="text-2xl font-bold text-silver-900">Luciérnaga</h1>
+          <p className="mt-1 text-sm text-silver-500">Sistema de gestión FUID</p>
         </div>
         <form onSubmit={handleSubmit} className="space-y-4">
           <Input

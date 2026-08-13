@@ -160,7 +160,7 @@ function SeccionAsignacion({
   return (
     <Card className="p-4">
       <div className="mb-3 flex items-center justify-between gap-2">
-        <h3 className="text-sm font-semibold text-slate-800">{label}</h3>
+        <h3 className="text-sm font-semibold text-silver-800">{label}</h3>
         <Badge color={rol === 'tecnica' ? 'blue' : 'green'}>
           {asignadosQuery.data?.length ?? 0} asignados
         </Badge>
@@ -173,19 +173,19 @@ function SeccionAsignacion({
       ) : (
         <ul className="max-h-64 space-y-1 overflow-y-auto">
           {usuarios.length === 0 && (
-            <li className="text-sm text-slate-500">No hay usuarios de este rol</li>
+            <li className="text-sm text-silver-500">No hay usuarios de este rol</li>
           )}
           {usuarios.map((usuario) => {
             const isAssigned = asignadosIds.has(usuario.id);
             return (
               <li key={usuario.id}>
-                <label className="flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-sm hover:bg-slate-50">
+                <label className="flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-sm hover:bg-silver-50">
                   <input
                     type="checkbox"
                     checked={selected.has(usuario.id)}
                     onChange={() => toggle(usuario.id)}
                   />
-                  <span className="flex-1 text-slate-700">{usuario.nombre}</span>
+                  <span className="flex-1 text-silver-700">{usuario.nombre}</span>
                   {isAssigned && <Badge color="gray">Asignado</Badge>}
                 </label>
               </li>
@@ -435,7 +435,7 @@ export default function ClientesPage() {
 
       {subModuloId === null ? (
         <Card>
-          <p className="text-sm text-slate-500">
+          <p className="text-sm text-silver-500">
             Seleccione un sub-módulo para ver sus módulos cliente.
           </p>
         </Card>

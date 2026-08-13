@@ -21,8 +21,8 @@ import { ROLES } from '@/types';
 
 const ROLE_BADGE: Record<Role, BadgeColor> = {
   ADMIN: 'red',
-  LIDER: 'amber',
-  TECNICA: 'blue',
+  LIDER: 'red',
+  TECNICA: 'gray',
   CALIDAD: 'green',
 };
 

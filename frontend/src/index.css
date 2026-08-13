@@ -2,17 +2,32 @@
 
 @theme {
   --font-sans: 'Inter', ui-sans-serif, system-ui, sans-serif;
-  --color-primary-50: #fef7ec;
-  --color-primary-100: #fcecd4;
-  --color-primary-200: #f8d6a5;
-  --color-primary-300: #f4ba6d;
-  --color-primary-400: #ef9a3a;
-  --color-primary-500: #ea7f17;
-  --color-primary-600: #d96711;
-  --color-primary-700: #b44c11;
-  --color-primary-800: #923c14;
-  --color-primary-900: #773314;
-  --color-primary-950: #401803;
+
+  /* Rojo fuerte — color primario de identidad */
+  --color-primary-50: #fef2f2;
+  --color-primary-100: #fee2e2;
+  --color-primary-200: #fecaca;
+  --color-primary-300: #fca5a5;
+  --color-primary-400: #f87171;
+  --color-primary-500: #ef4444;
+  --color-primary-600: #dc2626;
+  --color-primary-700: #b91c1c;
+  --color-primary-800: #991b1b;
+  --color-primary-900: #7f1d1d;
+  --color-primary-950: #450a0a;
+
+  /* Gris plateado — neutro de identidad */
+  --color-silver-50: #f7f8fa;
+  --color-silver-100: #edeef1;
+  --color-silver-200: #d9dce1;
+  --color-silver-300: #b8bdc5;
+  --color-silver-400: #929aa5;
+  --color-silver-500: #747d89;
+  --color-silver-600: #5e6671;
+  --color-silver-700: #4d545e;
+  --color-silver-800: #40464f;
+  --color-silver-900: #383d44;
+  --color-silver-950: #24282e;
 }
 
 html, body, #root {
@@ -20,5 +35,5 @@ html, body, #root {
 }
 
 body {
-  @apply bg-slate-100 text-slate-800 antialiased;
+  @apply bg-silver-100 text-silver-900 antialiased;
 }

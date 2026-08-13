@@ -57,7 +57,7 @@ export default function HistorialPage() {
         description="Registro de cambios y revisiones realizadas sobre los FUID"
         actions={
           <div className="relative">
-            <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-400" />
+            <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -transilver-y-1/2 text-silver-400" />
             <Input
               className="w-64 pl-9"
               placeholder="Filtrar por caja…"
@@ -81,7 +81,7 @@ export default function HistorialPage() {
 
       {totalPages > 1 && (
         <div className="flex items-center justify-between">
-          <span className="text-sm text-slate-500">
+          <span className="text-sm text-silver-500">
             Página {page + 1} de {totalPages} ({filtered.length} registros)
           </span>
           <div className="flex gap-2">

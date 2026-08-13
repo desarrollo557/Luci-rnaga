@@ -374,8 +374,8 @@ function FuidFormModal({ open, cajaId, editing, defaultNOrden, onClose }: FuidFo
       }
     >
       <form id="fuid-form" onSubmit={handleSubmit} className="space-y-4">
-        <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
-          <h3 className="text-sm font-semibold text-slate-800">Identificación</h3>
+        <div className="rounded-lg border border-silver-200 bg-silver-50 p-4">
+          <h3 className="text-sm font-semibold text-silver-800">Identificación</h3>
           <div className="mt-3 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             <Input
               label="Fecha del Dato"
@@ -411,8 +411,8 @@ function FuidFormModal({ open, cajaId, editing, defaultNOrden, onClose }: FuidFo
           </div>
         </div>
 
-        <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
-          <h3 className="text-sm font-semibold text-slate-800">Procedencia</h3>
+        <div className="rounded-lg border border-silver-200 bg-silver-50 p-4">
+          <h3 className="text-sm font-semibold text-silver-800">Procedencia</h3>
           <div className="mt-3 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             <SuggestionInput
               caja={form.caja}
@@ -472,8 +472,8 @@ function FuidFormModal({ open, cajaId, editing, defaultNOrden, onClose }: FuidFo
           </div>
         </div>
 
-        <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
-          <h3 className="text-sm font-semibold text-slate-800">Documento</h3>
+        <div className="rounded-lg border border-silver-200 bg-silver-50 p-4">
+          <h3 className="text-sm font-semibold text-silver-800">Documento</h3>
           <div className="mt-3 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             <Input label="Asunto" value={form.asunto} onChange={setField('asunto')} />
             <SuggestionInput
@@ -512,8 +512,8 @@ function FuidFormModal({ open, cajaId, editing, defaultNOrden, onClose }: FuidFo
           </div>
         </div>
 
-        <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
-          <h3 className="text-sm font-semibold text-slate-800">Caja</h3>
+        <div className="rounded-lg border border-silver-200 bg-silver-50 p-4">
+          <h3 className="text-sm font-semibold text-silver-800">Caja</h3>
           <div className="mt-3 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             <Input
               label="Caja"
@@ -770,7 +770,7 @@ export default function DatosPage() {
         </Card>
       ) : registros.length === 0 ? (
         <Card className="flex flex-col items-center gap-4 py-12">
-          <p className="text-sm text-slate-500">No hay registros FUID en esta caja</p>
+          <p className="text-sm text-silver-500">No hay registros FUID en esta caja</p>
           <Button onClick={openNuevo}>
             <Plus className="size-4" /> Nuevo Registro
           </Button>
