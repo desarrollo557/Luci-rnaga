@@ -25,6 +25,7 @@ interface SeccionAsignacionCajaProps {
 function SeccionAsignacionCaja({ cajaId, rol, label }: SeccionAsignacionCajaProps) {
   const queryClient = useQueryClient();
   const isCalidad = rol === 'CALIDAD';
+  const currentUser = useAuthStore((state) => state.user);
 
   const asignadosQuery = useQuery({
     queryKey: ['modulos-caja', 'usuarios', cajaId, rol],
@@ -38,7 +39,7 @@ function SeccionAsignacionCaja({ cajaId, rol, label }: SeccionAsignacionCajaProp
 
   const disponiblesQuery = useQuery({
     queryKey: ['users', 'rol', rol],
-    queryFn: () => usersApi.byRol(rol).then((res) => res.data),
+    queryFn: () => usersApi.byRol(rol, { sede: currentUser?.sede }).then((res) => res.data),
     enabled: cajaId > 0,
   });
 

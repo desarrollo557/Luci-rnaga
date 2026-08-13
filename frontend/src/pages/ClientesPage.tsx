@@ -75,6 +75,7 @@ function SeccionAsignacion({
 }) {
   const queryClient = useQueryClient();
   const queryKey = ['modulos-cliente', 'usuarios', moduloId, rol];
+  const currentUser = useAuthStore((state) => state.user);
 
   const asignadosQuery = useQuery({
     queryKey,
@@ -84,7 +85,8 @@ function SeccionAsignacion({
 
   const disponiblesQuery = useQuery({
     queryKey: ['users', 'rol', rol.toUpperCase()],
-    queryFn: () => usersApi.byRol(rol.toUpperCase() as Role).then((res) => res.data),
+    queryFn: () =>
+      usersApi.byRol(rol.toUpperCase() as Role, { sede: currentUser?.sede }).then((res) => res.data),
     enabled: moduloId > 0,
   });
 

@@ -123,8 +123,10 @@ export async function listUsersByRoleAndSede(req: Request, res: Response): Promi
   const sede = String(req.query.sede ?? '');
   const rol = String(req.params.rol ?? '').toUpperCase();
 
+  // Si no se indica sede, listar todos los usuarios del rol (fallback robusto).
   if (!sede) {
-    res.status(400).json({ message: 'El parámetro sede es requerido' });
+    const results = await query('SELECT * FROM users WHERE rol = ?', [rol]);
+    res.json(results);
     return;
   }
 

@@ -146,7 +146,8 @@ export const usersApi = {
   create: (data: UserInput) => api.post<User>('/users', data),
   update: (cc: string, data: Partial<UserInput>) => api.put<User>(`/users/${cc}`, data),
   remove: (cc: string) => api.delete(`/users/${cc}`),
-  byRol: (rol: Role) => api.get<User[]>(`/usuarios/${rol}`),
+  byRol: (rol: Role, params?: { sede?: string }) =>
+    api.get<User[]>(`/usuarios/${rol}`, { params }),
 };
 
 export const modulosClienteApi = {
