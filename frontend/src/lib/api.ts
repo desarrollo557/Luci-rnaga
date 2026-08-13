@@ -269,8 +269,28 @@ export const plantillaApi = {
     api.post('/generarPlantilla', { fileName, filtros }, { responseType: 'blob' }),
 };
 
+export interface EstadisticasProduccion {
+  total_fuids: number;
+  total_cajas: number;
+  cajas_en_proceso: number;
+  cajas_finalizadas: number;
+  fuids_aprobados: number;
+  fuids_pendientes: number;
+  cajas_con_fuids: number;
+  cajas_sin_fuids: number;
+  promedio_fuids_por_caja: number;
+  total_modulos_cliente: number;
+  total_usuarios: number;
+  por_estado_caja: Array<{ estado: string; total: number }>;
+  fuids_por_mes: Array<{ mes: string; total: number }>;
+  fuids_por_sede: Array<{ sede: string; total: number }>;
+  top_digitadores: Array<{ nombre: string; total: number }>;
+  usuarios_por_rol: Array<{ rol: string; total: number }>;
+}
+
 export const reportesApi = {
   fuidConEstadoCaja: () => api.get<FuidConEstado[]>('/fuid-con-estado-caja'),
+  estadisticas: () => api.get<EstadisticasProduccion>('/estadisticas'),
 };
 
 export default api;
