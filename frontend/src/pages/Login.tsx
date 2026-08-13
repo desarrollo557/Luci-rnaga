@@ -1,7 +1,8 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { toast } from 'sonner';
 import { Button, Input } from '@/components/ui';
-import { authApi } from '@/lib/api';
+import { authApi, getApiErrorMessage } from '@/lib/api';
+import { onlyDigits } from '@/lib/validation';
 import { useAuthStore } from '@/stores/authStore';
 
 export default function Login() {
@@ -21,21 +22,27 @@ export default function Login() {
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!cc.trim() || !contrasena) {
-      toast.error('Ingresa tu cédula y contraseña');
+    const cctrim = cc.trim();
+    const ccError = cctrim === '' ? 'La cédula es requerida' : onlyDigits(cctrim, 'La cédula');
+    if (ccError) {
+      toast.error(ccError);
+      return;
+    }
+    if (contrasena === '') {
+      toast.error('La contraseña es requerida');
       return;
     }
     setSubmitting(true);
     try {
-      const { data } = await authApi.login(cc.trim(), contrasena);
+      const { data } = await authApi.login(cctrim, contrasena);
       if (data.success && data.redirect) {
         localStorage.setItem('redirect', data.redirect);
         window.location.href = data.redirect;
         return;
       }
       toast.error(data.message ?? 'Credenciales inválidas');
-    } catch {
-      toast.error('Error de conexión. Inténtalo de nuevo.');
+    } catch (error) {
+      toast.error(getApiErrorMessage(error));
     } finally {
       setSubmitting(false);
     }

@@ -15,20 +15,13 @@ import {
   Table,
   type Column,
 } from '@/components/ui';
-import { fuidApi, modulosCajaApi, plantillaApi } from '@/lib/api';
+import { fuidApi, getApiErrorMessage, modulosCajaApi, plantillaApi } from '@/lib/api';
 import { useAuthStore } from '@/stores/authStore';
 import type { FuidDato } from '@/types';
 
 const PAGE_SIZE = 25;
 
 const EDITABLE_ROLES = ['LIDER', 'ADMIN', 'TECNICA'] as const;
-
-function getErrorMessage(error: unknown): string {
-  if (axios.isAxiosError<{ message?: string; error?: string }>(error)) {
-    return error.response?.data?.message ?? error.response?.data?.error ?? 'Error en el servidor';
-  }
-  return 'Error en el servidor';
-}
 
 function FieldValue({ label, value }: { label: string; value: string | number | null | undefined }) {
   return (
@@ -127,7 +120,7 @@ function RevisionModal({ open, registro, onClose }: RevisionModalProps) {
       onClose();
       void queryClient.invalidateQueries({ queryKey: ['fuiddatosreal', 'list'] });
     },
-    onError: (error) => toast.error(getErrorMessage(error)),
+    onError: (error) => toast.error(getApiErrorMessage(error)),
   });
 
   if (!registro) return null;
@@ -244,7 +237,7 @@ export default function RevisionPage() {
       setSelectedIds(new Set());
       void queryClient.invalidateQueries({ queryKey: ['fuiddatosreal', 'list'] });
     },
-    onError: (error) => toast.error(getErrorMessage(error)),
+    onError: (error) => toast.error(getApiErrorMessage(error)),
   });
 
   const handleMarcarSeleccionados = () => {

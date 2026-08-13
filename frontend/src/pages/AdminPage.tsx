@@ -1,6 +1,5 @@
 import { useState, type FormEvent } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import axios from 'axios';
 import { Pencil, Plus, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import {
@@ -15,7 +14,8 @@ import {
   type BadgeColor,
   type Column,
 } from '@/components/ui';
-import { usersApi, type UserInput } from '@/lib/api';
+import { getApiErrorMessage, usersApi, type UserInput } from '@/lib/api';
+import { createValidator, minLength, onlyDigits } from '@/lib/validation';
 import type { Role, User } from '@/types';
 import { ROLES } from '@/types';
 
@@ -43,12 +43,20 @@ const EMPTY_FORM: UserInput = {
   sede: '',
 };
 
-function getErrorMessage(error: unknown): string {
-  if (axios.isAxiosError<{ message?: string }>(error)) {
-    return error.response?.data?.message ?? 'Error en el servidor';
-  }
-  return 'Error en el servidor';
-}
+const validateCc = createValidator(
+  (value) => (value.trim() === '' ? 'La cédula es requerida' : null),
+  onlyDigits,
+);
+
+const validateNombre = createValidator(
+  (value) => (value.trim() === '' ? 'El nombre es requerido' : null),
+  (value) => minLength(value, 3, 'El nombre'),
+);
+
+const validateContrasena = createValidator(
+  (value) => (value.trim() === '' ? 'La contraseña es requerida' : null),
+  (value) => minLength(value, 4, 'La contraseña'),
+);
 
 export default function AdminPage() {
   const queryClient = useQueryClient();
@@ -70,7 +78,7 @@ export default function AdminPage() {
       setFormOpen(false);
       void queryClient.invalidateQueries({ queryKey: ['users'] });
     },
-    onError: (error) => toast.error(getErrorMessage(error)),
+    onError: (error) => toast.error(getApiErrorMessage(error)),
   });
 
   const updateMutation = useMutation({
@@ -80,7 +88,7 @@ export default function AdminPage() {
       setFormOpen(false);
       void queryClient.invalidateQueries({ queryKey: ['users'] });
     },
-    onError: (error) => toast.error(getErrorMessage(error)),
+    onError: (error) => toast.error(getApiErrorMessage(error)),
   });
 
   const deleteMutation = useMutation({
@@ -90,7 +98,7 @@ export default function AdminPage() {
       setDeleteTarget(null);
       void queryClient.invalidateQueries({ queryKey: ['users'] });
     },
-    onError: (error) => toast.error(getErrorMessage(error)),
+    onError: (error) => toast.error(getApiErrorMessage(error)),
   });
 
   const saving = createMutation.isPending || updateMutation.isPending;
@@ -117,9 +125,22 @@ export default function AdminPage() {
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const nextErrors: Partial<Record<keyof UserInput, string>> = {};
-    if (!form.cc.trim()) nextErrors.cc = 'La cédula es obligatoria';
-    if (!form.nombre.trim()) nextErrors.nombre = 'El nombre es obligatorio';
-    if (!editingUser && !form.contrasena) nextErrors.contrasena = 'La contraseña es obligatoria';
+
+    const ccError = validateCc(form.cc, 'La cédula');
+    if (ccError) nextErrors.cc = ccError;
+
+    const nombreError = validateNombre(form.nombre, 'El nombre');
+    if (nombreError) nextErrors.nombre = nombreError;
+
+    const contrasenaNeeded = !editingUser || form.contrasena !== '';
+    if (contrasenaNeeded) {
+      const contrasenaError = validateContrasena(form.contrasena, 'La contraseña');
+      if (contrasenaError) nextErrors.contrasena = contrasenaError;
+    }
+
+    if (!form.rol) nextErrors.rol = 'El rol es requerido';
+    if (!form.sede.trim()) nextErrors.sede = 'La sede es requerida';
+
     setErrors(nextErrors);
     if (Object.keys(nextErrors).length > 0) return;
 
@@ -234,6 +255,7 @@ export default function AdminPage() {
             options={ROLES.map((rol) => ({ value: rol, label: ROLE_LABEL[rol] }))}
             value={form.rol}
             onChange={(event) => setForm({ ...form, rol: event.target.value as Role })}
+            error={errors.rol}
           />
           <Select
             label="Sede"
@@ -241,6 +263,7 @@ export default function AdminPage() {
             value={form.sede}
             onChange={(event) => setForm({ ...form, sede: event.target.value })}
             placeholder="Seleccione una sede"
+            error={errors.sede}
           />
         </form>
       </Modal>

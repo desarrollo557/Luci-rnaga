@@ -1,28 +1,20 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import axios from 'axios';
 import { ClipboardList, Eye, PencilLine } from 'lucide-react';
 import { toast } from 'sonner';
 import { Badge, Button, Card, Input, PageHeader, Spinner } from '@/components/ui';
 import {
   asignacionCajaCalidadApi,
   asignacionCajaTecnicaApi,
+  getApiErrorMessage,
   modulosCajaApi,
   usersApi,
   type AsignacionCajaInput,
   type AsignacionCajaRangoInput,
 } from '@/lib/api';
+import { validCaja } from '@/lib/validation';
 import { useAuthStore } from '@/stores/authStore';
-
-const RANGO_REGEX = /^\d{3}C\d{6}$/;
-
-function getErrorMessage(error: unknown): string {
-  if (axios.isAxiosError<{ message?: string }>(error)) {
-    return error.response?.data?.message ?? 'Error en el servidor';
-  }
-  return 'Error en el servidor';
-}
 
 interface SeccionAsignacionCajaProps {
   cajaId: number;
@@ -74,7 +66,7 @@ function SeccionAsignacionCaja({ cajaId, rol, label }: SeccionAsignacionCajaProp
       toast.success('Asignación guardada correctamente');
       void queryClient.invalidateQueries({ queryKey: ['modulos-caja', 'usuarios', cajaId, rol] });
     },
-    onError: (error) => toast.error(getErrorMessage(error)),
+    onError: (error) => toast.error(getApiErrorMessage(error)),
   });
 
   const eliminarMutation = useMutation({
@@ -86,7 +78,7 @@ function SeccionAsignacionCaja({ cajaId, rol, label }: SeccionAsignacionCajaProp
       toast.success('Usuarios eliminados correctamente');
       void queryClient.invalidateQueries({ queryKey: ['modulos-caja', 'usuarios', cajaId, rol] });
     },
-    onError: (error) => toast.error(getErrorMessage(error)),
+    onError: (error) => toast.error(getApiErrorMessage(error)),
   });
 
   const rangoMutation = useMutation({
@@ -99,7 +91,7 @@ function SeccionAsignacionCaja({ cajaId, rol, label }: SeccionAsignacionCajaProp
       setRangoError(null);
       void queryClient.invalidateQueries({ queryKey: ['modulos-caja', 'usuarios', cajaId, rol] });
     },
-    onError: (error) => toast.error(getErrorMessage(error)),
+    onError: (error) => toast.error(getApiErrorMessage(error)),
   });
 
   const asignadosIds = new Set((asignadosQuery.data ?? []).map((usuario) => usuario.id));
@@ -125,6 +117,10 @@ function SeccionAsignacionCaja({ cajaId, rol, label }: SeccionAsignacionCajaProp
   };
 
   const handleGuardar = () => {
+    if (selected.size === 0) {
+      toast.error('Selecciona al menos un usuario para asignar');
+      return;
+    }
     const toAdd = usuarios
       .filter((usuario) => selected.has(usuario.id) && !asignadosIds.has(usuario.id))
       .map((usuario) => usuario.id);
@@ -148,7 +144,7 @@ function SeccionAsignacionCaja({ cajaId, rol, label }: SeccionAsignacionCajaProp
 
   const handleAsignarRango = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!RANGO_REGEX.test(rangoInicio) || !RANGO_REGEX.test(rangoFin)) {
+    if (validCaja(rangoInicio) !== null || validCaja(rangoFin) !== null) {
       setRangoError('El rango debe tener el formato 000C000000');
       return;
     }
@@ -280,7 +276,7 @@ export default function CajasPage() {
       void queryClient.invalidateQueries({ queryKey: ['modulos-caja', 'detalle', mid] });
       void queryClient.invalidateQueries({ queryKey: ['modulos-caja', 'list', id] });
     },
-    onError: (error) => toast.error(getErrorMessage(error)),
+    onError: (error) => toast.error(getApiErrorMessage(error)),
   });
 
   const caja = cajaQuery.data;

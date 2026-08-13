@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import axios from 'axios';
 import { ArrowLeft, CheckCircle2, Pencil, Plus, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import {
@@ -16,7 +15,8 @@ import {
   Table,
   type Column,
 } from '@/components/ui';
-import { fuidApi, modulosCajaApi } from '@/lib/api';
+import { fuidApi, getApiErrorMessage, modulosCajaApi } from '@/lib/api';
+import { required } from '@/lib/validation';
 import { useAuthStore } from '@/stores/authStore';
 import { SUGGESTION_FIELDS, type DataRow, type FuidDato, type SessionUser } from '@/types';
 
@@ -113,13 +113,6 @@ const EMPTY_FORM: FuidFormValues = {
   asunto_2: '',
   asunto_3: '',
 };
-
-function getErrorMessage(error: unknown): string {
-  if (axios.isAxiosError<{ message?: string; error?: string }>(error)) {
-    return error.response?.data?.message ?? error.response?.data?.error ?? 'Error en el servidor';
-  }
-  return 'Error en el servidor';
-}
 
 function useDebouncedValue<T>(value: T, delay: number): T {
   const [debounced, setDebounced] = useState(value);
@@ -310,7 +303,7 @@ function FuidFormModal({ open, cajaId, editing, defaultNOrden, onClose }: FuidFo
       onClose();
       void queryClient.invalidateQueries({ queryKey: ['fuiddatosreal', 'list'] });
     },
-    onError: (error) => toast.error(getErrorMessage(error)),
+    onError: (error) => toast.error(getApiErrorMessage(error)),
   });
 
   const updateMutation = useMutation({
@@ -320,7 +313,7 @@ function FuidFormModal({ open, cajaId, editing, defaultNOrden, onClose }: FuidFo
       onClose();
       void queryClient.invalidateQueries({ queryKey: ['fuiddatosreal', 'list'] });
     },
-    onError: (error) => toast.error(getErrorMessage(error)),
+    onError: (error) => toast.error(getApiErrorMessage(error)),
   });
 
   const isSaving = createMutation.isPending || updateMutation.isPending;
@@ -328,8 +321,9 @@ function FuidFormModal({ open, cajaId, editing, defaultNOrden, onClose }: FuidFo
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const nextErrors: Partial<Record<keyof FuidFormValues, string>> = {};
-    if (!form.upd.trim()) nextErrors.upd = 'El UPD es obligatorio';
-    if (!form.caja.trim()) nextErrors.caja = 'La caja es obligatoria';
+    const updError = required(form.upd, 'El UPD');
+    if (updError) nextErrors.upd = updError;
+    if (!form.caja.trim()) nextErrors.caja = 'La caja es requerida';
     setErrors(nextErrors);
     if (Object.keys(nextErrors).length > 0) return;
 
@@ -634,7 +628,7 @@ export default function DatosPage() {
       setDeleteTarget(null);
       void queryClient.invalidateQueries({ queryKey: ['fuiddatosreal', 'list'] });
     },
-    onError: (error) => toast.error(getErrorMessage(error)),
+    onError: (error) => toast.error(getApiErrorMessage(error)),
   });
 
   const marcarOkMutation = useMutation({
@@ -644,7 +638,7 @@ export default function DatosPage() {
       setSelectedIds(new Set());
       void queryClient.invalidateQueries({ queryKey: ['fuiddatosreal', 'list'] });
     },
-    onError: (error) => toast.error(getErrorMessage(error)),
+    onError: (error) => toast.error(getApiErrorMessage(error)),
   });
 
   const handleMarcarOk = () => {

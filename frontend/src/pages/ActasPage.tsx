@@ -1,7 +1,6 @@
 import { useState, type FormEvent } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import axios from 'axios';
 import { FileText, Pencil, Plus, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import {
@@ -16,11 +15,11 @@ import {
   Table,
   type Column,
 } from '@/components/ui';
-import { modulosCajaApi, type ModuloCajaInput } from '@/lib/api';
+import { getApiErrorMessage, modulosCajaApi, type ModuloCajaInput } from '@/lib/api';
+import { validCaja } from '@/lib/validation';
 import { useAuthStore } from '@/stores/authStore';
 import type { ModuloCaja } from '@/types';
 
-const CAJA_REGEX = /^\d{3}C\d{6}$/;
 const ESTADOS_CAJA = ['EN PROCESO', 'FINALIZADO'] as const;
 
 interface CajaForm {
@@ -46,13 +45,6 @@ const EMPTY_CAJA_FORM: CajaForm = {
   fecha_trans_caja: '',
   estado_caja: 'EN PROCESO',
 };
-
-function getErrorMessage(error: unknown): string {
-  if (axios.isAxiosError<{ message?: string }>(error)) {
-    return error.response?.data?.message ?? 'Error en el servidor';
-  }
-  return 'Error en el servidor';
-}
 
 function EstadoBadge({ estado }: { estado: string }) {
   const color = estado === 'FINALIZADO' ? 'green' : estado === 'EN PROCESO' ? 'amber' : 'gray';
@@ -94,7 +86,7 @@ export default function ActasPage() {
       setModalOpen(false);
       void queryClient.invalidateQueries({ queryKey: ['modulos-caja', 'list', id] });
     },
-    onError: (error) => toast.error(getErrorMessage(error)),
+    onError: (error) => toast.error(getApiErrorMessage(error)),
   });
 
   const updateMutation = useMutation({
@@ -105,7 +97,7 @@ export default function ActasPage() {
       setModalOpen(false);
       void queryClient.invalidateQueries({ queryKey: ['modulos-caja', 'list', id] });
     },
-    onError: (error) => toast.error(getErrorMessage(error)),
+    onError: (error) => toast.error(getApiErrorMessage(error)),
   });
 
   const deleteMutation = useMutation({
@@ -115,7 +107,7 @@ export default function ActasPage() {
       setDeleteTarget(null);
       void queryClient.invalidateQueries({ queryKey: ['modulos-caja', 'list', id] });
     },
-    onError: (error) => toast.error(getErrorMessage(error)),
+    onError: (error) => toast.error(getApiErrorMessage(error)),
   });
 
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
@@ -123,20 +115,22 @@ export default function ActasPage() {
     const nextErrors: Partial<Record<keyof CajaForm, string>> = {};
 
     if (!cajaForm.caja_modulo.trim()) {
-      nextErrors.caja_modulo = 'El código de la caja es obligatorio';
-    } else if (!CAJA_REGEX.test(cajaForm.caja_modulo.trim())) {
-      nextErrors.caja_modulo = 'Formato inválido. Use 000C000000';
+      nextErrors.caja_modulo = 'El número de caja es requerido';
+    } else {
+      const cajaError = validCaja(cajaForm.caja_modulo);
+      if (cajaError) nextErrors.caja_modulo = cajaError;
     }
     if (!cajaForm.entidad_remitente_caja.trim())
-      nextErrors.entidad_remitente_caja = 'La entidad remitente es obligatoria';
+      nextErrors.entidad_remitente_caja = 'La entidad remitente es requerida';
     if (!cajaForm.entidad_productora_caja.trim())
-      nextErrors.entidad_productora_caja = 'La entidad productora es obligatoria';
+      nextErrors.entidad_productora_caja = 'La entidad productora es requerida';
     if (!cajaForm.unidad_administrativa_caja.trim())
-      nextErrors.unidad_administrativa_caja = 'La unidad administrativa es obligatoria';
+      nextErrors.unidad_administrativa_caja = 'La unidad administrativa es requerida';
     if (!cajaForm.oficina_productora_caja.trim())
-      nextErrors.oficina_productora_caja = 'La oficina productora es obligatoria';
-    if (!cajaForm.objeto_caja.trim()) nextErrors.objeto_caja = 'El objeto es obligatorio';
-    if (!cajaForm.acta_trans_caja.trim()) nextErrors.acta_trans_caja = 'El acta de transferencia es obligatoria';
+      nextErrors.oficina_productora_caja = 'La oficina productora es requerida';
+    if (!cajaForm.objeto_caja.trim()) nextErrors.objeto_caja = 'El objeto es requerido';
+    if (!cajaForm.acta_trans_caja.trim())
+      nextErrors.acta_trans_caja = 'El acta de transferencia es requerida';
 
     setCajaErrors(nextErrors);
     if (Object.keys(nextErrors).length > 0) return;

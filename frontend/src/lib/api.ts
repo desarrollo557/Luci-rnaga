@@ -36,6 +36,47 @@ api.interceptors.response.use(
   },
 );
 
+interface ApiErrorDetail {
+  field?: string;
+  message?: string;
+}
+
+interface ApiErrorBody {
+  error?: string;
+  message?: string;
+  details?: ApiErrorDetail[];
+}
+
+/**
+ * Extrae un mensaje legible a partir de un error de API. Prioriza los detalles
+ * de validación del backend, luego el mensaje general y por último un fallback.
+ * Nunca devuelve una cadena vacía.
+ */
+export function getApiErrorMessage(error: unknown): string {
+  if (axios.isAxiosError(error)) {
+    if (!error.response) {
+      return 'Error de conexión. Inténtalo de nuevo.';
+    }
+    const data: unknown = error.response.data;
+    if (typeof data === 'string' && data.trim() !== '') {
+      return data;
+    }
+    if (typeof data === 'object' && data !== null) {
+      const body = data as ApiErrorBody;
+      if (Array.isArray(body.details) && body.details.length > 0) {
+        const parts = body.details
+          .map((detail) => (detail?.field ? `${detail.field}: ${detail.message}` : detail?.message))
+          .filter((part): part is string => Boolean(part));
+        if (parts.length > 0) return parts.join(', ');
+      }
+      if (body.error) return body.error;
+      if (body.message) return body.message;
+    }
+    return 'Error en el servidor';
+  }
+  return 'Error en el servidor';
+}
+
 export interface UserInput {
   cc: string;
   nombre: string;

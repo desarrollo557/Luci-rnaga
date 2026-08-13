@@ -1,7 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import axios from 'axios';
 import { FileText, Pencil, Plus, Trash2, Users } from 'lucide-react';
 import { toast } from 'sonner';
 import {
@@ -18,6 +17,7 @@ import {
   type Column,
 } from '@/components/ui';
 import {
+  getApiErrorMessage,
   modulosClienteApi,
   subModulosApi,
   usersApi,
@@ -53,13 +53,6 @@ const EMPTY_MODULO_FORM: ModuloClienteForm = {
   acta_transferencia_modulo: '',
   fecha_trans_modulo: '',
 };
-
-function getErrorMessage(error: unknown): string {
-  if (axios.isAxiosError<{ message?: string }>(error)) {
-    return error.response?.data?.message ?? 'Error en el servidor';
-  }
-  return 'Error en el servidor';
-}
 
 function CajasCount({ moduloId }: { moduloId: number }) {
   const cajasQuery = useQuery({
@@ -109,7 +102,7 @@ function SeccionAsignacion({
       toast.success('Usuarios asignados correctamente');
       void queryClient.invalidateQueries({ queryKey });
     },
-    onError: (error) => toast.error(getErrorMessage(error)),
+    onError: (error) => toast.error(getApiErrorMessage(error)),
   });
 
   const eliminarMutation = useMutation({
@@ -119,7 +112,7 @@ function SeccionAsignacion({
       toast.success('Usuarios eliminados correctamente');
       void queryClient.invalidateQueries({ queryKey });
     },
-    onError: (error) => toast.error(getErrorMessage(error)),
+    onError: (error) => toast.error(getApiErrorMessage(error)),
   });
 
   const asignadosIds = new Set((asignadosQuery.data ?? []).map((usuario) => usuario.id));
@@ -248,7 +241,7 @@ export default function ClientesPage() {
       setSubModuloModalOpen(false);
       void queryClient.invalidateQueries({ queryKey: ['sub-modulos'] });
     },
-    onError: (error) => toast.error(getErrorMessage(error)),
+    onError: (error) => toast.error(getApiErrorMessage(error)),
   });
 
   const createModuloMutation = useMutation({
@@ -258,7 +251,7 @@ export default function ClientesPage() {
       setModuloModalOpen(false);
       void queryClient.invalidateQueries({ queryKey: ['modulos-cliente', subModuloId] });
     },
-    onError: (error) => toast.error(getErrorMessage(error)),
+    onError: (error) => toast.error(getApiErrorMessage(error)),
   });
 
   const updateModuloMutation = useMutation({
@@ -269,7 +262,7 @@ export default function ClientesPage() {
       setModuloModalOpen(false);
       void queryClient.invalidateQueries({ queryKey: ['modulos-cliente', subModuloId] });
     },
-    onError: (error) => toast.error(getErrorMessage(error)),
+    onError: (error) => toast.error(getApiErrorMessage(error)),
   });
 
   const deleteModuloMutation = useMutation({
@@ -279,16 +272,16 @@ export default function ClientesPage() {
       setDeleteTarget(null);
       void queryClient.invalidateQueries({ queryKey: ['modulos-cliente', subModuloId] });
     },
-    onError: (error) => toast.error(getErrorMessage(error)),
+    onError: (error) => toast.error(getApiErrorMessage(error)),
   });
 
   const handleSubModuloSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const nextErrors: Partial<Record<keyof SubModuloForm, string>> = {};
-    if (!subModuloForm.codigo.trim()) nextErrors.codigo = 'El código es obligatorio';
+    if (!subModuloForm.codigo.trim()) nextErrors.codigo = 'El código es requerido';
     if (!subModuloForm.entidad_remitente.trim())
-      nextErrors.entidad_remitente = 'La entidad remitente es obligatoria';
-    if (!subModuloForm.sede_submodulos.trim()) nextErrors.sede_submodulos = 'La sede es obligatoria';
+      nextErrors.entidad_remitente = 'La entidad remitente es requerida';
+    if (!subModuloForm.sede_submodulos.trim()) nextErrors.sede_submodulos = 'La sede es requerida';
     setSubModuloErrors(nextErrors);
     if (Object.keys(nextErrors).length > 0) return;
 
@@ -302,11 +295,11 @@ export default function ClientesPage() {
   const handleModuloSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const nextErrors: Partial<Record<keyof ModuloClienteForm, string>> = {};
-    if (!moduloForm.codigo.trim()) nextErrors.codigo = 'El código es obligatorio';
+    if (!moduloForm.codigo.trim()) nextErrors.codigo = 'El código es requerido';
     if (!moduloForm.entidad_remitente.trim())
-      nextErrors.entidad_remitente = 'La entidad remitente es obligatoria';
+      nextErrors.entidad_remitente = 'La entidad remitente es requerida';
     if (!moduloForm.acta_transferencia_modulo.trim())
-      nextErrors.acta_transferencia_modulo = 'El acta de transferencia es obligatoria';
+      nextErrors.acta_transferencia_modulo = 'El acta de transferencia es requerida';
     setModuloErrors(nextErrors);
     if (Object.keys(nextErrors).length > 0) return;
 
