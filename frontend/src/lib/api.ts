@@ -1,6 +1,7 @@
 import axios from 'axios';
 import type {
   DataRow,
+  FuidConEstado,
   FuidDato,
   Historial,
   Inventario,
@@ -9,6 +10,7 @@ import type {
   ModuloCliente,
   Role,
   SessionUser,
+  SubModulo,
   User,
 } from '@/types';
 
@@ -34,6 +36,61 @@ api.interceptors.response.use(
   },
 );
 
+export interface UserInput {
+  cc: string;
+  nombre: string;
+  contrasena: string;
+  rol: Role;
+  sede: string;
+}
+
+export interface SubModuloInput {
+  codigo: string;
+  entidad_remitente: string;
+  sede_submodulos: string;
+}
+
+export interface ModuloClienteInput {
+  codigo: string;
+  entidad_remitente: string;
+  acta_transferencia_modulo: string;
+  fecha_trans_modulo: string | null;
+  id_submodulo: number;
+}
+
+export type RolAsignacion = 'tecnica' | 'calidad';
+
+export interface UsuarioAsignado {
+  id: number;
+  nombre: string;
+  sede: string | null;
+}
+
+export interface ModuloCajaInput {
+  caja_modulo: string;
+  entidad_remitente_caja: string;
+  acta_trans_caja: string;
+  fecha_trans_caja: string | null;
+  id_modulo_caja: number;
+  entidad_productora_caja: string;
+  unidad_administrativa_caja: string;
+  oficina_productora_caja: string;
+  objeto_caja: string;
+  estado_caja: string;
+}
+
+export interface AsignacionCajaInput {
+  modulo_id: number;
+  usuarios: number[];
+}
+
+export interface AsignacionCajaRangoInput {
+  modulo_id: number;
+  usuarios: number[];
+  rango_inicio: string;
+  rango_fin: string;
+}
+
 export const authApi = {
   login: (cc: string, contrasena: string) =>
     api.post<LoginResponse>('/login', { cc, contrasena }),
@@ -45,27 +102,43 @@ export const authApi = {
 export const usersApi = {
   list: () => api.get<User[]>('/users'),
   get: (cc: string) => api.get<User>(`/users/${cc}`),
-  create: (data: User) => api.post<User>('/users', data),
-  update: (cc: string, data: Partial<User>) => api.put<User>(`/users/${cc}`, data),
+  create: (data: UserInput) => api.post<User>('/users', data),
+  update: (cc: string, data: Partial<UserInput>) => api.put<User>(`/users/${cc}`, data),
   remove: (cc: string) => api.delete(`/users/${cc}`),
   byRol: (rol: Role) => api.get<User[]>(`/usuarios/${rol}`),
 };
 
 export const modulosClienteApi = {
-  list: () => api.get<ModuloCliente[]>('/moduloscliente'),
+  list: (subModuloId?: string | number) =>
+    api.get<ModuloCliente[]>('/moduloscliente', {
+      params: subModuloId ? { subModuloId } : undefined,
+    }),
   get: (moduloId: string | number) => api.get<ModuloCliente>(`/moduloscliente/${moduloId}`),
-  create: (data: DataRow) => api.post<ModuloCliente>('/moduloscliente', data),
-  update: (moduloId: string | number, data: DataRow) =>
+  create: (data: ModuloClienteInput) => api.post<ModuloCliente>('/moduloscliente', data),
+  update: (moduloId: string | number, data: ModuloClienteInput) =>
     api.put<ModuloCliente>(`/moduloscliente/${moduloId}`, data),
   remove: (moduloId: string | number) => api.delete(`/moduloscliente/${moduloId}`),
-  usuarios: (moduloId: string | number) => api.get<User[]>(`/moduloscliente/${moduloId}/usuarios`),
-  countCajas: () => api.get<{ count: number }>('/moduloscliente/count_cajas'),
+  usuarios: (moduloId: string | number, rol?: RolAsignacion) =>
+    api.get<UsuarioAsignado[]>(`/moduloscliente/${moduloId}/usuarios`, {
+      params: rol ? { rol } : undefined,
+    }),
+  agregarUsuarios: (moduloId: string | number, rol: RolAsignacion, data: { usuarios: number[] }) =>
+    api.post(`/moduloscliente/${moduloId}/agregar`, data, { params: { rol } }),
+  eliminarUsuarios: (
+    moduloId: string | number,
+    rol: RolAsignacion,
+    data: { usuarios: number[] },
+  ) => api.post(`/moduloscliente/${moduloId}/eliminar`, data, { params: { rol } }),
+  countCajas: (moduloClienteId: string | number) =>
+    api.get<{ total: number }>('/moduloscliente/count_cajas', {
+      params: { modulo_cliente_id: moduloClienteId },
+    }),
 };
 
 export const subModulosApi = {
-  list: () => api.get<ModuloCliente[]>('/sub_modulos'),
-  create: (data: DataRow) => api.post<ModuloCliente>('/sub_modulos', data),
-  update: (id: string | number, data: DataRow) => api.put<ModuloCliente>(`/sub_modulos/${id}`, data),
+  list: () => api.get<SubModulo[]>('/sub_modulos'),
+  create: (data: SubModuloInput) => api.post<SubModulo>('/sub_modulos', data),
+  update: (id: string | number, data: SubModuloInput) => api.put<SubModulo>(`/sub_modulos/${id}`, data),
   remove: (id: string | number) => api.delete(`/sub_modulos/${id}`),
 };
 
@@ -83,25 +156,38 @@ export const asignacionCalidadApi = {
 };
 
 export const modulosCajaApi = {
-  list: () => api.get<ModuloCaja[]>('/modulos_caja'),
+  list: (idModuloCaja: string | number) =>
+    api.get<ModuloCaja[]>('/modulos_caja', {
+      params: { id_modulo_caja: idModuloCaja },
+    }),
   get: (id: string | number) => api.get<ModuloCaja>(`/modulos_caja/${id}`),
-  create: (data: DataRow) => api.post<ModuloCaja>('/modulos_caja', data),
-  update: (id: string | number, data: DataRow) => api.put<ModuloCaja>(`/modulos_caja/${id}`, data),
+  create: (data: ModuloCajaInput) => api.post<ModuloCaja>('/modulos_caja', data),
+  update: (id: string | number, data: Omit<ModuloCajaInput, 'id_modulo_caja'>) =>
+    api.put<ModuloCaja>(`/modulos_caja/${id}`, data),
   remove: (id: string | number) => api.delete(`/modulos_caja/${id}`),
-  usuariosTecnica: (moduloId: string | number) => api.get<User[]>(`/modulos_caja/${moduloId}/usuarios`),
-  usuariosCalidad: (moduloId: string | number) => api.get<User[]>(`/modulos_caja_calidad/${moduloId}/usuarios`),
-  countFuidDatosReal: () => api.get<{ count: number }>('/modulos_caja/count_fuiddatosreal'),
+  cambiarEstado: (id: string | number, estado_caja: string) =>
+    api.patch(`/modulos_caja/${id}/cambiarEstado`, { estado_caja }),
+  usuariosTecnica: (moduloId: string | number) =>
+    api.get<UsuarioAsignado[]>(`/modulos_caja/${moduloId}/usuarios`),
+  usuariosCalidad: (moduloId: string | number) =>
+    api.get<UsuarioAsignado[]>(`/modulos_caja_calidad/${moduloId}/usuarios`),
+  countFuidDatosReal: (cajaModulo: string) =>
+    api.get<{ total: number }>('/modulos_caja/count_fuiddatosreal', {
+      params: { caja_modulo: cajaModulo },
+    }),
 };
 
 export const asignacionCajaTecnicaApi = {
-  asignar: (data: DataRow) => api.post('/asignacion_caja_tecnica', data),
-  eliminar: (moduloId: string | number) => api.post(`/asignacion_caja_tecnica/${moduloId}/eliminar`),
+  asignar: (data: AsignacionCajaInput) => api.post('/asignacion_caja_tecnica', data),
+  eliminar: (moduloId: string | number, usuarios: number[]) =>
+    api.post(`/asignacion_caja_tecnica/${moduloId}/eliminar`, { usuarios }),
 };
 
 export const asignacionCajaCalidadApi = {
-  asignar: (data: DataRow) => api.post('/asignacion_caja_calidad', data),
-  eliminar: (moduloId: string | number) => api.post(`/asignacion_caja_calidad/${moduloId}/eliminar`),
-  asignarRango: (data: DataRow) => api.post('/asignacion_caja_calidad/rango', data),
+  asignar: (data: AsignacionCajaInput) => api.post('/asignacion_caja_calidad', data),
+  eliminar: (moduloId: string | number, usuarios: number[]) =>
+    api.post(`/asignacion_caja_calidad/${moduloId}/eliminar`, { usuarios }),
+  asignarRango: (data: AsignacionCajaRangoInput) => api.post('/asignacion_caja_calidad/rango', data),
 };
 
 export const fuidApi = {
@@ -142,7 +228,7 @@ export const plantillaApi = {
 };
 
 export const reportesApi = {
-  fuidConEstadoCaja: () => api.get<FuidDato[]>('/fuid-con-estado-caja'),
+  fuidConEstadoCaja: () => api.get<FuidConEstado[]>('/fuid-con-estado-caja'),
 };
 
 export default api;
