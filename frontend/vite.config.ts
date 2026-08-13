@@ -17,11 +17,9 @@ export default defineConfig({
         target: 'http://localhost:3000',
         changeOrigin: true,
       },
-      // Auth y rutas legacy que aún no llevan prefijo /api
-      '/login': { target: 'http://localhost:3000', changeOrigin: true },
-      '/logout': { target: 'http://localhost:3000', changeOrigin: true },
-      '/currentUser': { target: 'http://localhost:3000', changeOrigin: true },
-      '/checkAuth': { target: 'http://localhost:3000', changeOrigin: true },
+      // Nota: se evita proxyear rutas de cliente como /login para permitir
+      // el enrutado del cliente (SPA). Todas las llamadas al backend deben
+      // usar el prefijo "/api" (p.ej. /api/login).
     },
   },
 });
