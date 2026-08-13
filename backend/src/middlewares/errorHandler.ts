@@ -20,6 +20,15 @@ function isDuplicateEntryError(err: unknown): err is { code: string } {
   return typeof err === 'object' && err !== null && (err as { code?: unknown }).code === 'ER_DUP_ENTRY';
 }
 
+/** Detecta errores MySQL de violación de llave foránea (referencia inexistente). */
+function isForeignKeyError(err: unknown): err is { code: string; sqlMessage?: string } {
+  return (
+    typeof err === 'object' &&
+    err !== null &&
+    (err as { code?: unknown }).code === 'ER_NO_REFERENCED_ROW_2'
+  );
+}
+
 /** Middleware de errores central. */
 export function errorHandler(err: unknown, _req: Request, res: Response, _next: NextFunction): void {
   if (err instanceof ApiError) {
@@ -35,6 +44,15 @@ export function errorHandler(err: unknown, _req: Request, res: Response, _next: 
 
   if (isDuplicateEntryError(err)) {
     res.status(409).json({ error: 'Registro duplicado. Ya existe un elemento con esos datos.' });
+    return;
+  }
+
+  if (isForeignKeyError(err)) {
+    console.error('Violación de llave foránea:', err.sqlMessage ?? err);
+    res.status(409).json({
+      error:
+        'La referencia no existe. Verifica que el módulo cliente o el usuario seleccionado sea válido.',
+    });
     return;
   }
 

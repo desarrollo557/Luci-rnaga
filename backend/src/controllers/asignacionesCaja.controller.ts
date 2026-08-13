@@ -1,6 +1,44 @@
 import type { Request, Response } from 'express';
 import { query } from '../config/db.js';
 
+/** Valida que la caja exista y devuelve solo los usuarios válidos y no duplicados. */
+async function resolveAsignables(
+  tabla: 'asignacion_caja_tecnica' | 'asignacion_caja_calidad',
+  moduloId: number,
+  usuarios: number[],
+): Promise<{ error: { status: number; message: string } | null; nuevos: number[]; duplicados: number[] }> {
+  const cajas = await query<{ id: number }>('SELECT id FROM modulos_caja WHERE id = ?', [moduloId]);
+  if (cajas.length === 0) {
+    return { error: { status: 404, message: 'La caja especificada no existe' }, nuevos: [], duplicados: [] };
+  }
+
+  const idsUnicos = [...new Set(usuarios.map(Number).filter((n) => Number.isInteger(n)))];
+  if (idsUnicos.length === 0) {
+    return { error: { status: 400, message: 'La lista de usuarios no es válida' }, nuevos: [], duplicados: [] };
+  }
+
+  const existentes = await query<{ id: number }>('SELECT id FROM users WHERE id IN (?)', [idsUnicos]);
+  const existentesSet = new Set(existentes.map((u) => u.id));
+  const inexistentes = idsUnicos.filter((id) => !existentesSet.has(id));
+  if (inexistentes.length > 0) {
+    return {
+      error: { status: 400, message: `Los siguientes usuarios no existen: ${inexistentes.join(', ')}` },
+      nuevos: [],
+      duplicados: [],
+    };
+  }
+
+  const asignados = await query<{ usuario_id: number }>(
+    `SELECT usuario_id FROM ${tabla} WHERE modulo_id = ? AND usuario_id IN (?)`,
+    [moduloId, idsUnicos],
+  );
+  const asignadosSet = new Set(asignados.map((a) => a.usuario_id));
+  const duplicados = idsUnicos.filter((id) => asignadosSet.has(id));
+  const nuevos = idsUnicos.filter((id) => !asignadosSet.has(id));
+
+  return { error: null, nuevos, duplicados };
+}
+
 // ===== Asignación de cajas TÉCNICA =====
 
 export async function assignCajaTecnica(req: Request, res: Response): Promise<void> {
@@ -11,9 +49,24 @@ export async function assignCajaTecnica(req: Request, res: Response): Promise<vo
     return;
   }
 
-  const values = usuarios.map((usuarioId) => [modulo_id, usuarioId]);
+  const { error, nuevos, duplicados } = await resolveAsignables('asignacion_caja_tecnica', modulo_id, usuarios);
+  if (error) {
+    res.status(error.status).json({ message: error.message });
+    return;
+  }
+
+  if (nuevos.length === 0) {
+    res.status(409).json({ message: 'Los usuarios seleccionados ya están asignados a esta caja' });
+    return;
+  }
+
+  const values = nuevos.map((usuarioId) => [modulo_id, usuarioId]);
   await query('INSERT INTO asignacion_caja_tecnica (modulo_id, usuario_id) VALUES ?', [values]);
-  res.json({ message: 'Usuarios asignados correctamente a técnica' });
+  res.json({
+    message: duplicados.length > 0
+      ? `Asignación guardada (${duplicados.length} ya estaban asignados)`
+      : 'Usuarios asignados correctamente a técnica',
+  });
 }
 
 export async function removeCajaTecnica(req: Request, res: Response): Promise<void> {
@@ -39,9 +92,24 @@ export async function assignCajaCalidad(req: Request, res: Response): Promise<vo
     return;
   }
 
-  const values = usuarios.map((usuarioId) => [modulo_id, usuarioId]);
+  const { error, nuevos, duplicados } = await resolveAsignables('asignacion_caja_calidad', modulo_id, usuarios);
+  if (error) {
+    res.status(error.status).json({ message: error.message });
+    return;
+  }
+
+  if (nuevos.length === 0) {
+    res.status(409).json({ message: 'Los usuarios seleccionados ya están asignados a esta caja' });
+    return;
+  }
+
+  const values = nuevos.map((usuarioId) => [modulo_id, usuarioId]);
   await query('INSERT INTO asignacion_caja_calidad (modulo_id, usuario_id) VALUES ?', [values]);
-  res.json({ message: 'Usuarios asignados correctamente a calidad' });
+  res.json({
+    message: duplicados.length > 0
+      ? `Asignación guardada (${duplicados.length} ya estaban asignados)`
+      : 'Usuarios asignados correctamente a calidad',
+  });
 }
 
 export async function removeCajaCalidad(req: Request, res: Response): Promise<void> {

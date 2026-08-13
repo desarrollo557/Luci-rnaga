@@ -40,6 +40,18 @@ export async function listModulosCaja(req: Request, res: Response): Promise<void
   res.json(results);
 }
 
+export async function getModuloCajaById(req: Request, res: Response): Promise<void> {
+  const { id } = req.params;
+  const results = await query<ModuloCaja>('SELECT * FROM modulos_caja WHERE id = ?', [id]);
+
+  if (results.length === 0) {
+    res.status(404).json({ message: 'Módulo de caja no encontrado' });
+    return;
+  }
+
+  res.json(results[0]);
+}
+
 export async function createModuloCaja(req: Request, res: Response): Promise<void> {
   const body = req.body as Partial<ModuloCaja>;
   const {
@@ -59,7 +71,6 @@ export async function createModuloCaja(req: Request, res: Response): Promise<voi
     !caja_modulo ||
     !entidad_remitente_caja ||
     !acta_trans_caja ||
-    !fecha_trans_caja ||
     !id_modulo_caja ||
     !entidad_productora_caja ||
     !unidad_administrativa_caja ||
