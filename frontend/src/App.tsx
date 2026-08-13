@@ -41,11 +41,12 @@ function ProtectedLayout() {
 export default function App() {
   const user = useAuthStore((s) => s.user);
   const loading = useAuthStore((s) => s.loading);
-  const fetchCurrentUser = useAuthStore((s) => s.fetchCurrentUser);
 
   useEffect(() => {
-    void fetchCurrentUser();
-  }, [fetchCurrentUser]);
+    // Se invoca UNA vez al montar la app, sin depender de la referencia de la
+    // acción del store (evita re-disparos en cadena por re-render).
+    void useAuthStore.getState().fetchCurrentUser();
+  }, []);
 
   if (loading) {
     return <FullPageLoader />;

@@ -8,25 +8,16 @@ export default function Login() {
   const [cc, setCc] = useState('');
   const [contrasena, setContrasena] = useState('');
   const [submitting, setSubmitting] = useState(false);
-  const fetchCurrentUser = useAuthStore((s) => s.fetchCurrentUser);
 
+  // App ya consulta /currentUser al montar; aquí solo se redirige si ya hay
+  // sesión activa. NO se vuelve a llamar a fetchCurrentUser (era la fuente
+  // de la llamada duplicada en cadena con el store).
   useEffect(() => {
-    let active = true;
-    const checkSession = async () => {
-      let current = useAuthStore.getState().user;
-      if (!current) {
-        await fetchCurrentUser();
-        current = useAuthStore.getState().user;
-      }
-      if (active && current) {
-        window.location.href = current.rol === 'ADMIN' ? '/admin' : '/clientes';
-      }
-    };
-    void checkSession();
-    return () => {
-      active = false;
-    };
-  }, [fetchCurrentUser]);
+    const current = useAuthStore.getState().user;
+    if (current) {
+      window.location.href = current.rol === 'ADMIN' ? '/admin' : '/clientes';
+    }
+  }, []);
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
