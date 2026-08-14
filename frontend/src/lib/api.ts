@@ -265,6 +265,21 @@ export interface InventarioSaveResponse {
   sync: InventarioSyncOutcome;
 }
 
+export interface ClienteParaInventario {
+  codigo: string;
+  entidad_remitente: string;
+  acta_transferencia_modulo: string;
+  fecha_trans_modulo: string | null;
+}
+
+export interface ClienteParaInventarioResponse {
+  cliente: ClienteParaInventario;
+  cajas: Array<{ caja_modulo: string }>;
+  totalCajas: number;
+  cajaIniciar: string | null;
+  cajaFin: string | null;
+}
+
 export const inventarioApi = {
   list: () => api.get<Inventario[]>('/inventario'),
   get: (id: string | number) => api.get<Inventario>(`/inventario/${id}`),
@@ -272,6 +287,10 @@ export const inventarioApi = {
   update: (id: string | number, data: DataRow) => api.put<InventarioSaveResponse>(`/inventario/${id}`, data),
   remove: (id: string | number) => api.delete(`/inventario/${id}`),
   sync: (id: string | number) => api.post<InventarioSaveResponse>(`/inventario/${id}/sync`),
+  clientesParaInventario: () =>
+    api.get<Array<Pick<ClienteParaInventario, 'codigo' | 'entidad_remitente'>>>('/inventario/clientes'),
+  clienteParaInventario: (codigo: string) =>
+    api.get<ClienteParaInventarioResponse>(`/inventario/clientes/${encodeURIComponent(codigo)}`),
 };
 
 export const historialApi = {

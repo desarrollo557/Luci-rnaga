@@ -3,10 +3,10 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { Pencil, Plus, RefreshCw, RotateCcw, Search, Trash2 } from 'lucide-react';
 import { Badge, Button, ConfirmDialog, DatePicker, Input, Modal, PageHeader, Select, Table, type Column } from '@/components/ui';
-import { getApiErrorMessage, inventarioApi, modulosCajaApi, modulosClienteApi } from '@/lib/api';
+import { getApiErrorMessage, inventarioApi } from '@/lib/api';
 import { cn } from '@/lib/cn';
 import { invalidateDomain } from '@/lib/queryInvalidation';
-import type { DataRow, Inventario, ModuloCliente } from '@/types';
+import type { DataRow, Inventario } from '@/types';
 import { useAuthStore } from '@/stores/authStore';
 
 const ESTADOS_INVENTARIO = ['PENDIENTE', 'EN PROCESO', 'FINALIZADO'];
@@ -112,20 +112,16 @@ export default function InventarioPage() {
     refetchInterval: 60_000,
   });
 
-  const { data: modulosClientes = [] } = useQuery({
-    queryKey: ['moduloscliente'],
-    queryFn: async () => (await modulosClienteApi.list()).data,
+  const { data: clientesParaInventario = [] } = useQuery({
+    queryKey: ['inventario-clientes'],
+    queryFn: async () => (await inventarioApi.clientesParaInventario()).data,
   });
 
   const clientOptions = useMemo(() => {
-    const map = new Map<string, ModuloCliente>();
-    for (const m of modulosClientes) {
-      if (m.codigo && !map.has(m.codigo)) map.set(m.codigo, m);
-    }
-    return Array.from(map.values())
+    return clientesParaInventario
       .sort((a, b) => a.codigo.localeCompare(b.codigo))
-      .map((m) => ({ value: m.codigo, label: `${m.codigo} — ${m.entidad_remitente}` }));
-  }, [modulosClientes]);
+      .map((c) => ({ value: c.codigo, label: `${c.codigo} — ${c.entidad_remitente}` }));
+  }, [clientesParaInventario]);
 
   const selectOptions = useMemo(() => {
     const options = [...clientOptions];
@@ -138,30 +134,23 @@ export default function InventarioPage() {
 
   const handleClientCodeChange = async (codigo: string) => {
     setForm((prev) => ({ ...prev, CODIGO_DEL_CLIENTE: codigo }));
-    const cliente = modulosClientes.find((m) => m.codigo === codigo);
-    if (!cliente) return;
+    if (!codigo) return;
     setCargandoCliente(true);
     try {
-      const fecha = cliente.fecha_trans_modulo
-        ? new Date(cliente.fecha_trans_modulo).toISOString().slice(0, 10)
+      const { data: pkg } = await inventarioApi.clienteParaInventario(codigo);
+      const fecha = pkg.cliente.fecha_trans_modulo
+        ? new Date(pkg.cliente.fecha_trans_modulo).toISOString().slice(0, 10)
         : '';
-      const next: InventarioForm = {
-        ...form,
+      setForm((prev) => ({
+        ...prev,
         CODIGO_DEL_CLIENTE: codigo,
-        CLIENTE: cliente.entidad_remitente ?? '',
-        No_ACTA: cliente.acta_transferencia_modulo ?? '',
+        CLIENTE: pkg.cliente.entidad_remitente ?? '',
+        No_ACTA: pkg.cliente.acta_transferencia_modulo ?? '',
         FECHA_TRANSFERENCIA: fecha,
-      };
-      const cajas = (await modulosCajaApi.list(cliente.id)).data ?? [];
-      if (cajas.length > 0) {
-        const numeros = cajas.map((c) => c.caja_modulo).filter(Boolean) as string[];
-        next.TOTAL_CAJAS = String(cajas.length);
-        if (numeros.length > 0) {
-          next.CAJA_INICIAR = numeros.reduce((a, b) => (a < b ? a : b));
-          next.CAJ_FIN = numeros.reduce((a, b) => (a > b ? a : b));
-        }
-      }
-      setForm(next);
+        TOTAL_CAJAS: pkg.totalCajas ? String(pkg.totalCajas) : '',
+        CAJA_INICIAR: pkg.cajaIniciar ?? '',
+        CAJ_FIN: pkg.cajaFin ?? '',
+      }));
     } catch {
       toast.error('No se pudo cargar la información del cliente');
     } finally {
