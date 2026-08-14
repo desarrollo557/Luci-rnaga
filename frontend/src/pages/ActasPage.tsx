@@ -177,12 +177,20 @@ export default function ActasPage() {
     setEditingCaja(null);
     const codigoModulo = moduloQuery.data?.codigo ?? '';
     const actaModulo = moduloQuery.data?.acta_transferencia_modulo ?? '';
+    // Entidades de referencia: se toman de una caja existente del módulo, así la
+    // nueva caja hereda los mismos valores que muestra la tabla de actas.
+    const cajaReferencia = cajasQuery.data?.find(
+      (c) => c.entidad_remitente_caja?.trim() || c.entidad_productora_caja?.trim(),
+    );
     // Prefijo de caja: los 3 primeros dígitos del código del módulo + "C" (ej. 015C).
     const prefijoCaja = /^\d{1,3}$/.test(codigoModulo) ? `${codigoModulo.padStart(3, '0')}C` : '';
     setCajaForm({
       ...EMPTY_CAJA_FORM,
       caja_modulo: prefijoCaja,
       acta_trans_caja: actaModulo,
+      entidad_remitente_caja:
+        cajaReferencia?.entidad_remitente_caja ?? moduloQuery.data?.entidad_remitente ?? '',
+      entidad_productora_caja: cajaReferencia?.entidad_productora_caja ?? '',
     });
     setCajaErrors({});
     setModalOpen(true);
