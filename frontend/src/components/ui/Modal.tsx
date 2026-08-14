@@ -41,21 +41,28 @@ export function Modal({ open, onClose, title, children, footer, size = 'md' }: M
 
   return createPortal(
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-silver-900/50" onClick={onClose} aria-hidden="true" />
+      <div
+        className="absolute inset-0 bg-silver-900/60 backdrop-blur-sm animate-[modal-overlay-in_0.2s_ease-out]"
+        onClick={onClose}
+        aria-hidden="true"
+      />
       <div
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
-        className={cn('relative z-10 w-full rounded-xl bg-white shadow-xl', sizeClasses[size])}
+        className={cn(
+          'relative z-10 w-full rounded-xl bg-white shadow-2xl ring-1 ring-silver-900/5 animate-[modal-panel-in_0.25s_ease-out]',
+          sizeClasses[size],
+        )}
       >
-        <div className="flex items-center justify-between border-b border-silver-200 px-5 py-4">
+        <div className="flex items-center justify-between border-b border-silver-100 px-5 py-4">
           <h2 id={titleId} className="text-base font-semibold text-silver-800">
             {title}
           </h2>
           <button
             type="button"
             onClick={onClose}
-            className="rounded-lg p-1.5 text-silver-400 transition-colors hover:bg-silver-100 hover:text-silver-600"
+            className="rounded-lg p-1.5 text-silver-400 transition-all duration-200 hover:rotate-90 hover:bg-silver-100 hover:text-silver-600"
             aria-label="Cerrar"
           >
             <X className="size-5" />

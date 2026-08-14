@@ -25,8 +25,8 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(function Input(
         ref={ref}
         id={inputId}
         className={cn(
-          'h-10 w-full rounded-lg border border-silver-300 bg-white px-3 text-sm text-silver-800 shadow-sm transition-colors placeholder:text-silver-400 focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500/30 disabled:cursor-not-allowed disabled:bg-silver-50',
-          error && 'border-red-400 focus:border-red-500 focus:ring-red-500/30',
+          'h-10 w-full rounded-lg border border-silver-300 bg-white px-3 text-sm text-silver-800 shadow-sm transition-all duration-200 ease-in-out placeholder:text-silver-400 hover:border-silver-400 focus:border-primary-500 focus:outline-none focus:ring-4 focus:ring-primary-500/15 hover:shadow disabled:cursor-not-allowed disabled:bg-silver-50 [&:-webkit-autofill]:shadow-[inset_0_0_0_1000px_#fff] [&:-webkit-autofill]:[-webkit-text-fill-color:#40464f]',
+          error && 'border-red-400 focus:border-red-500 focus:ring-red-500/15',
           className,
         )}
         aria-invalid={error ? true : undefined}

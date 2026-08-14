@@ -13,11 +13,11 @@ export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 
 const variantClasses: Record<Variant, string> = {
   primary:
-    'bg-primary-600 text-white hover:bg-primary-700 focus-visible:ring-primary-500',
+    'bg-gradient-to-b from-primary-600 to-primary-700 text-white shadow-sm shadow-primary-600/30 hover:from-primary-500 hover:to-primary-600 hover:shadow-md hover:shadow-primary-600/30 focus-visible:ring-primary-500',
   secondary:
-    'border border-silver-300 bg-white text-silver-700 hover:bg-silver-50 focus-visible:ring-silver-400',
+    'border border-silver-300 bg-white text-silver-700 shadow-sm hover:border-silver-400 hover:bg-silver-50 hover:text-silver-900 focus-visible:ring-silver-400',
   danger:
-    'bg-red-600 text-white hover:bg-red-700 focus-visible:ring-red-500',
+    'bg-gradient-to-b from-red-600 to-red-700 text-white shadow-sm shadow-red-600/30 hover:from-red-500 hover:to-red-600 hover:shadow-md hover:shadow-red-600/30 focus-visible:ring-red-500',
   ghost:
     'text-silver-600 hover:bg-silver-100 hover:text-silver-900 focus-visible:ring-silver-400',
 };
@@ -35,7 +35,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
     <button
       ref={ref}
       className={cn(
-        'inline-flex items-center justify-center gap-2 rounded-lg font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60',
+        'inline-flex items-center justify-center gap-2 rounded-lg font-medium transition-all duration-200 ease-in-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60 disabled:active:scale-100',
         variantClasses[variant],
         sizeClasses[size],
         className,
