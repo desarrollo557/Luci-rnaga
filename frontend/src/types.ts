@@ -125,6 +125,11 @@ export interface Inventario {
   FIN_INVENTARIO: string | null;
   ESTADO_ENTREGA: string | null;
   MES_ENTREGA_PACA: string | null;
+  FECHA_CREACION: string | null;
+  ZOHO_FILE_ID: string | null;
+  ZOHO_SYNC_STATE: string | null;
+  ZOHO_SYNC_AT: string | null;
+  ZOHO_SYNC_ERROR: string | null;
 }
 
 export interface Historial {

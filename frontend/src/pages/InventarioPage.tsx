@@ -1,9 +1,9 @@
 import { useMemo, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { Pencil, Plus, RotateCcw, Search, Trash2 } from 'lucide-react';
+import { Pencil, Plus, RefreshCw, RotateCcw, Search, Trash2 } from 'lucide-react';
 import { Badge, Button, ConfirmDialog, DatePicker, Input, Modal, PageHeader, Select, Table, type Column } from '@/components/ui';
-import { inventarioApi } from '@/lib/api';
+import { inventarioApi, getApiErrorMessage } from '@/lib/api';
 import { cn } from '@/lib/cn';
 import { invalidateDomain } from '@/lib/queryInvalidation';
 import type { DataRow, Inventario } from '@/types';
@@ -162,18 +162,24 @@ export default function InventarioPage() {
   const saveMutation = useMutation({
     mutationFn: async (payload: { id: number | null; data: DataRow }) => {
       if (payload.id == null) {
-        await inventarioApi.create(payload.data);
-      } else {
-        await inventarioApi.update(payload.id, payload.data);
+        return await inventarioApi.create(payload.data);
       }
+      return await inventarioApi.update(payload.id, payload.data);
     },
-    onSuccess: async () => {
-      void invalidateDomain(queryClient, 'inventario');
-      toast.success(editing ? 'Registro actualizado correctamente' : 'Registro creado correctamente');
+    onSuccess: async (resp) => {
+      await queryClient.invalidateQueries({ queryKey: ['inventario'] });
+      const sync = resp.data?.sync;
+      if (sync?.state === 'SUBIDO') {
+        toast.success(editing ? 'Registro actualizado. Documento subido a WorkDrive' : 'Registro creado. Documento subido a WorkDrive');
+      } else if (sync?.state === 'ERROR') {
+        toast.error('Registro guardado, pero falló la subida a WorkDrive: ' + (sync.error ?? 'Error desconocido'));
+      } else {
+        toast.success(editing ? 'Registro actualizado correctamente' : 'Registro creado correctamente');
+      }
       setModalOpen(false);
     },
-    onError: () => {
-      toast.error('Error al guardar el registro');
+    onError: (error) => {
+      toast.error(getApiErrorMessage(error));
     },
   });
 
@@ -190,6 +196,22 @@ export default function InventarioPage() {
       toast.error('Error al eliminar el registro');
     },
   });
+
+  const retryMutation = useMutation({
+    mutationFn: (id: number) => inventarioApi.sync(id),
+    onSuccess: async (resp) => {
+      await queryClient.invalidateQueries({ queryKey: ['inventario'] });
+      const sync = resp.data.sync;
+      if (sync.state === 'SUBIDO') {
+        toast.success('Documento subido a WorkDrive');
+      } else {
+        toast.error('Error al subir: ' + (sync.error ?? 'desconocido'));
+      }
+    },
+    onError: () => toast.error('Error al reintentar la subida a WorkDrive'),
+  });
+
+  const retrySync = (row: Inventario) => retryMutation.mutate(row.ITEMS);
 
   const openCreate = () => {
     setEditing(null);
@@ -245,6 +267,35 @@ export default function InventarioPage() {
         const estadoRow = row.ESTADO_ENTREGA;
         const color = estadoRow === 'ENTREGADO' ? 'green' : estadoRow === 'EN PROCESO' ? 'amber' : 'gray';
         return <Badge color={color}>{estadoRow ?? 'PENDIENTE'}</Badge>;
+      },
+    },
+    {
+      key: 'zoho',
+      header: 'WorkDrive',
+      render: (row) => {
+        const state = row.ZOHO_SYNC_STATE ?? 'PENDIENTE';
+        if (state === 'SUBIDO') {
+          return <Badge color="green">Subido</Badge>;
+        }
+        if (state === 'ERROR') {
+          return (
+            <div className="flex items-center gap-1">
+              <span title={row.ZOHO_SYNC_ERROR ?? undefined}>
+                <Badge color="red">Error</Badge>
+              </span>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => retrySync(row)}
+                aria-label="Reintentar subida a WorkDrive"
+                className="text-silver-500 hover:text-primary-600"
+              >
+                <RefreshCw className="size-4" />
+              </Button>
+            </div>
+          );
+        }
+        return <Badge color="gray">Pendiente</Badge>;
       },
     },
     ...(canEdit

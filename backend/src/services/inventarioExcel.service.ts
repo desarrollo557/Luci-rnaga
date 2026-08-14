@@ -67,8 +67,13 @@ export async function buildInventarioExcel(data: Record<string, unknown>): Promi
   return Buffer.from(buf);
 }
 
-/** Safe filename: Inventario_<id>_<codigo>.xlsx (no invalid chars, spaces -> _). */
-export function inventarioFilename(id: number | string, codigoCliente: unknown): string {
-  const codigo = String(codigoCliente ?? 'sin_codigo').replace(/[\\/:*?"<>|\s]+/g, '_');
-  return `Inventario_${id}_${codigo}.xlsx`;
+/** Safe filename: Inventario_<cliente>_<codigo>_<YYYY-MM-DD>.xlsx (no invalid chars, spaces -> _). */
+export function inventarioFilename(cliente: unknown, codigoCliente: unknown, fechaCreacion: unknown): string {
+  const clean = (v: unknown, fallback: string) =>
+    String(v ?? fallback).replace(/[\\/:*?"<>|\s]+/g, '_').slice(0, 80);
+  const clienteName = clean(cliente, 'sin_cliente');
+  const codigo = clean(codigoCliente, 'sin_codigo');
+  const raw = fechaCreacion instanceof Date ? fechaCreacion.toISOString() : String(fechaCreacion ?? new Date().toISOString());
+  const fecha = raw.slice(0, 10);
+  return `Inventario_${clienteName}_${codigo}_${fecha}.xlsx`;
 }

@@ -252,12 +252,26 @@ export const fuidApi = {
     api.post(`/fuiddatosreal/${caja}/${campo}`, { valor }),
 };
 
+export interface InventarioSyncOutcome {
+  state: 'SUBIDO' | 'ERROR' | 'PENDIENTE';
+  fileId?: string | null;
+  error?: string | null;
+  syncedAt?: string | null;
+}
+
+export interface InventarioSaveResponse {
+  message: string;
+  id: number;
+  sync: InventarioSyncOutcome;
+}
+
 export const inventarioApi = {
   list: () => api.get<Inventario[]>('/inventario'),
   get: (id: string | number) => api.get<Inventario>(`/inventario/${id}`),
-  create: (data: DataRow) => api.post<Inventario>('/inventario', data),
-  update: (id: string | number, data: DataRow) => api.put<Inventario>(`/inventario/${id}`, data),
+  create: (data: DataRow) => api.post<InventarioSaveResponse>('/inventario', data),
+  update: (id: string | number, data: DataRow) => api.put<InventarioSaveResponse>(`/inventario/${id}`, data),
   remove: (id: string | number) => api.delete(`/inventario/${id}`),
+  sync: (id: string | number) => api.post<InventarioSaveResponse>(`/inventario/${id}/sync`),
 };
 
 export const historialApi = {
