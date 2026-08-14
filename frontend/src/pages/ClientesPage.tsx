@@ -8,6 +8,7 @@ import {
   Button,
   Card,
   ConfirmDialog,
+  DatePicker,
   Input,
   Modal,
   PageHeader,
@@ -541,12 +542,11 @@ export default function ClientesPage() {
             error={moduloErrors.acta_transferencia_modulo}
             placeholder="Acta de transferencia"
           />
-          <Input
+          <DatePicker
             label="Fecha de Transferencia"
-            type="date"
             value={moduloForm.fecha_trans_modulo}
-            onChange={(event) =>
-              setModuloForm({ ...moduloForm, fecha_trans_modulo: event.target.value })
+            onChange={(value) =>
+              setModuloForm({ ...moduloForm, fecha_trans_modulo: value })
             }
           />
         </form>

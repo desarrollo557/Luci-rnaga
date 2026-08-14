@@ -7,6 +7,7 @@ import {
   Badge,
   Button,
   ConfirmDialog,
+  DatePicker,
   Input,
   Modal,
   PageHeader,
@@ -349,11 +350,10 @@ export default function ActasPage() {
             error={cajaErrors.acta_trans_caja}
             placeholder={actaModulo || 'Ingrese el número de acta'}
           />
-          <Input
+          <DatePicker
             label="Fecha de Transferencia"
-            type="date"
             value={cajaForm.fecha_trans_caja}
-            onChange={(event) => setCajaForm({ ...cajaForm, fecha_trans_caja: event.target.value })}
+            onChange={(value) => setCajaForm({ ...cajaForm, fecha_trans_caja: value })}
           />
           <Select
             label="Estado"

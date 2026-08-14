@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { Pencil, Plus, Trash2 } from 'lucide-react';
-import { Badge, Button, ConfirmDialog, Input, Modal, PageHeader, Select, Table, type Column } from '@/components/ui';
+import { Badge, Button, ConfirmDialog, DatePicker, Input, Modal, PageHeader, Select, Table, type Column } from '@/components/ui';
 import { inventarioApi } from '@/lib/api';
 import type { DataRow, Inventario } from '@/types';
 import { useAuthStore } from '@/stores/authStore';
@@ -277,11 +277,10 @@ export default function InventarioPage() {
                 value={form.No_ACTA}
                 onChange={(e) => setForm({ ...form, No_ACTA: e.target.value })}
               />
-              <Input
+              <DatePicker
                 label="Fecha Transferencia"
-                type="date"
                 value={form.FECHA_TRANSFERENCIA}
-                onChange={(e) => setForm({ ...form, FECHA_TRANSFERENCIA: e.target.value })}
+                onChange={(value) => setForm({ ...form, FECHA_TRANSFERENCIA: value })}
               />
               <Input
                 label="Anexos"
@@ -346,11 +345,10 @@ export default function InventarioPage() {
           <div>
             <h3 className="mb-3 text-sm font-semibold uppercase tracking-wide text-silver-500">Proceso</h3>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-3">
-              <Input
+              <DatePicker
                 label="Fecha Entrega Custodia"
-                type="date"
                 value={form.FECHA_ENTREGA_CUSTODIA}
-                onChange={(e) => setForm({ ...form, FECHA_ENTREGA_CUSTODIA: e.target.value })}
+                onChange={(value) => setForm({ ...form, FECHA_ENTREGA_CUSTODIA: value })}
               />
               <Input
                 label="Funcionario"
@@ -369,23 +367,20 @@ export default function InventarioPage() {
                 value={form.REGISTROS_PROCESADOS}
                 onChange={(e) => setForm({ ...form, REGISTROS_PROCESADOS: e.target.value })}
               />
-              <Input
+              <DatePicker
                 label="Fecha Entrega"
-                type="date"
                 value={form.FECHA_ENTREGA}
-                onChange={(e) => setForm({ ...form, FECHA_ENTREGA: e.target.value })}
+                onChange={(value) => setForm({ ...form, FECHA_ENTREGA: value })}
               />
-              <Input
+              <DatePicker
                 label="Inicio Inventario"
-                type="date"
                 value={form.INICIO_INVENTARIO}
-                onChange={(e) => setForm({ ...form, INICIO_INVENTARIO: e.target.value })}
+                onChange={(value) => setForm({ ...form, INICIO_INVENTARIO: value })}
               />
-              <Input
+              <DatePicker
                 label="Fin Inventario"
-                type="date"
                 value={form.FIN_INVENTARIO}
-                onChange={(e) => setForm({ ...form, FIN_INVENTARIO: e.target.value })}
+                onChange={(value) => setForm({ ...form, FIN_INVENTARIO: value })}
               />
               <Select
                 label="Estado Entrega"

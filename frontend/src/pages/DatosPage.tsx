@@ -8,6 +8,7 @@ import {
   Button,
   Card,
   ConfirmDialog,
+  DatePicker,
   Input,
   Modal,
   PageHeader,
@@ -371,11 +372,10 @@ function FuidFormModal({ open, cajaId, editing, defaultNOrden, onClose }: FuidFo
         <div className="rounded-lg border border-silver-200 bg-silver-50 p-4">
           <h3 className="text-sm font-semibold text-silver-800">Identificación</h3>
           <div className="mt-3 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            <Input
+            <DatePicker
               label="Fecha del Dato"
-              type="date"
               value={form.fecha_del_dato}
-              onChange={setField('fecha_del_dato')}
+              onChange={updateField('fecha_del_dato')}
             />
             <Input
               label="N° Orden"
@@ -491,17 +491,15 @@ function FuidFormModal({ open, cajaId, editing, defaultNOrden, onClose }: FuidFo
               value={form.numero_doc_hasta}
               onChange={updateField('numero_doc_hasta')}
             />
-            <Input
+            <DatePicker
               label="Fecha Inicial"
-              type="date"
               value={form.fecha_inicial}
-              onChange={setField('fecha_inicial')}
+              onChange={updateField('fecha_inicial')}
             />
-            <Input
+            <DatePicker
               label="Fecha Final"
-              type="date"
               value={form.fecha_final}
-              onChange={setField('fecha_final')}
+              onChange={updateField('fecha_final')}
             />
           </div>
         </div>
@@ -539,11 +537,10 @@ function FuidFormModal({ open, cajaId, editing, defaultNOrden, onClose }: FuidFo
               value={form.nro_acta_transferible}
               onChange={setField('nro_acta_transferible')}
             />
-            <Input
+            <DatePicker
               label="Fecha Transferencia"
-              type="date"
               value={form.fecha_transferencia}
-              onChange={setField('fecha_transferencia')}
+              onChange={updateField('fecha_transferencia')}
             />
             <SuggestionInput
               caja={form.caja}
