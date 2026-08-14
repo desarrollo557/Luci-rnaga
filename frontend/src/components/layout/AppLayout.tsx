@@ -68,7 +68,7 @@ export default function AppLayout() {
     <div className="flex h-screen overflow-hidden bg-silver-100">
       <aside
         className={cn(
-          'fixed inset-y-0 left-0 z-40 flex w-64 flex-col bg-silver-900 transition-transform duration-200',
+          'fixed inset-y-0 left-0 z-40 flex w-64 flex-col bg-silver-900 transition-transform duration-200 md:static',
           sidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0',
           sidebarCollapsed && 'md:hidden',
         )}
