@@ -1,7 +1,19 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { FileText, Pencil, Plus, Trash2, Users } from 'lucide-react';
+import {
+  Building2,
+  Factory,
+  FileText,
+  History,
+  LayoutDashboard,
+  Package,
+  Pencil,
+  Plus,
+  Trash2,
+  Users,
+  type LucideIcon,
+} from 'lucide-react';
 import { toast } from 'sonner';
 import {
   Badge,
@@ -27,6 +39,7 @@ import {
   type SubModuloInput,
 } from '@/lib/api';
 import { useAuthStore } from '@/stores/authStore';
+import { cn } from '@/lib/cn';
 import type { ModuloCliente, Role } from '@/types';
 
 interface SubModuloForm {
@@ -54,6 +67,50 @@ const EMPTY_MODULO_FORM: ModuloClienteForm = {
   acta_transferencia_modulo: '',
   fecha_trans_modulo: '',
 };
+
+interface ProcesoAtajo {
+  label: string;
+  desc: string;
+  icon: LucideIcon;
+  to: string;
+  roles: Role[];
+  accent: string;
+}
+
+const PROCESOS_ATAJOS: ProcesoAtajo[] = [
+  {
+    label: 'Producción',
+    desc: 'Avance de digitación y revisión',
+    icon: Factory,
+    to: '/produccion',
+    roles: ['LIDER', 'CALIDAD'],
+    accent: 'bg-primary-50 text-primary-600',
+  },
+  {
+    label: 'Inventario',
+    desc: 'Control de inventario de cajas',
+    icon: Package,
+    to: '/inventario',
+    roles: ['LIDER', 'CALIDAD'],
+    accent: 'bg-silver-100 text-silver-600',
+  },
+  {
+    label: 'Historial',
+    desc: 'Registro de operaciones',
+    icon: History,
+    to: '/historial',
+    roles: ['LIDER', 'CALIDAD'],
+    accent: 'bg-amber-50 text-amber-600',
+  },
+  {
+    label: 'Administración',
+    desc: 'Usuarios, permisos y roles',
+    icon: LayoutDashboard,
+    to: '/admin',
+    roles: ['ADMIN'],
+    accent: 'bg-primary-50 text-primary-600',
+  },
+];
 
 function CajasCount({ moduloId }: { moduloId: number }) {
   const cajasQuery = useQuery({
@@ -413,7 +470,35 @@ export default function ClientesPage() {
         }
       />
 
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        {PROCESOS_ATAJOS.filter((atajo) => user?.rol && atajo.roles.includes(user.rol)).map((atajo) => {
+          const Icon = atajo.icon;
+          return (
+            <Link key={atajo.to} to={atajo.to}>
+              <Card className="group flex h-full flex-col gap-3 p-5 transition-all hover:-translate-y-0.5 hover:border-primary-300 hover:shadow-md">
+                <div className={cn('flex size-11 items-center justify-center rounded-xl', atajo.accent)}>
+                  <Icon className="size-5" />
+                </div>
+                <div>
+                  <p className="font-semibold text-silver-800 group-hover:text-primary-700">{atajo.label}</p>
+                  <p className="mt-0.5 text-xs text-silver-500">{atajo.desc}</p>
+                </div>
+              </Card>
+            </Link>
+          );
+        })}
+      </div>
+
       <Card>
+        <div className="mb-4 flex items-center gap-3">
+          <div className="flex size-11 items-center justify-center rounded-xl bg-primary-50 text-primary-600">
+            <Building2 className="size-5" />
+          </div>
+          <div>
+            <h3 className="font-semibold text-silver-800">Sub-módulo</h3>
+            <p className="text-xs text-silver-500">Seleccione un sub-módulo para ver sus módulos cliente</p>
+          </div>
+        </div>
         <Select
           label="Sub-módulo"
           placeholder="Seleccione un sub-módulo"
@@ -426,6 +511,7 @@ export default function ClientesPage() {
             const value = event.target.value;
             setSubModuloId(value ? Number(value) : null);
           }}
+          className="h-12 text-base"
         />
       </Card>
 
