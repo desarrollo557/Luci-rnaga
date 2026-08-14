@@ -84,7 +84,7 @@ export const Select = function Select({
     if (disabled) return;
     const rect = triggerRef.current?.getBoundingClientRect();
     if (!rect) return;
-    setPosition({ top: rect.bottom + 8, left: rect.left, width: Math.max(rect.width, 224) });
+    setPosition({ top: rect.bottom + 8, left: rect.left, width: rect.width });
     setOpen(true);
   };
 
@@ -139,9 +139,8 @@ export const Select = function Select({
                 left: position.left,
                 zIndex: 60,
                 width: position.width,
-                maxWidth: 320,
               }}
-              className="max-h-64 min-w-56 overflow-y-auto rounded-xl border border-silver-200 bg-white p-1.5 shadow-2xl ring-1 ring-silver-900/5 animate-[modal-panel-in_0.2s_ease-out]"
+              className="max-h-64 overflow-y-auto rounded-xl border border-silver-200 bg-white p-1.5 shadow-2xl ring-1 ring-silver-900/5 animate-[modal-panel-in_0.2s_ease-out]"
             >
               {options.length === 0 ? (
                 <p className="p-3 text-sm text-silver-500">Sin opciones</p>
