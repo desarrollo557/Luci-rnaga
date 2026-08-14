@@ -17,6 +17,7 @@ import {
   type Column,
 } from '@/components/ui';
 import { getApiErrorMessage, modulosCajaApi, modulosClienteApi, type ModuloCajaInput } from '@/lib/api';
+import { invalidateDomain } from '@/lib/queryInvalidation';
 import { validCaja } from '@/lib/validation';
 import { useAuthStore } from '@/stores/authStore';
 import type { ModuloCaja } from '@/types';
@@ -78,6 +79,7 @@ export default function ActasPage() {
     queryKey: ['modulos-caja', 'list', id],
     queryFn: () => modulosCajaApi.list(id as string).then((res) => res.data),
     enabled: Boolean(id),
+    refetchInterval: 60_000,
   });
 
   const moduloQuery = useQuery({
@@ -98,7 +100,7 @@ export default function ActasPage() {
     onSuccess: () => {
       toast.success('Caja creada correctamente');
       setModalOpen(false);
-      void queryClient.invalidateQueries({ queryKey: ['modulos-caja', 'list', id] });
+      void invalidateDomain(queryClient, 'modulos-caja');
     },
     onError: (error) => toast.error(getApiErrorMessage(error)),
   });
@@ -109,7 +111,7 @@ export default function ActasPage() {
     onSuccess: () => {
       toast.success('Caja actualizada correctamente');
       setModalOpen(false);
-      void queryClient.invalidateQueries({ queryKey: ['modulos-caja', 'list', id] });
+      void invalidateDomain(queryClient, 'modulos-caja');
     },
     onError: (error) => toast.error(getApiErrorMessage(error)),
   });
@@ -119,7 +121,7 @@ export default function ActasPage() {
     onSuccess: () => {
       toast.success('Caja eliminada');
       setDeleteTarget(null);
-      void queryClient.invalidateQueries({ queryKey: ['modulos-caja', 'list', id] });
+      void invalidateDomain(queryClient, 'modulos-caja');
     },
     onError: (error) => toast.error(getApiErrorMessage(error)),
   });

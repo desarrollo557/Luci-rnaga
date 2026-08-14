@@ -13,6 +13,7 @@ import {
   type AsignacionCajaInput,
   type AsignacionCajaRangoInput,
 } from '@/lib/api';
+import { invalidateDomain } from '@/lib/queryInvalidation';
 import { validCaja } from '@/lib/validation';
 import { useAuthStore } from '@/stores/authStore';
 
@@ -65,7 +66,7 @@ function SeccionAsignacionCaja({ cajaId, rol, label }: SeccionAsignacionCajaProp
     },
     onSuccess: () => {
       toast.success('Asignación guardada correctamente');
-      void queryClient.invalidateQueries({ queryKey: ['modulos-caja', 'usuarios', cajaId, rol] });
+      void invalidateDomain(queryClient, 'users');
     },
     onError: (error) => toast.error(getApiErrorMessage(error)),
   });
@@ -77,7 +78,7 @@ function SeccionAsignacionCaja({ cajaId, rol, label }: SeccionAsignacionCajaProp
         : asignacionCajaCalidadApi.eliminar(cajaId, usuarios),
     onSuccess: () => {
       toast.success('Usuarios eliminados correctamente');
-      void queryClient.invalidateQueries({ queryKey: ['modulos-caja', 'usuarios', cajaId, rol] });
+      void invalidateDomain(queryClient, 'users');
     },
     onError: (error) => toast.error(getApiErrorMessage(error)),
   });
@@ -90,7 +91,7 @@ function SeccionAsignacionCaja({ cajaId, rol, label }: SeccionAsignacionCajaProp
       setRangoFin('');
       setRangoUsuarios(new Set());
       setRangoError(null);
-      void queryClient.invalidateQueries({ queryKey: ['modulos-caja', 'usuarios', cajaId, rol] });
+      void invalidateDomain(queryClient, 'users');
     },
     onError: (error) => toast.error(getApiErrorMessage(error)),
   });
@@ -258,7 +259,7 @@ function SeccionAsignacionCaja({ cajaId, rol, label }: SeccionAsignacionCajaProp
 
 export default function CajasPage() {
   const queryClient = useQueryClient();
-  const { id, mid } = useParams<{ id: string; mid: string }>();
+  const { mid } = useParams<{ id: string; mid: string }>();
   const user = useAuthStore((state) => state.user);
   const rol = user?.rol;
   const isManager = rol === 'LIDER' || rol === 'ADMIN';
@@ -274,8 +275,7 @@ export default function CajasPage() {
     mutationFn: (estado: string) => modulosCajaApi.cambiarEstado(mid as string, estado),
     onSuccess: () => {
       toast.success('Estado de la caja actualizado');
-      void queryClient.invalidateQueries({ queryKey: ['modulos-caja', 'detalle', mid] });
-      void queryClient.invalidateQueries({ queryKey: ['modulos-caja', 'list', id] });
+      void invalidateDomain(queryClient, 'modulos-caja');
     },
     onError: (error) => toast.error(getApiErrorMessage(error)),
   });

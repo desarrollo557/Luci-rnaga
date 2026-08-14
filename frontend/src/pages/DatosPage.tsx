@@ -17,6 +17,7 @@ import {
   type Column,
 } from '@/components/ui';
 import { fuidApi, getApiErrorMessage, modulosCajaApi } from '@/lib/api';
+import { invalidateDomain } from '@/lib/queryInvalidation';
 import { required } from '@/lib/validation';
 import { useAuthStore } from '@/stores/authStore';
 import { SUGGESTION_FIELDS, type DataRow, type FuidDato, type SessionUser } from '@/types';
@@ -302,7 +303,7 @@ function FuidFormModal({ open, cajaId, editing, defaultNOrden, onClose }: FuidFo
     onSuccess: () => {
       toast.success('Registro FUID creado correctamente');
       onClose();
-      void queryClient.invalidateQueries({ queryKey: ['fuiddatosreal', 'list'] });
+      void invalidateDomain(queryClient, 'fuiddatosreal');
     },
     onError: (error) => toast.error(getApiErrorMessage(error)),
   });
@@ -312,7 +313,7 @@ function FuidFormModal({ open, cajaId, editing, defaultNOrden, onClose }: FuidFo
     onSuccess: () => {
       toast.success('Registro FUID actualizado correctamente');
       onClose();
-      void queryClient.invalidateQueries({ queryKey: ['fuiddatosreal', 'list'] });
+      void invalidateDomain(queryClient, 'fuiddatosreal');
     },
     onError: (error) => toast.error(getApiErrorMessage(error)),
   });
@@ -590,6 +591,7 @@ export default function DatosPage() {
   const fuidQuery = useQuery({
     queryKey: ['fuiddatosreal', 'list'],
     queryFn: () => fuidApi.list().then((res) => res.data),
+    refetchInterval: 60_000,
   });
 
   const cajaDuplicatesQuery = useQuery({
@@ -623,7 +625,7 @@ export default function DatosPage() {
     onSuccess: () => {
       toast.success('Registro FUID eliminado');
       setDeleteTarget(null);
-      void queryClient.invalidateQueries({ queryKey: ['fuiddatosreal', 'list'] });
+      void invalidateDomain(queryClient, 'fuiddatosreal');
     },
     onError: (error) => toast.error(getApiErrorMessage(error)),
   });
@@ -633,7 +635,7 @@ export default function DatosPage() {
     onSuccess: () => {
       toast.success('Registros marcados como revisados');
       setSelectedIds(new Set());
-      void queryClient.invalidateQueries({ queryKey: ['fuiddatosreal', 'list'] });
+      void invalidateDomain(queryClient, 'fuiddatosreal');
     },
     onError: (error) => toast.error(getApiErrorMessage(error)),
   });

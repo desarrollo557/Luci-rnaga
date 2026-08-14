@@ -5,6 +5,7 @@ import { Pencil, Plus, RotateCcw, Search, Trash2 } from 'lucide-react';
 import { Badge, Button, ConfirmDialog, DatePicker, Input, Modal, PageHeader, Select, Table, type Column } from '@/components/ui';
 import { inventarioApi } from '@/lib/api';
 import { cn } from '@/lib/cn';
+import { invalidateDomain } from '@/lib/queryInvalidation';
 import type { DataRow, Inventario } from '@/types';
 import { useAuthStore } from '@/stores/authStore';
 
@@ -107,6 +108,7 @@ export default function InventarioPage() {
   const { data: rows = [], isLoading } = useQuery({
     queryKey: ['inventario'],
     queryFn: async () => (await inventarioApi.list()).data,
+    refetchInterval: 60_000,
   });
 
   const funcionarios = useMemo(
@@ -166,7 +168,7 @@ export default function InventarioPage() {
       }
     },
     onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ['inventario'] });
+      void invalidateDomain(queryClient, 'inventario');
       toast.success(editing ? 'Registro actualizado correctamente' : 'Registro creado correctamente');
       setModalOpen(false);
     },
@@ -180,7 +182,7 @@ export default function InventarioPage() {
       await inventarioApi.remove(id);
     },
     onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ['inventario'] });
+      void invalidateDomain(queryClient, 'inventario');
       toast.success('Registro eliminado');
       setDeleting(null);
     },

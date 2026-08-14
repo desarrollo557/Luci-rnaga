@@ -31,6 +31,7 @@ export default function ProduccionPage() {
     queryKey: ['produccion', 'estadisticas'],
     queryFn: async () => (await reportesApi.estadisticas()).data,
     staleTime: 60_000,
+    refetchInterval: 60_000,
   });
 
   const pct = useMemo(() => {

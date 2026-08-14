@@ -38,6 +38,7 @@ import {
   type RolAsignacion,
   type SubModuloInput,
 } from '@/lib/api';
+import { invalidateDomain } from '@/lib/queryInvalidation';
 import { useAuthStore } from '@/stores/authStore';
 import { cn } from '@/lib/cn';
 import type { ModuloCliente, Role } from '@/types';
@@ -160,7 +161,7 @@ function SeccionAsignacion({
     mutationFn: (usuarios: number[]) => modulosClienteApi.agregarUsuarios(moduloId, rol, { usuarios }),
     onSuccess: () => {
       toast.success('Usuarios asignados correctamente');
-      void queryClient.invalidateQueries({ queryKey });
+      void invalidateDomain(queryClient, 'users');
     },
     onError: (error) => toast.error(getApiErrorMessage(error)),
   });
@@ -170,7 +171,7 @@ function SeccionAsignacion({
       modulosClienteApi.eliminarUsuarios(moduloId, rol, { usuarios }),
     onSuccess: () => {
       toast.success('Usuarios eliminados correctamente');
-      void queryClient.invalidateQueries({ queryKey });
+      void invalidateDomain(queryClient, 'users');
     },
     onError: (error) => toast.error(getApiErrorMessage(error)),
   });
@@ -286,12 +287,14 @@ export default function ClientesPage() {
   const subModulosQuery = useQuery({
     queryKey: ['sub-modulos'],
     queryFn: () => subModulosApi.list().then((res) => res.data),
+    refetchInterval: 60_000,
   });
 
   const modulosQuery = useQuery({
     queryKey: ['modulos-cliente', subModuloId],
     queryFn: () => modulosClienteApi.list(subModuloId ?? undefined).then((res) => res.data),
     enabled: subModuloId !== null,
+    refetchInterval: 60_000,
   });
 
   const createSubModuloMutation = useMutation({
@@ -299,7 +302,7 @@ export default function ClientesPage() {
     onSuccess: () => {
       toast.success('Sub-módulo creado');
       setSubModuloModalOpen(false);
-      void queryClient.invalidateQueries({ queryKey: ['sub-modulos'] });
+      void invalidateDomain(queryClient, 'sub-modulos');
     },
     onError: (error) => toast.error(getApiErrorMessage(error)),
   });
@@ -309,7 +312,7 @@ export default function ClientesPage() {
     onSuccess: () => {
       toast.success('Módulo cliente creado');
       setModuloModalOpen(false);
-      void queryClient.invalidateQueries({ queryKey: ['modulos-cliente', subModuloId] });
+      void invalidateDomain(queryClient, 'modulos-cliente');
     },
     onError: (error) => toast.error(getApiErrorMessage(error)),
   });
@@ -320,7 +323,7 @@ export default function ClientesPage() {
     onSuccess: () => {
       toast.success('Módulo cliente actualizado');
       setModuloModalOpen(false);
-      void queryClient.invalidateQueries({ queryKey: ['modulos-cliente', subModuloId] });
+      void invalidateDomain(queryClient, 'modulos-cliente');
     },
     onError: (error) => toast.error(getApiErrorMessage(error)),
   });
@@ -330,7 +333,7 @@ export default function ClientesPage() {
     onSuccess: () => {
       toast.success('Módulo cliente eliminado');
       setDeleteTarget(null);
-      void queryClient.invalidateQueries({ queryKey: ['modulos-cliente', subModuloId] });
+      void invalidateDomain(queryClient, 'modulos-cliente');
     },
     onError: (error) => toast.error(getApiErrorMessage(error)),
   });

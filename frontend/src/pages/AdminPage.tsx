@@ -15,6 +15,7 @@ import {
   type Column,
 } from '@/components/ui';
 import { getApiErrorMessage, usersApi, type UserInput } from '@/lib/api';
+import { invalidateDomain } from '@/lib/queryInvalidation';
 import { createValidator, minLength, onlyDigits } from '@/lib/validation';
 import type { Role, User } from '@/types';
 import { ROLES } from '@/types';
@@ -69,6 +70,7 @@ export default function AdminPage() {
   const usersQuery = useQuery({
     queryKey: ['users'],
     queryFn: () => usersApi.list().then((res) => res.data),
+    refetchInterval: 60_000,
   });
 
   const createMutation = useMutation({
@@ -76,7 +78,7 @@ export default function AdminPage() {
     onSuccess: () => {
       toast.success('Usuario creado');
       setFormOpen(false);
-      void queryClient.invalidateQueries({ queryKey: ['users'] });
+      void invalidateDomain(queryClient, 'users');
     },
     onError: (error) => toast.error(getApiErrorMessage(error)),
   });
@@ -86,7 +88,7 @@ export default function AdminPage() {
     onSuccess: () => {
       toast.success('Usuario actualizado');
       setFormOpen(false);
-      void queryClient.invalidateQueries({ queryKey: ['users'] });
+      void invalidateDomain(queryClient, 'users');
     },
     onError: (error) => toast.error(getApiErrorMessage(error)),
   });
@@ -96,7 +98,7 @@ export default function AdminPage() {
     onSuccess: () => {
       toast.success('Usuario eliminado');
       setDeleteTarget(null);
-      void queryClient.invalidateQueries({ queryKey: ['users'] });
+      void invalidateDomain(queryClient, 'users');
     },
     onError: (error) => toast.error(getApiErrorMessage(error)),
   });
