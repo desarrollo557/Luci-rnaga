@@ -3,10 +3,10 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { Pencil, Plus, RefreshCw, RotateCcw, Search, Trash2 } from 'lucide-react';
 import { Badge, Button, ConfirmDialog, DatePicker, Input, Modal, PageHeader, Select, Table, type Column } from '@/components/ui';
-import { inventarioApi, getApiErrorMessage } from '@/lib/api';
+import { getApiErrorMessage, inventarioApi, modulosCajaApi, modulosClienteApi } from '@/lib/api';
 import { cn } from '@/lib/cn';
 import { invalidateDomain } from '@/lib/queryInvalidation';
-import type { DataRow, Inventario } from '@/types';
+import type { DataRow, Inventario, ModuloCliente } from '@/types';
 import { useAuthStore } from '@/stores/authStore';
 
 const ESTADOS_INVENTARIO = ['PENDIENTE', 'EN PROCESO', 'FINALIZADO'];
@@ -97,6 +97,7 @@ export default function InventarioPage() {
   const [form, setForm] = useState<InventarioForm>(emptyForm());
   const [deleting, setDeleting] = useState<Inventario | null>(null);
   const [page, setPage] = useState(0);
+  const [cargandoCliente, setCargandoCliente] = useState(false);
 
   const [q, setQ] = useState('');
   const [estado, setEstado] = useState('');
@@ -110,6 +111,63 @@ export default function InventarioPage() {
     queryFn: async () => (await inventarioApi.list()).data,
     refetchInterval: 60_000,
   });
+
+  const { data: modulosClientes = [] } = useQuery({
+    queryKey: ['moduloscliente'],
+    queryFn: async () => (await modulosClienteApi.list()).data,
+  });
+
+  const clientOptions = useMemo(() => {
+    const map = new Map<string, ModuloCliente>();
+    for (const m of modulosClientes) {
+      if (m.codigo && !map.has(m.codigo)) map.set(m.codigo, m);
+    }
+    return Array.from(map.values())
+      .sort((a, b) => a.codigo.localeCompare(b.codigo))
+      .map((m) => ({ value: m.codigo, label: `${m.codigo} — ${m.entidad_remitente}` }));
+  }, [modulosClientes]);
+
+  const selectOptions = useMemo(() => {
+    const options = [...clientOptions];
+    const current = form.CODIGO_DEL_CLIENTE;
+    if (current && !options.some((o) => o.value === current)) {
+      options.unshift({ value: current, label: form.CLIENTE ? `${current} — ${form.CLIENTE}` : current });
+    }
+    return options;
+  }, [clientOptions, form.CODIGO_DEL_CLIENTE, form.CLIENTE]);
+
+  const handleClientCodeChange = async (codigo: string) => {
+    setForm((prev) => ({ ...prev, CODIGO_DEL_CLIENTE: codigo }));
+    const cliente = modulosClientes.find((m) => m.codigo === codigo);
+    if (!cliente) return;
+    setCargandoCliente(true);
+    try {
+      const fecha = cliente.fecha_trans_modulo
+        ? new Date(cliente.fecha_trans_modulo).toISOString().slice(0, 10)
+        : '';
+      const next: InventarioForm = {
+        ...form,
+        CODIGO_DEL_CLIENTE: codigo,
+        CLIENTE: cliente.entidad_remitente ?? '',
+        No_ACTA: cliente.acta_transferencia_modulo ?? '',
+        FECHA_TRANSFERENCIA: fecha,
+      };
+      const cajas = (await modulosCajaApi.list(cliente.id)).data ?? [];
+      if (cajas.length > 0) {
+        const numeros = cajas.map((c) => c.caja_modulo).filter(Boolean) as string[];
+        next.TOTAL_CAJAS = String(cajas.length);
+        if (numeros.length > 0) {
+          next.CAJA_INICIAR = numeros.reduce((a, b) => (a < b ? a : b));
+          next.CAJ_FIN = numeros.reduce((a, b) => (a > b ? a : b));
+        }
+      }
+      setForm(next);
+    } catch {
+      toast.error('No se pudo cargar la información del cliente');
+    } finally {
+      setCargandoCliente(false);
+    }
+  };
 
   const funcionarios = useMemo(
     () => Array.from(new Set(rows.map((r) => r.FUNCIONARIO).filter(Boolean))) as string[],
@@ -216,6 +274,7 @@ export default function InventarioPage() {
   const openCreate = () => {
     setEditing(null);
     setForm(emptyForm());
+    setCargandoCliente(false);
     setModalOpen(true);
   };
 
@@ -471,10 +530,14 @@ export default function InventarioPage() {
           <div>
             <h3 className="mb-3 text-sm font-semibold uppercase tracking-wide text-silver-500">Cliente</h3>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-              <Input
+              <Select
                 label="Código del Cliente"
+                placeholder="Selecciona un código"
+                options={selectOptions}
                 value={form.CODIGO_DEL_CLIENTE}
-                onChange={(e) => setForm({ ...form, CODIGO_DEL_CLIENTE: e.target.value })}
+                onChange={(value) => void handleClientCodeChange(value)}
+                disabled={cargandoCliente}
+                hint={cargandoCliente ? 'Cargando cajas…' : undefined}
               />
               <Input
                 label="Cliente"
