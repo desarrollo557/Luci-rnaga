@@ -359,7 +359,7 @@ export default function ActasPage() {
             label="Estado"
             options={ESTADOS_CAJA.map((estado) => ({ value: estado, label: estado }))}
             value={cajaForm.estado_caja}
-            onChange={(event) => setCajaForm({ ...cajaForm, estado_caja: event.target.value })}
+            onChange={(value) => setCajaForm({ ...cajaForm, estado_caja: value })}
           />
         </form>
       </Modal>

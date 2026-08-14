@@ -254,14 +254,14 @@ export default function AdminPage() {
             label="Rol"
             options={ROLES.map((rol) => ({ value: rol, label: ROLE_LABEL[rol] }))}
             value={form.rol}
-            onChange={(event) => setForm({ ...form, rol: event.target.value as Role })}
+            onChange={(value) => setForm({ ...form, rol: value as Role })}
             error={errors.rol}
           />
           <Select
             label="Sede"
             options={SEDES.map((sede) => ({ value: sede, label: sede }))}
             value={form.sede}
-            onChange={(event) => setForm({ ...form, sede: event.target.value })}
+            onChange={(value) => setForm({ ...form, sede: value })}
             placeholder="Seleccione una sede"
             error={errors.sede}
           />

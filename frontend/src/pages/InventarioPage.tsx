@@ -359,7 +359,7 @@ export default function InventarioPage() {
                 label="Estado del Inventario"
                 options={ESTADOS_INVENTARIO.map((v) => ({ value: v, label: v }))}
                 value={form.ESTADO_DEL_INVENTARIO}
-                onChange={(e) => setForm({ ...form, ESTADO_DEL_INVENTARIO: e.target.value })}
+                onChange={(value) => setForm({ ...form, ESTADO_DEL_INVENTARIO: value })}
               />
               <Input
                 label="Registros Procesados"
@@ -386,7 +386,7 @@ export default function InventarioPage() {
                 label="Estado Entrega"
                 options={ESTADOS_ENTREGA.map((v) => ({ value: v, label: v }))}
                 value={form.ESTADO_ENTREGA}
-                onChange={(e) => setForm({ ...form, ESTADO_ENTREGA: e.target.value })}
+                onChange={(value) => setForm({ ...form, ESTADO_ENTREGA: value })}
               />
               <Input
                 label="Mes Entrega Paca"

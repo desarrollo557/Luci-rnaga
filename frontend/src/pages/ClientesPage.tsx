@@ -507,10 +507,7 @@ export default function ClientesPage() {
             label: `${sm.codigo} — ${sm.entidad_remitente}`,
           }))}
           value={subModuloId === null ? '' : String(subModuloId)}
-          onChange={(event) => {
-            const value = event.target.value;
-            setSubModuloId(value ? Number(value) : null);
-          }}
+          onChange={(value) => setSubModuloId(value ? Number(value) : null)}
           className="h-12 text-base"
         />
       </Card>
