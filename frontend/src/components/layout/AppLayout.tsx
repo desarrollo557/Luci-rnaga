@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { NavLink, Outlet } from 'react-router-dom';
 import {
   Building2,
@@ -8,6 +8,8 @@ import {
   LogOut,
   Menu,
   Package,
+  PanelLeftClose,
+  PanelLeftOpen,
   X,
   type LucideIcon,
 } from 'lucide-react';
@@ -38,10 +40,19 @@ const ROL_LABEL: Record<Role, string> = {
   CALIDAD: 'Calidad',
 };
 
+const SIDEBAR_STORAGE_KEY = 'sidebar-collapsed';
+
 export default function AppLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(
+    () => localStorage.getItem(SIDEBAR_STORAGE_KEY) === 'true',
+  );
   const user = useAuthStore((s) => s.user);
   const logout = useAuthStore((s) => s.logout);
+
+  useEffect(() => {
+    localStorage.setItem(SIDEBAR_STORAGE_KEY, String(sidebarCollapsed));
+  }, [sidebarCollapsed]);
 
   if (!user) return null;
 
@@ -51,12 +62,15 @@ export default function AppLayout() {
     void logout();
   };
 
+  const toggleCollapsed = () => setSidebarCollapsed((c) => !c);
+
   return (
     <div className="flex h-screen overflow-hidden bg-silver-100">
       <aside
         className={cn(
-          'fixed inset-y-0 left-0 z-40 flex w-64 flex-col bg-silver-900 transition-transform duration-200 md:static md:transilver-x-0',
-          sidebarOpen ? 'transilver-x-0' : '-transilver-x-full',
+          'fixed inset-y-0 left-0 z-40 flex w-64 flex-col bg-silver-900 transition-transform duration-200',
+          sidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0',
+          sidebarCollapsed && 'md:hidden',
         )}
       >
         <div className="flex h-16 shrink-0 items-center gap-3 border-b border-silver-800 px-5">
@@ -113,14 +127,26 @@ export default function AppLayout() {
 
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="flex h-16 shrink-0 items-center justify-between gap-3 border-b border-silver-200 bg-white px-4 md:px-6">
-          <button
-            type="button"
-            onClick={() => setSidebarOpen(true)}
-            className="inline-flex items-center justify-center rounded-lg p-2 text-silver-500 transition-colors hover:bg-silver-100 hover:text-silver-700 md:hidden"
-            aria-label="Abrir menú"
-          >
-            <Menu className="size-5" />
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setSidebarOpen(true)}
+              className="inline-flex items-center justify-center rounded-lg p-2 text-silver-500 transition-colors hover:bg-silver-100 hover:text-silver-700 md:hidden"
+              aria-label="Abrir menú"
+            >
+              <Menu className="size-5" />
+            </button>
+
+            <button
+              type="button"
+              onClick={toggleCollapsed}
+              className="hidden items-center justify-center rounded-lg p-2 text-silver-500 transition-colors hover:bg-silver-100 hover:text-silver-700 md:inline-flex"
+              aria-label={sidebarCollapsed ? 'Mostrar menú' : 'Ocultar menú'}
+              title={sidebarCollapsed ? 'Mostrar menú' : 'Ocultar menú'}
+            >
+              {sidebarCollapsed ? <PanelLeftOpen className="size-5" /> : <PanelLeftClose className="size-5" />}
+            </button>
+          </div>
 
           <div className="ml-auto flex items-center gap-3">
             <div className="hidden text-right sm:block">
