@@ -1,4 +1,5 @@
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { CalendarDays, ChevronLeft, ChevronRight } from 'lucide-react';
 import { cn } from '@/lib/cn';
 import { Button } from './Button';
@@ -61,7 +62,10 @@ export const DatePicker = function DatePicker({
 }: DatePickerProps) {
   const [open, setOpen] = useState(false);
   const [viewMonth, setViewMonth] = useState<Date>(() => getViewMonth(value));
+  const [position, setPosition] = useState<{ top: number; left: number } | null>(null);
   const wrapperRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const popoverRef = useRef<HTMLDivElement>(null);
   const generatedId = useId();
   const fieldId = id ?? generatedId;
 
@@ -85,9 +89,10 @@ export const DatePicker = function DatePicker({
   useEffect(() => {
     if (!open) return;
     const handleMouseDown = (event: MouseEvent) => {
-      if (wrapperRef.current && !wrapperRef.current.contains(event.target as Node)) {
-        setOpen(false);
-      }
+      const target = event.target as Node;
+      if (wrapperRef.current?.contains(target)) return;
+      if (popoverRef.current?.contains(target)) return;
+      setOpen(false);
     };
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') setOpen(false);
@@ -100,9 +105,28 @@ export const DatePicker = function DatePicker({
     };
   }, [open]);
 
+  // Mantiene el popover dentro del viewport y lo deja flotando sobre cualquier contenedor.
+  useEffect(() => {
+    if (!open || !position || !popoverRef.current) return;
+    const rect = popoverRef.current.getBoundingClientRect();
+    let { top, left } = position;
+    if (top + rect.height > window.innerHeight - 8) {
+      top = Math.max(8, top - rect.height - 16);
+    }
+    if (left + rect.width > window.innerWidth - 8) {
+      left = Math.max(8, window.innerWidth - rect.width - 8);
+    }
+    if (top !== position.top || left !== position.left) {
+      setPosition({ top, left });
+    }
+  }, [open, position]);
+
   const openCalendar = () => {
     if (disabled) return;
+    const rect = triggerRef.current?.getBoundingClientRect();
+    if (!rect) return;
     setViewMonth(getViewMonth(value));
+    setPosition({ top: rect.bottom + 8, left: rect.left });
     setOpen(true);
   };
 
@@ -138,6 +162,7 @@ export const DatePicker = function DatePicker({
       )}
       <div className="relative">
         <button
+          ref={triggerRef}
           id={fieldId}
           type="button"
           disabled={disabled}
@@ -157,8 +182,14 @@ export const DatePicker = function DatePicker({
           <CalendarDays className="size-5 shrink-0 text-primary-600" />
         </button>
 
-        {open && (
-          <div className="absolute left-0 top-full z-40 mt-2 w-72 rounded-xl border border-silver-200 bg-white p-4 shadow-2xl ring-1 ring-silver-900/5 animate-[modal-panel-in_0.2s_ease-out]">
+        {open &&
+          position &&
+          createPortal(
+            <div
+              ref={popoverRef}
+              style={{ position: 'fixed', top: position.top, left: position.left, zIndex: 60 }}
+              className="w-72 rounded-xl border border-silver-200 bg-white p-4 shadow-2xl ring-1 ring-silver-900/5 animate-[modal-panel-in_0.2s_ease-out]"
+            >
             <div className="mb-2 flex items-center justify-between">
               <button
                 type="button"
@@ -226,7 +257,8 @@ export const DatePicker = function DatePicker({
                 Limpiar
               </Button>
             </div>
-          </div>
+          </div>,
+          document.body,
         )}
       </div>
       {!error && hint && <p className="mt-1 text-xs text-silver-500">{hint}</p>}
