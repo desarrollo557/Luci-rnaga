@@ -40,6 +40,24 @@
   to { opacity: 1; transform: translateY(0) scale(1); }
 }
 
+@keyframes form-fill-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes field-pop-in {
+  from { opacity: 0; transform: translateY(6px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.form-fill-anim {
+  animation: form-fill-in 0.45s ease-out;
+}
+
+.field-pop-anim {
+  animation: field-pop-in 0.35s ease-out both;
+}
+
 html, body, #root {
   height: 100%;
 }

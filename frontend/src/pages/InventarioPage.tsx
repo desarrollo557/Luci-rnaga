@@ -97,6 +97,7 @@ export default function InventarioPage() {
   const [form, setForm] = useState<InventarioForm>(emptyForm());
   const [deleting, setDeleting] = useState<Inventario | null>(null);
   const [page, setPage] = useState(0);
+  const [fillVersion, setFillVersion] = useState(0);
   const [cargandoCliente, setCargandoCliente] = useState(false);
 
   const [q, setQ] = useState('');
@@ -151,6 +152,7 @@ export default function InventarioPage() {
         CAJA_INICIAR: pkg.cajaIniciar ?? '',
         CAJ_FIN: pkg.cajaFin ?? '',
       }));
+      setFillVersion((v) => v + 1);
     } catch {
       toast.error('No se pudo cargar la información del cliente');
     } finally {
@@ -515,7 +517,7 @@ export default function InventarioPage() {
           </>
         }
       >
-        <div className="space-y-6">
+<div key={fillVersion} className="form-fill-anim space-y-6">
           <div>
             <h3 className="mb-3 text-sm font-semibold uppercase tracking-wide text-silver-500">Cliente</h3>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">

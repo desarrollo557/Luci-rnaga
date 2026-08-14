@@ -417,7 +417,9 @@ export default function RevisionPage() {
         </Card>
       ) : (
         <>
-          <Table columns={columns} data={currentPage} rowKey={(registro) => registro.id} />
+          <div key={`revision-${cajaCode}`} className="form-fill-anim">
+            <Table columns={columns} data={currentPage} rowKey={(registro) => registro.id} />
+          </div>
 
           <div className="flex items-center justify-between">
             <p className="text-sm text-silver-500">

@@ -782,11 +782,13 @@ export default function DatosPage() {
               </Button>
             </div>
           )}
-          <Table
-            columns={columns}
-            data={registros}
-            rowKey={(registro) => registro.id}
-          />
+          <div key={`fuids-${cajaCode}`} className="form-fill-anim">
+            <Table
+              columns={columns}
+              data={registros}
+              rowKey={(registro) => registro.id}
+            />
+          </div>
         </>
       )}
 

@@ -522,13 +522,15 @@ export default function ClientesPage() {
           </p>
         </Card>
       ) : (
-        <Table
-          columns={columns}
-          data={modulosQuery.data ?? []}
-          rowKey={(modulo) => modulo.id}
-          loading={modulosQuery.isPending}
-          emptyMessage="No hay módulos cliente en este sub-módulo"
-        />
+        <div key={`modulos-${subModuloId}`} className="form-fill-anim">
+          <Table
+            columns={columns}
+            data={modulosQuery.data ?? []}
+            rowKey={(modulo) => modulo.id}
+            loading={modulosQuery.isPending}
+            emptyMessage="No hay módulos cliente en este sub-módulo"
+          />
+        </div>
       )}
 
       <Modal

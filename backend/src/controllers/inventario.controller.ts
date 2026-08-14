@@ -92,6 +92,51 @@ export async function listInventario(_req: Request, res: Response): Promise<void
   res.json(rows);
 }
 
+type ClienteParaInventario = {
+  id: number;
+  codigo: string;
+  entidad_remitente: string;
+  acta_transferencia_modulo: string;
+  fecha_trans_modulo: string | null;
+  id_submodulo: number;
+};
+
+/** Códigos únicos de clientes con datos en módulos, para el select del formulario de inventario. */
+export async function listClientesParaInventario(_req: Request, res: Response): Promise<void> {
+  const rows = await query<{ codigo: string; entidad_remitente: string }>(
+    `SELECT DISTINCT codigo, entidad_remitente FROM moduloscliente
+     WHERE codigo IS NOT NULL AND codigo <> ''
+     ORDER BY codigo`,
+  );
+  res.json(rows);
+}
+
+/** Paquete completo para autocompletar el formulario de inventario según el código del cliente. */
+export async function getClienteParaInventario(req: Request, res: Response): Promise<void> {
+  const { codigo } = req.params;
+  const cliente = await queryOne<ClienteParaInventario>(
+    `SELECT id, codigo, entidad_remitente, acta_transferencia_modulo, fecha_trans_modulo, id_submodulo
+     FROM moduloscliente WHERE codigo = ? LIMIT 1`,
+    [codigo],
+  );
+  if (!cliente) {
+    res.status(404).json({ error: `No se encontró un cliente con código ${codigo}` });
+    return;
+  }
+  const cajas = await query<{ caja_modulo: string }>(
+    `SELECT caja_modulo FROM modulos_caja WHERE id_modulo_caja = ? ORDER BY caja_modulo`,
+    [cliente.id],
+  );
+  const numeros = cajas.map((c) => c.caja_modulo).filter(Boolean) as string[];
+  res.json({
+    cliente,
+    cajas,
+    totalCajas: cajas.length,
+    cajaIniciar: numeros.length > 0 ? numeros.reduce((a, b) => (a < b ? a : b)) : null,
+    cajaFin: numeros.length > 0 ? numeros.reduce((a, b) => (a > b ? a : b)) : null,
+  });
+}
+
 export async function getInventario(req: Request, res: Response): Promise<void> {
   const { id } = req.params;
   const row = await queryOne<Inventario>('SELECT * FROM inventario WHERE ITEMS = ?', [id]);
