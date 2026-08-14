@@ -1,9 +1,10 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { Pencil, Plus, Trash2 } from 'lucide-react';
+import { Pencil, Plus, RotateCcw, Search, Trash2 } from 'lucide-react';
 import { Badge, Button, ConfirmDialog, DatePicker, Input, Modal, PageHeader, Select, Table, type Column } from '@/components/ui';
 import { inventarioApi } from '@/lib/api';
+import { cn } from '@/lib/cn';
 import type { DataRow, Inventario } from '@/types';
 import { useAuthStore } from '@/stores/authStore';
 
@@ -68,6 +69,23 @@ function toForm(row: Inventario): InventarioForm {
 
 const PAGE_SIZE = 25;
 
+function Chip({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        'rounded-full border px-3 py-1.5 text-xs font-medium transition-all duration-200',
+        active
+          ? 'border-primary-500 bg-primary-600 text-white shadow-sm shadow-primary-600/30'
+          : 'border-silver-200 bg-silver-100 text-silver-600 hover:border-primary-300 hover:bg-primary-50 hover:text-primary-800',
+      )}
+    >
+      {label}
+    </button>
+  );
+}
+
 export default function InventarioPage() {
   const queryClient = useQueryClient();
   const { user } = useAuthStore();
@@ -79,10 +97,65 @@ export default function InventarioPage() {
   const [deleting, setDeleting] = useState<Inventario | null>(null);
   const [page, setPage] = useState(0);
 
+  const [q, setQ] = useState('');
+  const [estado, setEstado] = useState('');
+  const [estadoEntrega, setEstadoEntrega] = useState('');
+  const [funcionario, setFuncionario] = useState('');
+  const [desde, setDesde] = useState('');
+  const [hasta, setHasta] = useState('');
+
   const { data: rows = [], isLoading } = useQuery({
     queryKey: ['inventario'],
     queryFn: async () => (await inventarioApi.list()).data,
   });
+
+  const funcionarios = useMemo(
+    () => Array.from(new Set(rows.map((r) => r.FUNCIONARIO).filter(Boolean))) as string[],
+    [rows],
+  );
+
+  const filtered = useMemo(() => {
+    const query = q.trim().toLowerCase();
+    const desdeT = desde ? new Date(`${desde}T00:00:00`).getTime() : null;
+    const hastaT = hasta ? new Date(`${hasta}T23:59:59.999`).getTime() : null;
+    return rows.filter((row) => {
+      if (query) {
+        const campos = [
+          row.CODIGO_DEL_CLIENTE,
+          row.CLIENTE,
+          row.No_ACTA,
+          row.FUNCIONARIO,
+          row.MES_ENTREGA_PACA,
+          row.CAJA_INICIAR,
+          row.CAJ_FIN,
+          String(row.TOTAL_CAJAS ?? ''),
+        ];
+        if (!campos.some((campo) => String(campo ?? '').toLowerCase().includes(query))) return false;
+      }
+      if (estado && row.ESTADO_DEL_INVENTARIO !== estado) return false;
+      if (estadoEntrega && row.ESTADO_ENTREGA !== estadoEntrega) return false;
+      if (funcionario && row.FUNCIONARIO !== funcionario) return false;
+      if (desdeT !== null || hastaT !== null) {
+        const fecha = row.FECHA_TRANSFERENCIA ? new Date(row.FECHA_TRANSFERENCIA).getTime() : null;
+        if (fecha === null) return false;
+        if (desdeT !== null && fecha < desdeT) return false;
+        if (hastaT !== null && fecha > hastaT) return false;
+      }
+      return true;
+    });
+  }, [rows, q, estado, estadoEntrega, funcionario, desde, hasta]);
+
+  const hayFiltros = Boolean(q || estado || estadoEntrega || funcionario || desde || hasta);
+
+  const limpiar = () => {
+    setQ('');
+    setEstado('');
+    setEstadoEntrega('');
+    setFuncionario('');
+    setDesde('');
+    setHasta('');
+    setPage(0);
+  };
 
   const saveMutation = useMutation({
     mutationFn: async (payload: { id: number | null; data: DataRow }) => {
@@ -136,8 +209,8 @@ export default function InventarioPage() {
     saveMutation.mutate({ id: editing?.ITEMS ?? null, data });
   };
 
-  const totalPages = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
-  const pageRows = rows.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const pageRows = filtered.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
 
   const columns: Column<Inventario>[] = [
     { key: 'ITEMS', header: 'ID' },
@@ -158,18 +231,18 @@ export default function InventarioPage() {
       key: 'ESTADO_DEL_INVENTARIO',
       header: 'Estado',
       render: (row) => {
-        const estado = row.ESTADO_DEL_INVENTARIO;
-        const color = estado === 'FINALIZADO' ? 'green' : estado === 'EN PROCESO' ? 'amber' : 'gray';
-        return <Badge color={color}>{estado ?? 'PENDIENTE'}</Badge>;
+        const estadoRow = row.ESTADO_DEL_INVENTARIO;
+        const color = estadoRow === 'FINALIZADO' ? 'green' : estadoRow === 'EN PROCESO' ? 'amber' : 'gray';
+        return <Badge color={color}>{estadoRow ?? 'PENDIENTE'}</Badge>;
       },
     },
     {
       key: 'ESTADO_ENTREGA',
       header: 'Entrega',
       render: (row) => {
-        const estado = row.ESTADO_ENTREGA;
-        const color = estado === 'ENTREGADO' ? 'green' : estado === 'EN PROCESO' ? 'amber' : 'gray';
-        return <Badge color={color}>{estado ?? 'PENDIENTE'}</Badge>;
+        const estadoRow = row.ESTADO_ENTREGA;
+        const color = estadoRow === 'ENTREGADO' ? 'green' : estadoRow === 'EN PROCESO' ? 'amber' : 'gray';
+        return <Badge color={color}>{estadoRow ?? 'PENDIENTE'}</Badge>;
       },
     },
     ...(canEdit
@@ -213,12 +286,101 @@ export default function InventarioPage() {
         }
       />
 
-      <Table columns={columns} data={pageRows} rowKey={(row) => row.ITEMS} loading={isLoading} />
+      {/* Panel de filtros — diseño propio de Inventario */}
+      <div className="rounded-2xl border border-silver-200 bg-white p-5 shadow-sm">
+        <div className="relative">
+          <Search className="pointer-events-none absolute left-3.5 top-1/2 size-5 -translate-y-1/2 text-silver-400" />
+          <input
+            type="search"
+            value={q}
+            onChange={(e) => {
+              setQ(e.target.value);
+              setPage(0);
+            }}
+            placeholder="Buscar por cliente, código, acta, funcionario, caja…"
+            className="h-12 w-full rounded-xl border border-silver-300 bg-silver-50 pl-11 pr-4 text-sm text-silver-900 shadow-sm placeholder:text-silver-400 transition-all duration-200 focus:border-primary-500 focus:bg-white focus:outline-none focus:ring-4 focus:ring-primary-500/20"
+          />
+        </div>
+
+        <div className="mt-4 flex flex-wrap items-center gap-2">
+          <span className="mr-1 text-xs font-semibold uppercase tracking-wide text-silver-500">Estado:</span>
+          <Chip label="Todos" active={estado === ''} onClick={() => setEstado('')} />
+          {ESTADOS_INVENTARIO.map((e) => (
+            <Chip key={e} label={e} active={estado === e} onClick={() => setEstado(e)} />
+          ))}
+        </div>
+
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <span className="mr-1 text-xs font-semibold uppercase tracking-wide text-silver-500">Entrega:</span>
+          <Chip label="Todos" active={estadoEntrega === ''} onClick={() => setEstadoEntrega('')} />
+          {ESTADOS_ENTREGA.map((e) => (
+            <Chip key={e} label={e} active={estadoEntrega === e} onClick={() => setEstadoEntrega(e)} />
+          ))}
+        </div>
+
+        <div className="mt-4 grid grid-cols-1 gap-3 border-t border-silver-100 pt-4 sm:grid-cols-2 lg:grid-cols-4">
+          <Select
+            label="Funcionario"
+            placeholder="Todos"
+            options={funcionarios.map((f) => ({ value: f, label: f }))}
+            value={funcionario}
+            onChange={(value) => {
+              setFuncionario(value);
+              setPage(0);
+            }}
+          />
+          <DatePicker
+            label="Desde (transferencia)"
+            value={desde}
+            onChange={(value) => {
+              setDesde(value);
+              setPage(0);
+            }}
+          />
+          <DatePicker
+            label="Hasta (transferencia)"
+            value={hasta}
+            onChange={(value) => {
+              setHasta(value);
+              setPage(0);
+            }}
+          />
+          <div className="flex items-end">
+            <Button
+              variant="ghost"
+              onClick={limpiar}
+              disabled={!hayFiltros}
+              className="h-10 border border-silver-200 text-silver-600 hover:bg-silver-50 hover:text-silver-900"
+            >
+              <RotateCcw className="size-4" /> Limpiar
+            </Button>
+          </div>
+        </div>
+
+        <div className="mt-4 flex items-center justify-between border-t border-silver-100 pt-3 text-sm">
+          <span className="font-medium text-silver-600">
+            {filtered.length.toLocaleString('es-CO')} {filtered.length === 1 ? 'registro' : 'registros'}
+            {hayFiltros && (
+              <span className="ml-2 rounded-full bg-primary-100 px-2 py-0.5 text-xs font-semibold text-primary-700">
+                filtrado
+              </span>
+            )}
+          </span>
+        </div>
+      </div>
+
+      <Table
+        columns={columns}
+        data={pageRows}
+        rowKey={(row) => row.ITEMS}
+        loading={isLoading}
+        emptyMessage={hayFiltros ? 'No se encontraron registros con esos filtros' : 'No hay inventario registrado'}
+      />
 
       {totalPages > 1 && (
         <div className="flex items-center justify-between">
           <span className="text-sm text-silver-500">
-            Página {page + 1} de {totalPages} ({rows.length} registros)
+            Página {page + 1} de {totalPages} ({filtered.length} registros)
           </span>
           <div className="flex gap-2">
             <Button variant="secondary" size="sm" disabled={page === 0} onClick={() => setPage((p) => p - 1)}>
