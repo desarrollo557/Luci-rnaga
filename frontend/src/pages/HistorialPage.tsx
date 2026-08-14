@@ -1,14 +1,28 @@
 import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Search } from 'lucide-react';
-import { Badge, Button, Input, PageHeader, Table, type Column } from '@/components/ui';
+import { FilterX, Search } from 'lucide-react';
+import { Badge, Button, Card, DatePicker, Input, PageHeader, Select, Table, type Column } from '@/components/ui';
 import { historialApi } from '@/lib/api';
 import type { Historial } from '@/types';
 
 const PAGE_SIZE = 25;
 
+interface FiltrosHistorial {
+  q: string;
+  tipo: string;
+  sede: string;
+  desde: string;
+  hasta: string;
+}
+
+const FILTROS_VACIOS: FiltrosHistorial = { q: '', tipo: '', sede: '', desde: '', hasta: '' };
+
+function normalize(value: unknown): string {
+  return String(value ?? '').toLowerCase();
+}
+
 export default function HistorialPage() {
-  const [filtroCaja, setFiltroCaja] = useState('');
+  const [filtros, setFiltros] = useState<FiltrosHistorial>(FILTROS_VACIOS);
   const [page, setPage] = useState(0);
 
   const { data: rows = [], isLoading } = useQuery({
@@ -16,14 +30,60 @@ export default function HistorialPage() {
     queryFn: async () => (await historialApi.list()).data,
   });
 
+  const tipos = useMemo(
+    () => Array.from(new Set(rows.map((row) => row.tipo_cambio).filter(Boolean))) as string[],
+    [rows],
+  );
+  const sedes = useMemo(
+    () => Array.from(new Set(rows.map((row) => row.sede_calidad).filter(Boolean))) as string[],
+    [rows],
+  );
+
+  const hayFiltros = Boolean(filtros.q || filtros.tipo || filtros.sede || filtros.desde || filtros.hasta);
+
   const filtered = useMemo(() => {
-    const q = filtroCaja.trim().toLowerCase();
-    if (!q) return rows;
-    return rows.filter((row) => (row.caja ?? '').toLowerCase().includes(q));
-  }, [rows, filtroCaja]);
+    const q = filtros.q.trim().toLowerCase();
+    const desde = filtros.desde ? new Date(`${filtros.desde}T00:00:00`).getTime() : null;
+    const hasta = filtros.hasta ? new Date(`${filtros.hasta}T23:59:59.999`).getTime() : null;
+
+    return rows.filter((row) => {
+      if (q) {
+        const campos = [
+          row.caja,
+          row.upd,
+          row.id_dato,
+          row.historial_cambios,
+          row.cambio_calidad,
+          row.sede_calidad,
+          row.tipo_cambio,
+          row.fecha_cambio ? new Date(row.fecha_cambio).toLocaleString('es-CO') : '',
+        ];
+        if (!campos.some((campo) => normalize(campo).includes(q))) return false;
+      }
+      if (filtros.tipo && row.tipo_cambio !== filtros.tipo) return false;
+      if (filtros.sede && row.sede_calidad !== filtros.sede) return false;
+      if (filtros.desde || filtros.hasta) {
+        const fecha = row.fecha_cambio ? new Date(row.fecha_cambio).getTime() : null;
+        if (fecha === null) return false;
+        if (desde !== null && fecha < desde) return false;
+        if (hasta !== null && fecha > hasta) return false;
+      }
+      return true;
+    });
+  }, [rows, filtros]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const pageRows = filtered.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
+
+  const updateFiltro = (patch: Partial<FiltrosHistorial>) => {
+    setFiltros((prev) => ({ ...prev, ...patch }));
+    setPage(0);
+  };
+
+  const limpiarFiltros = () => {
+    setFiltros(FILTROS_VACIOS);
+    setPage(0);
+  };
 
   const columns: Column<Historial>[] = [
     {
@@ -55,28 +115,77 @@ export default function HistorialPage() {
       <PageHeader
         title="Historial de Cambios"
         description="Registro de cambios y revisiones realizadas sobre los FUID"
-        actions={
-          <div className="relative">
-            <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -transilver-y-1/2 text-silver-400" />
+      />
+
+      <Card>
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
+          <div className="relative lg:col-span-2">
+            <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-silver-400" />
             <Input
-              className="w-64 pl-9"
-              placeholder="Filtrar por caja…"
-              value={filtroCaja}
-              onChange={(e) => {
-                setFiltroCaja(e.target.value);
-                setPage(0);
-              }}
+              className="h-12 pl-9 text-base"
+              placeholder="Buscar por caja, UPD, quien cambió, sede, tipo…"
+              value={filtros.q}
+              onChange={(e) => updateFiltro({ q: e.target.value })}
             />
           </div>
-        }
-      />
+
+          <Select
+            label="Tipo de cambio"
+            placeholder="Todos"
+            options={tipos.map((tipo) => ({ value: tipo, label: tipo }))}
+            value={filtros.tipo}
+            onChange={(value) => updateFiltro({ tipo: value })}
+          />
+
+          <Select
+            label="Sede"
+            placeholder="Todas"
+            options={sedes.map((sede) => ({ value: sede, label: sede }))}
+            value={filtros.sede}
+            onChange={(value) => updateFiltro({ sede: value })}
+          />
+
+          <DatePicker
+            label="Desde"
+            value={filtros.desde}
+            onChange={(value) => updateFiltro({ desde: value })}
+          />
+
+          <DatePicker
+            label="Hasta"
+            value={filtros.hasta}
+            onChange={(value) => updateFiltro({ hasta: value })}
+          />
+
+          <div className="flex items-end gap-2">
+            <Button
+              variant="ghost"
+              onClick={limpiarFiltros}
+              disabled={!hayFiltros}
+              className="h-12"
+            >
+              <FilterX className="size-4" /> Limpiar
+            </Button>
+          </div>
+        </div>
+
+        <div className="mt-4 flex items-center justify-between border-t border-silver-100 pt-3 text-sm">
+          <span className="text-silver-500">
+            {filtered.length.toLocaleString('es-CO')} {filtered.length === 1 ? 'registro' : 'registros'}
+            {hayFiltros && ' filtrados'}
+          </span>
+          {hayFiltros && (
+            <Badge color="red">Filtros activos</Badge>
+          )}
+        </div>
+      </Card>
 
       <Table
         columns={columns}
         data={pageRows}
         rowKey={(row) => row.id_historial}
         loading={isLoading}
-        emptyMessage={filtroCaja ? 'No se encontraron registros para esa caja' : 'No hay historial registrado'}
+        emptyMessage={hayFiltros ? 'No se encontraron registros con esos filtros' : 'No hay historial registrado'}
       />
 
       {totalPages > 1 && (
