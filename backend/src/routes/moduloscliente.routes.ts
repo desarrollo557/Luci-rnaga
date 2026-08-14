@@ -9,6 +9,7 @@ import { usuariosOnlySchema } from '../validators/asignaciones.validator.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import {
   listModulosCliente,
+  getModuloClienteById,
   createModuloCliente,
   updateModuloCliente,
   deleteModuloCliente,
@@ -53,5 +54,6 @@ router.post(
 );
 router.get('/moduloscliente/:moduloId/usuarios', isAuthenticated, isLiderOrAdmin, asyncHandler(listUsersOfModulo));
 router.get('/moduloscliente/count_cajas', isAuthenticated, asyncHandler(countCajasOfModulo));
+router.get('/moduloscliente/:id', isAuthenticated, asyncHandler(getModuloClienteById));
 
 export default router;

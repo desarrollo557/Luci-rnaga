@@ -35,11 +35,23 @@ export async function listModulosCliente(req: Request, res: Response): Promise<v
   }
 }
 
+export async function getModuloClienteById(req: Request, res: Response): Promise<void> {
+  const { id } = req.params;
+  const results = await query<ModuloCliente>('SELECT * FROM moduloscliente WHERE id = ?', [id]);
+
+  if (results.length === 0) {
+    res.status(404).json({ message: 'Módulo cliente no encontrado' });
+    return;
+  }
+
+  res.json(results[0]);
+}
+
 export async function createModuloCliente(req: Request, res: Response): Promise<void> {
   const { codigo, entidad_remitente, acta_transferencia_modulo, fecha_trans_modulo, id_submodulo } =
     req.body as Partial<ModuloCliente>;
 
-  if (!codigo || !entidad_remitente || !acta_transferencia_modulo || !fecha_trans_modulo || !id_submodulo) {
+  if (!codigo || !entidad_remitente || !acta_transferencia_modulo || !id_submodulo) {
     res.status(400).send('Faltan campos requeridos');
     return;
   }
