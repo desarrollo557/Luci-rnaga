@@ -154,4 +154,26 @@ export interface Historial {
   sede_calidad: string | null;
 }
 
+export type RangoUpdEstado = 'activo' | 'agotado' | 'revocado';
+
+export interface RangoUpd {
+  id: number;
+  usuario_id: number;
+  sub_modulo_id: number;
+  upd_inicio: string;
+  upd_fin: string;
+  estado: RangoUpdEstado;
+  asignado_por: number;
+  fecha_asignacion: string;
+  fecha_agotado: string | null;
+  fecha_revocacion: string | null;
+}
+
+/** Fila de listado de rangos: RangoUpd + JOIN con users (nombre del técnico) y sub_modulos (código/entidad). */
+export interface RangoUpdListRow extends RangoUpd {
+  tecnico_nombre: string;
+  sub_modulo_codigo: string;
+  sub_modulo_entidad: string;
+}
+
 export type Rol = 'ADMIN' | 'LIDER' | 'TECNICA' | 'CALIDAD';
