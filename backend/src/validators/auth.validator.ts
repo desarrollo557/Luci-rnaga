@@ -6,4 +6,5 @@ export const loginSchema = z.object({
     .min(1, 'La cédula es requerida')
     .regex(/^\d+$/, 'La cédula debe contener solo números'),
   contrasena: z.string({ message: 'La contraseña es requerida' }).min(1, 'La contraseña es requerida'),
+  rol: z.enum(['ADMIN', 'LIDER', 'TECNICA', 'CALIDAD'], { message: 'Rol inválido' }),
 });

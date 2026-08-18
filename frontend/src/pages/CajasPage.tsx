@@ -3,11 +3,10 @@ import { Link, useParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ClipboardList, Eye, PencilLine } from 'lucide-react';
 import { toast } from 'sonner';
-import { Badge, Button, Card, Input, PageHeader, Spinner } from '@/components/ui';
+import { Badge, Button, Card, Input, LoadingState, PageHeader } from '@/components/ui';
 import {
   asignacionCajaCalidadApi,
   asignacionCajaTecnicaApi,
-  getApiErrorMessage,
   modulosCajaApi,
   usersApi,
   type AsignacionCajaInput,
@@ -68,7 +67,6 @@ function SeccionAsignacionCaja({ cajaId, rol, label }: SeccionAsignacionCajaProp
       toast.success('Asignación guardada correctamente');
       void invalidateDomain(queryClient, 'users');
     },
-    onError: (error) => toast.error(getApiErrorMessage(error)),
   });
 
   const eliminarMutation = useMutation({
@@ -80,7 +78,6 @@ function SeccionAsignacionCaja({ cajaId, rol, label }: SeccionAsignacionCajaProp
       toast.success('Usuarios eliminados correctamente');
       void invalidateDomain(queryClient, 'users');
     },
-    onError: (error) => toast.error(getApiErrorMessage(error)),
   });
 
   const rangoMutation = useMutation({
@@ -93,7 +90,6 @@ function SeccionAsignacionCaja({ cajaId, rol, label }: SeccionAsignacionCajaProp
       setRangoError(null);
       void invalidateDomain(queryClient, 'users');
     },
-    onError: (error) => toast.error(getApiErrorMessage(error)),
   });
 
   const asignadosIds = new Set((asignadosQuery.data ?? []).map((usuario) => usuario.id));
@@ -174,7 +170,7 @@ function SeccionAsignacionCaja({ cajaId, rol, label }: SeccionAsignacionCajaProp
 
       {loading ? (
         <div className="flex justify-center py-6">
-          <Spinner className="size-6 text-primary-600" />
+          <LoadingState message="Estamos consultando la información…" />
         </div>
       ) : (
         <ul className="max-h-56 space-y-1 overflow-y-auto">
@@ -259,7 +255,7 @@ function SeccionAsignacionCaja({ cajaId, rol, label }: SeccionAsignacionCajaProp
 
 export default function CajasPage() {
   const queryClient = useQueryClient();
-  const { mid } = useParams<{ id: string; mid: string }>();
+  const { id, mid } = useParams<{ id: string; mid: string }>();
   const user = useAuthStore((state) => state.user);
   const rol = user?.rol;
   const isManager = rol === 'LIDER' || rol === 'ADMIN';
@@ -277,7 +273,6 @@ export default function CajasPage() {
       toast.success('Estado de la caja actualizado');
       void invalidateDomain(queryClient, 'modulos-caja');
     },
-    onError: (error) => toast.error(getApiErrorMessage(error)),
   });
 
   const caja = cajaQuery.data;
@@ -295,6 +290,8 @@ export default function CajasPage() {
       <PageHeader
         title={caja ? `Caja ${caja.caja_modulo}` : 'Caja'}
         description="Clientes / Actas / Caja"
+        backTo={`/clientes/${id}/actas`}
+        backLabel="Actas"
         actions={
           caja && (
             <>
@@ -308,12 +305,12 @@ export default function CajasPage() {
                   >
                     <PencilLine className="size-4" /> Cambiar Estado
                   </Button>
-                  <Link to={`/cajas/${mid}/datos`}>
+                  <Link to={`/cajas/${mid}/datos`} state={{ from: `/clientes/${id}/actas/${mid}/cajas` }}>
                     <Button>
                       <ClipboardList className="size-4" /> Ir a Digitación
                     </Button>
                   </Link>
-                  <Link to={`/cajas/${mid}/revision`}>
+                  <Link to={`/cajas/${mid}/revision`} state={{ from: `/clientes/${id}/actas/${mid}/cajas` }}>
                     <Button variant="secondary">
                       <Eye className="size-4" /> Ver Revisión
                     </Button>
@@ -322,12 +319,12 @@ export default function CajasPage() {
               )}
               {isManager && (
                 <>
-                  <Link to={`/cajas/${mid}/datos`}>
+                  <Link to={`/cajas/${mid}/datos`} state={{ from: `/clientes/${id}/actas/${mid}/cajas` }}>
                     <Button variant="secondary">
                       <ClipboardList className="size-4" /> Ver FUIDs
                     </Button>
                   </Link>
-                  <Link to={`/cajas/${mid}/revision`}>
+                  <Link to={`/cajas/${mid}/revision`} state={{ from: `/clientes/${id}/actas/${mid}/cajas` }}>
                     <Button variant="secondary">
                       <Eye className="size-4" /> Ver Revisión
                     </Button>
@@ -336,12 +333,12 @@ export default function CajasPage() {
               )}
               {rol === 'CALIDAD' && (
                 <>
-                  <Link to={`/cajas/${mid}/datos`}>
+                  <Link to={`/cajas/${mid}/datos`} state={{ from: `/clientes/${id}/actas/${mid}/cajas` }}>
                     <Button variant="secondary">
                       <ClipboardList className="size-4" /> Ver FUIDs
                     </Button>
                   </Link>
-                  <Link to={`/cajas/${mid}/revision`}>
+                  <Link to={`/cajas/${mid}/revision`} state={{ from: `/clientes/${id}/actas/${mid}/cajas` }}>
                     <Button variant="secondary">
                       <Eye className="size-4" /> Ver Revisión
                     </Button>
@@ -356,7 +353,7 @@ export default function CajasPage() {
       {cajaQuery.isPending ? (
         <Card>
           <div className="flex justify-center py-10">
-            <Spinner className="size-6 text-primary-600" />
+            <LoadingState message="Estamos consultando la información…" />
           </div>
         </Card>
       ) : (

@@ -133,8 +133,8 @@ export interface AsignacionCajaRangoInput {
 }
 
 export const authApi = {
-  login: (cc: string, contrasena: string) =>
-    api.post<LoginResponse>('/login', { cc, contrasena }),
+  login: (cc: string, contrasena: string, rol: string) =>
+    api.post<LoginResponse>('/login', { cc, contrasena, rol }),
   logout: () => api.post<{ success: boolean }>('/logout'),
   currentUser: () => api.get<SessionUser>('/currentUser'),
   checkAuth: () => api.get<string>('/checkAuth'),

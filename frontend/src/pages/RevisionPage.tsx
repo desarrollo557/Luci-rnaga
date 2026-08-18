@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
-import { useParams } from 'react-router-dom';
+import { useLocation, useParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import axios from 'axios';
 import { CheckCircle2, ChevronLeft, ChevronRight, Eye, FileDown } from 'lucide-react';
@@ -9,13 +9,13 @@ import {
   Button,
   Card,
   Input,
+  LoadingState,
   Modal,
   PageHeader,
-  Spinner,
   Table,
   type Column,
 } from '@/components/ui';
-import { fuidApi, getApiErrorMessage, modulosCajaApi, plantillaApi } from '@/lib/api';
+import { fuidApi, modulosCajaApi, plantillaApi } from '@/lib/api';
 import { invalidateDomain } from '@/lib/queryInvalidation';
 import { useAuthStore } from '@/stores/authStore';
 import type { FuidDato } from '@/types';
@@ -121,7 +121,6 @@ function RevisionModal({ open, registro, onClose }: RevisionModalProps) {
       onClose();
       void invalidateDomain(queryClient, 'fuiddatosreal');
     },
-    onError: (error) => toast.error(getApiErrorMessage(error)),
   });
 
   if (!registro) return null;
@@ -187,9 +186,11 @@ function RevisionModal({ open, registro, onClose }: RevisionModalProps) {
 
 export default function RevisionPage() {
   const queryClient = useQueryClient();
+  const location = useLocation();
   const { cajaId } = useParams<{ cajaId: string }>();
   const user = useAuthStore((state) => state.user);
   const canMarcarOk = EDITABLE_ROLES.some((rol) => rol === user?.rol);
+  const fromPath = (location.state as { from?: string } | null)?.from ?? `/clientes`;
 
   const [revisionTarget, setRevisionTarget] = useState<FuidDato | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
@@ -239,7 +240,6 @@ export default function RevisionPage() {
       setSelectedIds(new Set());
       void invalidateDomain(queryClient, 'fuiddatosreal');
     },
-    onError: (error) => toast.error(getApiErrorMessage(error)),
   });
 
   const handleMarcarSeleccionados = () => {
@@ -373,6 +373,8 @@ export default function RevisionPage() {
       <PageHeader
         title={`Revisión de Calidad — Caja ${cajaCode}`}
         description="Clientes / Actas / Cajas / Revisión"
+        backTo={fromPath}
+        backLabel="Volver a Cajas"
         actions={
           <>
             <Input
@@ -408,7 +410,7 @@ export default function RevisionPage() {
       {loading ? (
         <Card>
           <div className="flex justify-center py-10">
-            <Spinner className="size-6 text-primary-600" />
+            <LoadingState message="Estamos consultando la información…" />
           </div>
         </Card>
       ) : filtered.length === 0 ? (

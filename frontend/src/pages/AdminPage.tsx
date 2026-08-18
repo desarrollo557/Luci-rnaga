@@ -28,7 +28,7 @@ import {
   type Column,
 } from '@/components/ui';
 import { cn } from '@/lib/cn';
-import { getApiErrorMessage, usersApi, type UserInput } from '@/lib/api';
+import { usersApi, type UserInput } from '@/lib/api';
 import { invalidateDomain } from '@/lib/queryInvalidation';
 import { createValidator, minLength, onlyDigits } from '@/lib/validation';
 import type { Role, User } from '@/types';
@@ -114,7 +114,6 @@ export default function AdminPage() {
       setFormOpen(false);
       void invalidateDomain(queryClient, 'users');
     },
-    onError: (error) => toast.error(getApiErrorMessage(error)),
   });
 
   const updateMutation = useMutation({
@@ -124,7 +123,6 @@ export default function AdminPage() {
       setFormOpen(false);
       void invalidateDomain(queryClient, 'users');
     },
-    onError: (error) => toast.error(getApiErrorMessage(error)),
   });
 
   const deleteMutation = useMutation({
@@ -134,7 +132,6 @@ export default function AdminPage() {
       setDeleteTarget(null);
       void invalidateDomain(queryClient, 'users');
     },
-    onError: (error) => toast.error(getApiErrorMessage(error)),
   });
 
   const suspensionMutation = useMutation({
@@ -147,7 +144,6 @@ export default function AdminPage() {
       setSuspendFecha('');
       void invalidateDomain(queryClient, 'users');
     },
-    onError: (error) => toast.error(getApiErrorMessage(error)),
   });
 
   const saving = createMutation.isPending || updateMutation.isPending;

@@ -13,6 +13,7 @@ export interface LoginResponse {
   success: boolean;
   message?: string;
   redirect?: string;
+  rol: Role;
 }
 
 export interface User {
