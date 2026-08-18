@@ -176,6 +176,77 @@ export interface Historial {
   sede_calidad: string | null;
 }
 
+/* ── Rangos UPD (rangos-upd) ─────────────────────────────────────────────── */
+
+export type RangoUpdEstado = 'activo' | 'agotado' | 'revocado';
+
+export interface RangoUpd {
+  id: number;
+  usuario_id: number;
+  sub_modulo_id: number;
+  upd_inicio: string;
+  upd_fin: string;
+  estado: RangoUpdEstado;
+  asignado_por: number;
+  fecha_asignacion: string;
+  fecha_agotado: string | null;
+  fecha_revocacion: string | null;
+}
+
+export interface AssignRangePayload {
+  usuario_id: number;
+  sub_modulo_id: number;
+  upd_inicio: string;
+  upd_fin: string;
+}
+
+export interface AssignRangeResponse {
+  message: string;
+  rango: RangoUpd;
+}
+
+/** Fila de listado de rangos: RangoUpd + JOIN con users (técnico) y sub_modulos (código/entidad). */
+export interface RangoUpdListRow extends RangoUpd {
+  tecnico_nombre: string;
+  sub_modulo_codigo: string;
+  sub_modulo_entidad: string;
+}
+
+export interface ListarRangosResponse {
+  rangos: RangoUpdListRow[];
+}
+
+export interface CheckRangoResponse {
+  ok: boolean;
+  used: string[];
+  overlap: string[];
+  errors: string[];
+}
+
+export interface NextUpdResult {
+  upd: string;
+  sub_modulo_id: number;
+}
+
+export type NextUpdErrorCode = 'SIN_RANGO' | 'AGOTADO' | 'CAJA_SIN_SUBMODULO';
+
+export interface AvanceRow {
+  usuario_id: number;
+  nombre: string;
+  total_asignadas: number;
+  finalizadas: number;
+  pendientes: number;
+  porcentaje: number;
+}
+
+export interface AvanceResponse {
+  por_tecnico: AvanceRow[];
+  filtro: {
+    asignado_por: number | null;
+    sub_modulo_id: number | null;
+  };
+}
+
 export const ROLES: Role[] = ['ADMIN', 'LIDER', 'TECNICA', 'CALIDAD'];
 
 /** Campos del FUID que admiten autocompletado por caja (mismo contrato que el backend). */

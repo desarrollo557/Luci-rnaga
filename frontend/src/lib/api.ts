@@ -1,13 +1,20 @@
 import axios from 'axios';
 import type {
+  AssignRangePayload,
+  AssignRangeResponse,
+  AvanceResponse,
+  CheckRangoResponse,
   DataRow,
   FuidConEstado,
   FuidDato,
   Historial,
   Inventario,
+  ListarRangosResponse,
   LoginResponse,
   ModuloCaja,
   ModuloCliente,
+  NextUpdResult,
+  RangoUpdEstado,
   Role,
   SessionUser,
   SubModulo,
@@ -75,6 +82,22 @@ export function getApiErrorMessage(error: unknown): string {
     return 'Error en el servidor';
   }
   return 'Error en el servidor';
+}
+
+/**
+ * Extrae el `code` de un error de API (ej: 'SIN_RANGO', 'AGOTADO',
+ * 'CAJA_SIN_SUBMODULO', 'UPD_YA_USADO') para el manejo de estados en la UI.
+ * Devuelve undefined cuando el error no trae un código reconocible.
+ */
+export function getApiErrorCode(error: unknown): string | undefined {
+  if (axios.isAxiosError(error)) {
+    const data: unknown = error.response?.data;
+    if (typeof data === 'object' && data !== null) {
+      const code = (data as { code?: unknown }).code;
+      return typeof code === 'string' && code !== '' ? code : undefined;
+    }
+  }
+  return undefined;
 }
 
 export interface UserInput {
@@ -255,6 +278,21 @@ export const fuidApi = {
     }),
   setValue: (caja: string, campo: string, valor: unknown) =>
     api.post(`/fuiddatosreal/${caja}/${campo}`, { valor }),
+};
+
+export const rangosUpdApi = {
+  listarRangos: (params?: { sub_modulo_id?: number; estado?: RangoUpdEstado | 'all' }) =>
+    api.get<ListarRangosResponse>('/rangos-upd', { params }),
+  asignarRango: (payload: AssignRangePayload) => api.post<AssignRangeResponse>('/rangos-upd', payload),
+  checkRango: (query: { usuario_id: number; sub_modulo_id: number; upd_inicio: string; upd_fin: string }) =>
+    api.get<CheckRangoResponse>('/rangos-upd/check', { params: query }),
+  revocarRango: (id: number) => api.post<{ message: string }>(`/rangos-upd/${id}/revocar`),
+  // Rechaza con 409 y code SIN_RANGO | AGOTADO | CAJA_SIN_SUBMODULO (leer via getApiErrorCode).
+  siguienteUpd: (caja: string) => api.get<NextUpdResult>('/rangos-upd/next', { params: { caja } }),
+  avanceRangosUpd: (subModuloId?: number) =>
+    api.get<AvanceResponse>('/rangos-upd/avance', {
+      params: subModuloId ? { sub_modulo_id: subModuloId } : undefined,
+    }),
 };
 
 export interface InventarioSyncOutcome {

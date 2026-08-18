@@ -3,9 +3,19 @@ import mysql from 'mysql2/promise';
 import { pool, query, queryOne } from '../config/db.js';
 import type { FuidDato } from '../types/db.js';
 import type { FuidCreateDto, FuidUpdateDto } from '../types/index.js';
-import { fuidValues, fuidOnDuplicateUpdate, isSuggestionField } from '../services/fuid.service.js';
+import { fuidValues, isSuggestionField } from '../services/fuid.service.js';
+import { membershipCheck, resolveSubModuloByCaja } from '../services/rangosUpd.service.js';
 
 const fechaActual = (): string => new Date().toISOString().slice(0, 10);
+
+/** True cuando el enforcement de rangos UPD está activo para el despliegue gradual. */
+const rangosUpdEnforce = (): boolean => process.env.RANGOS_UPD_ENFORCE === 'true';
+
+/** Error de MySQL por violación de la restricción UNIQUE (backstop de consumo). */
+function isErDupEntry(error: unknown): boolean {
+  const e = error as { errno?: number; code?: string };
+  return e.errno === 1062 || e.code === 'ER_DUP_ENTRY';
+}
 
 export async function listFuid(req: Request, res: Response): Promise<void> {
   const user = req.session.user;
@@ -120,19 +130,28 @@ export async function createFuid(req: Request, res: Response): Promise<void> {
   try {
     await conn.beginTransaction();
 
-    const [check] = await conn.query<mysql.RowDataPacket[]>(
-      'SELECT COUNT(*) AS count FROM fuiddatosreal WHERE upd = ?',
-      [body.upd],
-    );
-    const count = (check[0] as { count: number } | undefined)?.count ?? 0;
-    if (count > 0) {
-      await conn.rollback();
-      res.status(400).json({ error: 'El valor de UPD ya existe en la base de datos' });
-      return;
+    // Enforcement de consumo (solo TECNICA y con el flag activo): el UPD debe
+    // pertenecer a un rango activo del usuario para el sub-módulo de la caja.
+    if (user.rol === 'TECNICA' && rangosUpdEnforce()) {
+      const subModuloId = await resolveSubModuloByCaja(body.caja ?? '');
+      if (subModuloId === null) {
+        await conn.rollback();
+        res.status(409).json({ error: 'La caja no tiene sub-módulo asociado', code: 'CAJA_SIN_SUBMODULO' });
+        return;
+      }
+      const miembro = await membershipCheck(user.id, subModuloId, body.upd ?? '');
+      if (!miembro) {
+        await conn.rollback();
+        res.status(409).json({
+          error: 'El UPD no pertenece a un rango activo asignado para este sub-módulo',
+          code: 'UPD_FUERA_DE_RANGO',
+        });
+        return;
+      }
     }
 
     const values = fuidValues(body);
-    const placeholders = fuidValues(body).map(() => '?').join(', ');
+    const placeholders = values.map(() => '?').join(', ');
     const columns = [
       'fecha_del_dato', 'n_orden', 'codigo', 'entidad_remitente', 'entidad_productora',
       'unidad_administrativa', 'oficina_productora', 'objeto', 'serie', 'subserie',
@@ -143,16 +162,21 @@ export async function createFuid(req: Request, res: Response): Promise<void> {
       'historial_y_cambios', 'cambio_calidad', 'sede_calidad', 'asunto_2', 'asunto_3',
     ];
 
+    // INSERT plano: la restricción UNIQUE unique_upd es el backstop de consumo
+    // atómico; un duplicado dispara ER_DUP_ENTRY → 409 en el catch.
     const sql = `INSERT INTO fuiddatosreal (${columns.join(', ')})
-      VALUES (${placeholders})
-      ON DUPLICATE KEY UPDATE ${fuidOnDuplicateUpdate()}`;
+      VALUES (${placeholders})`;
 
     await conn.query(sql, values);
     await conn.commit();
-    res.status(200).json({ message: 'Registro insertado o actualizado correctamente' });
+    res.status(200).json({ message: 'Registro insertado correctamente' });
   } catch (error) {
     await conn.rollback().catch(() => undefined);
-    console.error('Error al insertar o actualizar el registro:', error);
+    if (isErDupEntry(error)) {
+      res.status(409).json({ error: 'El UPD ya fue usado', code: 'UPD_YA_USADO' });
+      return;
+    }
+    console.error('Error al insertar el registro:', error);
     res.status(500).json({ error: 'Error interno del servidor' });
   } finally {
     conn.release();
@@ -204,6 +228,31 @@ export async function updateFuid(req: Request, res: Response): Promise<void> {
   if (isCreator) {
     res.status(403).json({ error: 'No autorizado para actualizar este registro' });
     return;
+  }
+
+  // Enforcement de consumo en edición (TECNICA + flag): solo valida membresía
+  // cuando cambian caja o upd; si no cambian, no se valida (no rompe la edición
+  // de registros legados ni de campos ajenos al rango).
+  const nuevaCaja = body.caja ?? registro.caja ?? '';
+  const nuevoUpd = body.upd ?? registro.upd ?? '';
+  const cambiaCajaOUpd =
+    (body.caja !== undefined && body.caja !== registro.caja) ||
+    (body.upd !== undefined && body.upd !== registro.upd);
+
+  if (rol === 'TECNICA' && rangosUpdEnforce() && cambiaCajaOUpd) {
+    const subModuloId = await resolveSubModuloByCaja(nuevaCaja);
+    if (subModuloId === null) {
+      res.status(409).json({ error: 'La caja no tiene sub-módulo asociado', code: 'CAJA_SIN_SUBMODULO' });
+      return;
+    }
+    const miembro = await membershipCheck(user.id, subModuloId, nuevoUpd);
+    if (!miembro) {
+      res.status(409).json({
+        error: 'El UPD no pertenece a un rango activo asignado para este sub-módulo',
+        code: 'UPD_FUERA_DE_RANGO',
+      });
+      return;
+    }
   }
 
   const values = [...fuidValues(body as FuidCreateDto), id];
