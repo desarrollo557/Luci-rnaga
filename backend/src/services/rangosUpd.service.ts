@@ -333,3 +333,64 @@ export async function avanceRangosUpd(
     filtro: { asignado_por: asignadoPor ?? null, sub_modulo_id: subModuloId ?? null },
   };
 }
+
+/**
+ * Avance de un técnico específico (para el perfil TECNICA).
+ * Igual lógica que avanceRangosUpd pero filtrado por usuario_id del técnico.
+ */
+export async function avanceTecnica(
+  usuarioId: number,
+  subModuloId: number | undefined,
+): Promise<AvanceRangosResult> {
+  const params: unknown[] = [usuarioId];
+  let filtroSql = ' AND r.usuario_id = ?';
+  if (subModuloId !== undefined) {
+    filtroSql += ' AND r.sub_modulo_id = ?';
+    params.push(subModuloId);
+  }
+
+  const rangos = await query<{ usuario_id: number; nombre: string; upd_inicio: string; upd_fin: string }>(
+    `SELECT r.usuario_id, u.nombre, r.upd_inicio, r.upd_fin
+     FROM rangos_upd r
+     JOIN users u ON u.id = r.usuario_id
+     WHERE r.estado IN ('activo', 'agotado')${filtroSql}
+     ORDER BY r.usuario_id`,
+    params,
+  );
+
+  const finalizadas = await query<{ usuario_id: number; total: number }>(
+    `SELECT r.usuario_id, COUNT(DISTINCT f.upd) AS total
+     FROM rangos_upd r
+     JOIN fuiddatosreal f
+       ON f.upd BETWEEN r.upd_inicio AND r.upd_fin AND LENGTH(f.upd) = 10
+     WHERE r.estado IN ('activo', 'agotado')${filtroSql}
+     GROUP BY r.usuario_id`,
+    params,
+  );
+  const finalizadasPorUsuario = new Map(finalizadas.map((f) => [f.usuario_id, f.total]));
+
+  const acumulado = new Map<number, { nombre: string; total: number }>();
+  for (const r of rangos) {
+    const total = toNumeric(r.upd_fin) - toNumeric(r.upd_inicio) + 1;
+    const prev = acumulado.get(r.usuario_id);
+    if (prev) {
+      prev.total += total;
+    } else {
+      acumulado.set(r.usuario_id, { nombre: r.nombre, total });
+    }
+  }
+
+  const por_tecnico: AvanceRow[] = [...acumulado.entries()]
+    .map(([usuario_id, { nombre, total }]) => {
+      const finalizadas = finalizadasPorUsuario.get(usuario_id) ?? 0;
+      const pendientes = Math.max(0, total - finalizadas);
+      const porcentaje = total > 0 ? Math.round((finalizadas / total) * 100) : 0;
+      return { usuario_id, nombre, total_asignadas: total, finalizadas, pendientes, porcentaje };
+    })
+    .sort((a, b) => a.usuario_id - b.usuario_id);
+
+  return {
+    por_tecnico,
+    filtro: { asignado_por: null, sub_modulo_id: subModuloId ?? null },
+  };
+}

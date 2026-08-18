@@ -10,6 +10,7 @@ import {
   revocarRango,
   siguienteUpd,
   avanceRangosUpd,
+  miAvance,
 } from '../controllers/rangosUpd.controller.js';
 
 const router = Router();
@@ -21,6 +22,7 @@ router.post('/rangos-upd', isAuthenticated, isLiderOrAdmin, validate(assignRange
 router.get('/rangos-upd/check', isAuthenticated, isLiderOrAdmin, asyncHandler(checkRango));
 router.get('/rangos-upd/next', isAuthenticated, asyncHandler(siguienteUpd));
 router.get('/rangos-upd/avance', isAuthenticated, isLiderOrAdmin, asyncHandler(avanceRangosUpd));
+router.get('/rangos-upd/mi-avance', isAuthenticated, asyncHandler(miAvance));
 router.post('/rangos-upd/:id/revocar', isAuthenticated, isLiderOrAdmin, asyncHandler(revocarRango));
 
 export default router;

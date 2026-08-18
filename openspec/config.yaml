@@ -1,0 +1,49 @@
+schema: spec-driven
+
+context: |
+  Tech stack: Monorepo "luciernaga-host" v2 — backend (Express 4 + TypeScript 5.7 ESM, tsx, mysql2, zod, express-session) + frontend (React 19 + Vite 6 + TypeScript 5.7, TanStack Query v5, Tailwind 4, zustand, react-router 7).
+  Architecture: backend/src layered (controllers, services, middlewares, routes, validators, config, types, utils); frontend/src by feature area (pages, components, lib, stores). API under /api prefix, axios withCredentials, Vite proxy /api -> :3000.
+  Database: MySQL 8 (DB fuiddatosluciernaga). Session auth (connect.sid cookie).
+  Testing: No test runner installed (no vitest/jest/playwright). Typecheck only.
+  Style: Conventional commits; git flow develop -> production -> main with PR gates (docs/GIT_WORKFLOW.md). CI in .github/workflows/ci.yml (typecheck + build, Node 22).
+
+testing:
+  strict_tdd: false
+  runner: none
+  runner_note: "No test runner or test files detected (backend + frontend). Strict TDD disabled until a runner is added."
+  layers:
+    unit: false
+    integration: false
+    e2e: false
+  coverage: false
+  quality:
+    linter: none
+    formatter: none
+    typecheck_backend: "npm --prefix backend run typecheck"  # tsc --noEmit
+    typecheck_frontend: "npm --prefix frontend run typecheck"  # tsc -b --noEmit
+
+rules:
+  proposal:
+    - Include rollback plan for risky changes
+  specs:
+    - Use Given/When/Then for scenarios
+    - Use RFC 2119 keywords (MUST, SHALL, SHOULD, MAY)
+  design:
+    - Include sequence diagrams for complex flows
+    - Document architecture decisions with rationale
+  tasks:
+    - Group by phase, use hierarchical numbering
+    - Keep tasks completable in one session
+  apply:
+    guidelines:
+      - Follow existing code patterns (layered backend, feature-area frontend)
+      - Conventional commits, small reviewable work units
+    tdd: false
+    test_command: ""
+  verify:
+    test_command: ""
+    build_command: "npm --prefix backend run build && npm --prefix frontend run build"
+    typecheck_command: "npm --prefix backend run typecheck && npm --prefix frontend run typecheck"
+    coverage_threshold: 0
+  archive:
+    - Warn before merging destructive deltas

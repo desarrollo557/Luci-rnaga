@@ -366,10 +366,25 @@ function FuidFormModal({ open, cajaId, editing, defaultNOrden, caja, onClose }: 
 
   const createMutation = useMutation({
     mutationFn: (data: DataRow) => fuidApi.create(data),
-    onSuccess: () => {
+    onSuccess: (_data, variables) => {
       toast.success('Registro FUID creado correctamente');
+      // Invalidar también la query de "siguiente UPD" para esa caja,
+      // así la próxima apertura obtiene el consecutivo real (gap-walk).
+      if (variables.caja) {
+        queryClient.invalidateQueries({ queryKey: ['rangos-upd', 'next', variables.caja] });
+      }
       onClose();
       void invalidateDomain(queryClient, 'fuiddatosreal');
+    },
+    onError: (error) => {
+      const code = getApiErrorCode(error);
+      if (code === 'UPD_YA_USADO') {
+        toast.error('El UPD ya fue usado por otro registro. Se asignará el siguiente disponible.');
+        // Forzar refetch del next UPD para la caja del formulario
+        if (form.caja) {
+          queryClient.invalidateQueries({ queryKey: ['rangos-upd', 'next', form.caja] });
+        }
+      }
     },
   });
 

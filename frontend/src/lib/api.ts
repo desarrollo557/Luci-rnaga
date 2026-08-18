@@ -293,6 +293,10 @@ export const rangosUpdApi = {
     api.get<AvanceResponse>('/rangos-upd/avance', {
       params: subModuloId ? { sub_modulo_id: subModuloId } : undefined,
     }),
+  miAvance: (subModuloId?: number) =>
+    api.get<AvanceResponse>('/rangos-upd/mi-avance', {
+      params: subModuloId ? { sub_modulo_id: subModuloId } : undefined,
+    }),
 };
 
 export interface InventarioSyncOutcome {

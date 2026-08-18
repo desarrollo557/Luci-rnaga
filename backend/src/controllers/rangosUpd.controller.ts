@@ -4,6 +4,7 @@ import { checkRangeSchema } from '../validators/rangosUpd.validator.js';
 import {
   assignRango,
   avanceRangosUpd as avanceRangosUpdService,
+  avanceTecnica as avanceTecnicaService,
   checkOverlap,
   findActiveRanges,
   findUsedUpds,
@@ -202,5 +203,35 @@ export async function avanceRangosUpd(req: Request, res: Response): Promise<void
   }
 
   const result = await avanceRangosUpdService(asignadoPor, subModuloId);
+  res.json(result);
+}
+
+/**
+ * GET /rangos-upd/mi-avance — Avance del técnico autenticado (rol TECNICA).
+ * Devuelve su propio progreso: total asignado, finalizadas, pendientes, %.
+ * Opcional: filtrar por sub_modulo_id.
+ */
+export async function miAvance(req: Request, res: Response): Promise<void> {
+  const user = req.session.user;
+  if (!user) {
+    res.status(403).json({ error: 'Acceso denegado: usuario no autenticado' });
+    return;
+  }
+  if (user.rol !== 'TECNICA') {
+    res.status(403).json({ error: 'Acceso denegado: solo el rol TECNICA puede ver su avance' });
+    return;
+  }
+
+  const rawSub = req.query.sub_modulo_id;
+  let subModuloId: number | undefined;
+  if (rawSub !== undefined && rawSub !== '') {
+    subModuloId = Number(rawSub);
+    if (!Number.isInteger(subModuloId) || subModuloId <= 0) {
+      res.status(400).json({ error: 'El parámetro sub_modulo_id debe ser un entero positivo' });
+      return;
+    }
+  }
+
+  const result = await avanceTecnicaService(user.id, subModuloId);
   res.json(result);
 }
