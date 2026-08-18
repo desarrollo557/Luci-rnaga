@@ -88,11 +88,6 @@ export function fuidValues(dto: FuidCreateDto): unknown[] {
   ];
 }
 
-/** Fragmento UPDATE para ON DUPLICATE KEY UPDATE (sin los dos puntos). */
-export function fuidOnDuplicateUpdate(): string {
-  return FUID_COLUMNS.map((col) => `${col} = VALUES(${col})`).join(', ');
-}
-
 /** Campos permitidos para autocompletado. */
 export const SUGGESTION_FIELDS = [
   'entidad_productora',

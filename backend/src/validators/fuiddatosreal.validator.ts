@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { isUpdValid, normalizeUpd } from '../utils/updFormat.js';
 
 const optionalText = z.string().nullable().optional();
 const optionalNumber = z.union([z.number(), z.string()]).nullable().optional();
@@ -7,6 +8,19 @@ const optionalDate = z
   .regex(/^\d{4}-\d{2}-\d{2}$/, 'Formato de fecha inválido (YYYY-MM-DD)')
   .nullable()
   .optional();
+
+/**
+ * Normaliza (trim + mayúsculas) y valida un UPD: UPD + exactamente 7 dígitos.
+ * El enforcement de membresía por rango es solo para rol TECNICA y se aplica en
+ * el controller; aquí solo se garantiza el formato para todos los roles.
+ */
+const updField = z
+  .string({ message: 'El UPD es requerido' })
+  .min(1, 'El UPD es requerido')
+  .transform((v) => normalizeUpd(v))
+  .refine((v) => isUpdValid(v), {
+    message: 'Formato de UPD inválido: debe ser UPD + 7 dígitos (ej. UPD2950001)',
+  });
 
 export const createFuidSchema = z.object({
   fecha_del_dato: optionalDate,
@@ -30,7 +44,7 @@ export const createFuidSchema = z.object({
   fecha_inicial: optionalDate,
   fecha_final: optionalDate,
   caja: z.string({ message: 'La caja es requerida' }).min(1, 'La caja es requerida'),
-  upd: z.string({ message: 'El UPD es requerido' }).min(1, 'El UPD es requerido'),
+  upd: updField,
   tomo: optionalText,
   otro: optionalText,
   caja_interna: optionalText,
@@ -55,8 +69,5 @@ export const updateFuidSchema = createFuidSchema.partial().extend({
     .string({ message: 'La caja no puede estar vacía' })
     .min(1, 'La caja no puede estar vacía')
     .optional(),
-  upd: z
-    .string({ message: 'El UPD no puede estar vacío' })
-    .min(1, 'El UPD no puede estar vacío')
-    .optional(),
+  upd: updField.optional(),
 });
