@@ -14,6 +14,7 @@ import { asyncHandler } from '../utils/asyncHandler.js';
 import {
   listModulosCaja,
   getModuloCajaById,
+  getNextCajaNumero,
   createModuloCaja,
   updateModuloCaja,
   deleteModuloCaja,
@@ -52,6 +53,7 @@ router.delete('/modulos_caja/:id', isAuthenticated, isLiderOrAdmin, asyncHandler
 router.patch('/modulos_caja/:id/cambiarEstado', isAuthenticated, isTecnicaOnly, asyncHandler(changeEstadoCaja));
 
 router.get('/modulos_caja/count_fuiddatosreal', isAuthenticated, asyncHandler(countFuidByCaja));
+router.get('/modulos_caja/next/:prefijo', isAuthenticated, isLiderOrAdmin, asyncHandler(getNextCajaNumero));
 router.get('/modulos_caja/:id', isAuthenticated, asyncHandler(getModuloCajaById));
 router.get('/modulos_caja/:modulo_id/usuarios', isAuthenticated, asyncHandler(listTecnicaUsersOfCaja));
 router.get('/modulos_caja_calidad/:modulo_id/usuarios', isAuthenticated, asyncHandler(listCalidadUsersOfCaja));

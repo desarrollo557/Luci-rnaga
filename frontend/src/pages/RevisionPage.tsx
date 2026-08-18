@@ -22,7 +22,7 @@ import type { FuidDato } from '@/types';
 
 const PAGE_SIZE = 25;
 
-const EDITABLE_ROLES = ['LIDER', 'ADMIN', 'TECNICA'] as const;
+const EDITABLE_ROLES = ['LIDER', 'ADMIN', 'TECNICA', 'CALIDAD'] as const;
 
 function FieldValue({ label, value }: { label: string; value: string | number | null | undefined }) {
   return (
@@ -206,9 +206,9 @@ export default function RevisionPage() {
   const cajaCode = cajaQuery.data?.caja_modulo ?? cajaId ?? '';
 
   const fuidQuery = useQuery({
-    queryKey: ['fuiddatosreal', 'list'],
-    queryFn: () => fuidApi.list().then((res) => res.data),
-    refetchInterval: 60_000,
+    queryKey: ['fuiddatosreal', 'list', cajaCode],
+    queryFn: () => fuidApi.list({ caja: cajaCode }).then((res) => res.data),
+    enabled: Boolean(cajaCode),
   });
 
   const filtered = useMemo(() => {

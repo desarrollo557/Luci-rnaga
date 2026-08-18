@@ -1,6 +1,6 @@
 import type { Request, Response } from 'express';
 import bcrypt from 'bcryptjs';
-import { queryOne } from '../config/db.js';
+import { query, queryOne } from '../config/db.js';
 import type { User } from '../types/db.js';
 import type { LoginRequest, LoginResponse } from '../types/index.js';
 
@@ -34,6 +34,12 @@ export async function login(req: Request, res: Response): Promise<void> {
       return;
     }
 
+    const today = new Date().toISOString().slice(0, 10);
+    if (user.suspendido_hasta && user.suspendido_hasta >= today) {
+      res.status(200).json({ success: false, message: `Usuario suspendido hasta el ${formatDate(user.suspendido_hasta)}. Contacte al administrador.` } satisfies LoginResponse);
+      return;
+    }
+
     const isPasswordEncrypted = user.contrasena?.startsWith('$2b$');
     let match = false;
     if (isPasswordEncrypted) {
@@ -45,6 +51,15 @@ export async function login(req: Request, res: Response): Promise<void> {
     if (!match) {
       res.status(200).json({ success: false, message: 'Usuario o contraseña incorrectos' } satisfies LoginResponse);
       return;
+    }
+
+    if (match && !isPasswordEncrypted) {
+      try {
+        const hashedPassword = await bcrypt.hash(contrasena, saltRounds);
+        await query('UPDATE users SET contrasena = ? WHERE id = ?', [hashedPassword, user.id]);
+      } catch (migrationError) {
+        console.error('Error al migrar la contraseña en texto plano:', migrationError);
+      }
     }
 
     req.session.user = {
@@ -81,3 +96,8 @@ export async function logout(req: Request, res: Response): Promise<void> {
 }
 
 export { saltRounds };
+
+function formatDate(iso: string): string {
+  const [year, month, day] = iso.split('-');
+  return `${day}/${month}/${year}`;
+}

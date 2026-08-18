@@ -22,4 +22,10 @@ export const createUserSchema = z.object({
   sede: sedeField,
 });
 
-export const updateUserSchema = createUserSchema;
+export const updateUserSchema = z.object({
+  cc: ccField,
+  nombre: nombreField,
+  contrasena: contrasenaField.optional(),
+  rol: rolField,
+  sede: sedeField,
+});

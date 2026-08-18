@@ -28,7 +28,6 @@ export default function HistorialPage() {
   const { data: rows = [], isLoading } = useQuery({
     queryKey: ['historial'],
     queryFn: async () => (await historialApi.list()).data,
-    refetchInterval: 60_000,
   });
 
   const tipos = useMemo(

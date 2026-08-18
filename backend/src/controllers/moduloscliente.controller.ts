@@ -12,23 +12,51 @@ export async function listModulosCliente(req: Request, res: Response): Promise<v
   const subModuloId = String(req.query.subModuloId ?? '');
 
   if (user.rol === 'TECNICA') {
-    const results = await query<ModuloCliente>(
-      `SELECT m.* FROM moduloscliente m
-       JOIN modulo_tecnica mt ON mt.modulo_id = m.id
-       WHERE mt.usuario_id = ? AND m.id_submodulo = ?`,
-      [user.id, subModuloId],
-    );
+    const results = subModuloId
+      ? await query<ModuloCliente>(
+          `SELECT m.*, (SELECT COUNT(*) FROM modulos_caja mc WHERE mc.id_modulo_caja = m.id) AS total_cajas
+           FROM moduloscliente m
+           JOIN modulo_tecnica mt ON mt.modulo_id = m.id
+           WHERE mt.usuario_id = ? AND m.id_submodulo = ?`,
+          [user.id, subModuloId],
+        )
+      : await query<ModuloCliente>(
+          `SELECT m.*, (SELECT COUNT(*) FROM modulos_caja mc WHERE mc.id_modulo_caja = m.id) AS total_cajas
+           FROM moduloscliente m
+           JOIN modulo_tecnica mt ON mt.modulo_id = m.id
+           WHERE mt.usuario_id = ?`,
+          [user.id],
+        );
     res.json(results);
   } else if (user.rol === 'CALIDAD') {
-    const results = await query<ModuloCliente>(
-      `SELECT m.* FROM moduloscliente m
-       JOIN modulo_calidad mc ON mc.modulo_id = m.id
-       WHERE mc.usuario_id = ? AND m.id_submodulo = ?`,
-      [user.id, subModuloId],
-    );
+    const results = subModuloId
+      ? await query<ModuloCliente>(
+          `SELECT m.*, (SELECT COUNT(*) FROM modulos_caja mc WHERE mc.id_modulo_caja = m.id) AS total_cajas
+           FROM moduloscliente m
+           JOIN modulo_calidad mc ON mc.modulo_id = m.id
+           WHERE mc.usuario_id = ? AND m.id_submodulo = ?`,
+          [user.id, subModuloId],
+        )
+      : await query<ModuloCliente>(
+          `SELECT m.*, (SELECT COUNT(*) FROM modulos_caja mc WHERE mc.id_modulo_caja = m.id) AS total_cajas
+           FROM moduloscliente m
+           JOIN modulo_calidad mc ON mc.modulo_id = m.id
+           WHERE mc.usuario_id = ?`,
+          [user.id],
+        );
     res.json(results);
   } else if (user.rol === 'LIDER' || user.rol === 'ADMIN') {
-    const results = await query<ModuloCliente>('SELECT * FROM moduloscliente WHERE id_submodulo = ?', [subModuloId]);
+    const results = subModuloId
+      ? await query<ModuloCliente>(
+          `SELECT m.*, (SELECT COUNT(*) FROM modulos_caja mc WHERE mc.id_modulo_caja = m.id) AS total_cajas
+           FROM moduloscliente m
+           WHERE m.id_submodulo = ?`,
+          [subModuloId],
+        )
+      : await query<ModuloCliente>(
+          `SELECT m.*, (SELECT COUNT(*) FROM modulos_caja mc WHERE mc.id_modulo_caja = m.id) AS total_cajas
+           FROM moduloscliente m`,
+        );
     res.json(results);
   } else {
     res.status(403).json({ message: 'Acceso no permitido' });
@@ -95,11 +123,57 @@ export async function assignUsersToModulo(req: Request, res: Response): Promise<
     res.status(400).json({ message: 'No se enviaron usuarios para agregar' });
     return;
   }
+  if (rol !== 'tecnica' && rol !== 'calidad') {
+    res.status(400).json({ message: 'El parámetro rol debe ser "tecnica" o "calidad"' });
+    return;
+  }
 
   const tablaRelacion = rol === 'calidad' ? 'modulo_calidad' : 'modulo_tecnica';
-  const values = usuarios.map((usuarioId) => [moduloId, usuarioId]);
+  const idsUnicos = [...new Set(usuarios.map(Number).filter((n) => Number.isInteger(n)))];
+  if (idsUnicos.length === 0) {
+    res.status(400).json({ message: 'La lista de usuarios no es válida' });
+    return;
+  }
+
+  const existentes = await query<{ id: number; nombre: string; rol: string }>(
+    'SELECT id, nombre, rol FROM users WHERE id IN (?)',
+    [idsUnicos],
+  );
+  const mapa = new Map(existentes.map((u) => [u.id, u.rol]));
+  const inexistentes = idsUnicos.filter((id) => !mapa.has(id));
+  if (inexistentes.length > 0) {
+    res.status(400).json({ message: `Los siguientes usuarios no existen: ${inexistentes.join(', ')}` });
+    return;
+  }
+
+  const rolEsperado = rol === 'calidad' ? 'CALIDAD' : 'TECNICA';
+  const rolIncorrecto = idsUnicos.filter((id) => mapa.get(id) !== rolEsperado);
+  if (rolIncorrecto.length > 0) {
+    const nombres = rolIncorrecto.map((id) => existentes.find((u) => u.id === id)?.nombre ?? id);
+    res.status(400).json({
+      message: `Los siguientes usuarios no tienen el rol ${rolEsperado}: ${nombres.join(', ')}`,
+    });
+    return;
+  }
+
+  const yaAsignados = await query<{ usuario_id: number }>(
+    `SELECT usuario_id FROM ${tablaRelacion} WHERE modulo_id = ? AND usuario_id IN (?)`,
+    [moduloId, idsUnicos],
+  );
+  const yaSet = new Set(yaAsignados.map((a) => a.usuario_id));
+  const nuevos = idsUnicos.filter((id) => !yaSet.has(id));
+  if (nuevos.length === 0) {
+    res.status(409).json({ message: 'Los usuarios seleccionados ya están asignados a este módulo' });
+    return;
+  }
+
+  const values = nuevos.map((usuarioId) => [moduloId, usuarioId]);
   await query(`INSERT INTO ${tablaRelacion} (modulo_id, usuario_id) VALUES ?`, [values]);
-  res.json({ message: `Usuarios ${rol} agregados correctamente` });
+  res.json({
+    message: yaSet.size > 0
+      ? `Asignación guardada (${yaSet.size} ya estaban asignados)`
+      : `Usuarios ${rol} agregados correctamente`,
+  });
 }
 
 export async function removeUsersFromModulo(req: Request, res: Response): Promise<void> {

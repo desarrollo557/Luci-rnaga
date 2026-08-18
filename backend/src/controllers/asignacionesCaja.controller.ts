@@ -17,12 +17,32 @@ async function resolveAsignables(
     return { error: { status: 400, message: 'La lista de usuarios no es válida' }, nuevos: [], duplicados: [] };
   }
 
-  const existentes = await query<{ id: number }>('SELECT id FROM users WHERE id IN (?)', [idsUnicos]);
+  const existentes = await query<{ id: number; nombre: string; rol: string }>(
+    'SELECT id, nombre, rol FROM users WHERE id IN (?)',
+    [idsUnicos],
+  );
   const existentesSet = new Set(existentes.map((u) => u.id));
   const inexistentes = idsUnicos.filter((id) => !existentesSet.has(id));
   if (inexistentes.length > 0) {
     return {
       error: { status: 400, message: `Los siguientes usuarios no existen: ${inexistentes.join(', ')}` },
+      nuevos: [],
+      duplicados: [],
+    };
+  }
+
+  const rolEsperado = tabla === 'asignacion_caja_calidad' ? 'CALIDAD' : 'TECNICA';
+  const rolIncorrecto = idsUnicos.filter((id) => {
+    const u = existentes.find((e) => e.id === id);
+    return u?.rol !== rolEsperado;
+  });
+  if (rolIncorrecto.length > 0) {
+    const nombres = rolIncorrecto.map((id) => existentes.find((e) => e.id === id)?.nombre ?? id);
+    return {
+      error: {
+        status: 400,
+        message: `Los siguientes usuarios no tienen el rol ${rolEsperado}: ${nombres.join(', ')}`,
+      },
       nuevos: [],
       duplicados: [],
     };
@@ -172,6 +192,26 @@ export async function assignCajaCalidadRango(req: Request, res: Response): Promi
     return;
   }
 
+  const idsUnicos = [...new Set(usuarios.map(Number).filter((n) => Number.isInteger(n)))];
+  if (idsUnicos.length === 0) {
+    res.status(400).json({ message: 'La lista de usuarios no es válida' });
+    return;
+  }
+
+  const calidad = await query<{ id: number; nombre: string; rol: string }>(
+    'SELECT id, nombre, rol FROM users WHERE id IN (?)',
+    [idsUnicos],
+  );
+  const rolIncorrecto = idsUnicos.filter((id) => {
+    const u = calidad.find((c) => c.id === id);
+    return u?.rol !== 'CALIDAD';
+  });
+  if (rolIncorrecto.length > 0) {
+    const nombres = rolIncorrecto.map((id) => calidad.find((c) => c.id === id)?.nombre ?? id);
+    res.status(400).json({ message: `Los siguientes usuarios no tienen el rol CALIDAD: ${nombres.join(', ')}` });
+    return;
+  }
+
   const cajas = generateRangoCajas(rango_inicio, rango_fin);
   const cajasDb = await query<{ id: number }>('SELECT id FROM modulos_caja WHERE caja_modulo IN (?)', [cajas]);
 
@@ -180,11 +220,27 @@ export async function assignCajaCalidadRango(req: Request, res: Response): Promi
     return;
   }
 
+  // Evitar duplicados contra el trigger duplicidad_modulo_caja_calidad
+  const yaAsignadas = await query<{ modulo_id: number }>(
+    `SELECT DISTINCT modulo_id FROM asignacion_caja_calidad WHERE modulo_id IN (?) AND usuario_id IN (?)`,
+    [cajasDb.map((c) => c.id), idsUnicos],
+  );
+  const yaSet = new Set(yaAsignadas.map((a) => a.modulo_id));
+  const cajasNuevas = cajasDb.filter((c) => !yaSet.has(c.id));
+  if (cajasNuevas.length === 0) {
+    res.status(409).json({ message: 'Los usuarios seleccionados ya están asignados a todas las cajas del rango' });
+    return;
+  }
+
   const values: Array<[number, number]> = [];
-  usuarios.forEach((usuarioId) => {
-    cajasDb.forEach((caja) => values.push([caja.id, usuarioId]));
+  idsUnicos.forEach((usuarioId) => {
+    cajasNuevas.forEach((caja) => values.push([caja.id, usuarioId]));
   });
 
   await query('INSERT INTO asignacion_caja_calidad (modulo_id, usuario_id) VALUES ?', [values]);
-  res.json({ message: 'Cajas asignadas correctamente a los usuarios de calidad' });
+  res.json({
+    message: yaSet.size > 0
+      ? `Cajas asignadas correctamente (${yaSet.size} ya estaban asignadas)`
+      : 'Cajas asignadas correctamente a los usuarios de calidad',
+  });
 }

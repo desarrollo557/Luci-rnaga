@@ -334,6 +334,20 @@ export default function CajasPage() {
                   </Link>
                 </>
               )}
+              {rol === 'CALIDAD' && (
+                <>
+                  <Link to={`/cajas/${mid}/datos`}>
+                    <Button variant="secondary">
+                      <ClipboardList className="size-4" /> Ver FUIDs
+                    </Button>
+                  </Link>
+                  <Link to={`/cajas/${mid}/revision`}>
+                    <Button variant="secondary">
+                      <Eye className="size-4" /> Ver Revisión
+                    </Button>
+                  </Link>
+                </>
+              )}
             </>
           )
         }

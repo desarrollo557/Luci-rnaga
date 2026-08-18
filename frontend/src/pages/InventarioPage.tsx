@@ -110,7 +110,6 @@ export default function InventarioPage() {
   const { data: rows = [], isLoading } = useQuery({
     queryKey: ['inventario'],
     queryFn: async () => (await inventarioApi.list()).data,
-    refetchInterval: 60_000,
   });
 
   const { data: clientesParaInventario = [] } = useQuery({

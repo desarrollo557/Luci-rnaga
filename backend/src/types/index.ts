@@ -29,6 +29,7 @@ export interface CreateUserDto {
   contrasena: string;
   rol: string;
   sede: string;
+  suspendido_hasta?: string | null;
 }
 
 export interface UpdateUserDto {
@@ -37,6 +38,7 @@ export interface UpdateUserDto {
   contrasena: string;
   rol: string;
   sede: string;
+  suspendido_hasta?: string | null;
 }
 
 export interface FuidCreateDto {

@@ -1,5 +1,5 @@
 import type { Request, Response } from 'express';
-import { query, queryResult } from '../config/db.js';
+import { query, queryOne, queryResult } from '../config/db.js';
 import type { ModuloCaja } from '../types/db.js';
 
 export async function listModulosCaja(req: Request, res: Response): Promise<void> {
@@ -20,14 +20,18 @@ export async function listModulosCaja(req: Request, res: Response): Promise<void
   const params: unknown[] = [idModuloCaja];
 
   if (user.rol === 'LIDER' || user.rol === 'ADMIN') {
-    sql = 'SELECT * FROM modulos_caja WHERE id_modulo_caja = ?';
+    sql = `SELECT mc.*, (SELECT COUNT(*) FROM fuiddatosreal f WHERE f.caja = mc.caja_modulo) AS total_fuids
+      FROM modulos_caja mc
+      WHERE mc.id_modulo_caja = ?`;
   } else if (user.rol === 'TECNICA') {
-    sql = `SELECT mc.* FROM modulos_caja mc
+    sql = `SELECT mc.*, (SELECT COUNT(*) FROM fuiddatosreal f WHERE f.caja = mc.caja_modulo) AS total_fuids
+      FROM modulos_caja mc
       JOIN asignacion_caja_tecnica act ON mc.id = act.modulo_id
       WHERE act.usuario_id = ? AND mc.id_modulo_caja = ?`;
     params.unshift(user.id);
   } else if (user.rol === 'CALIDAD') {
-    sql = `SELECT mc.* FROM modulos_caja mc
+    sql = `SELECT mc.*, (SELECT COUNT(*) FROM fuiddatosreal f WHERE f.caja = mc.caja_modulo) AS total_fuids
+      FROM modulos_caja mc
       JOIN asignacion_caja_calidad ac ON mc.id = ac.modulo_id
       WHERE ac.usuario_id = ? AND mc.id_modulo_caja = ?`;
     params.unshift(user.id);
@@ -50,6 +54,27 @@ export async function getModuloCajaById(req: Request, res: Response): Promise<vo
   }
 
   res.json(results[0]);
+}
+
+export async function getNextCajaNumero(req: Request, res: Response): Promise<void> {
+  const prefijo = String(req.params.prefijo ?? '');
+  // Prefijo esperado: 3 dígitos + "C" (ej. "051C"). Sin la "C" la agregamos.
+  const base = prefijo.toUpperCase().replace(/C$/, '');
+  if (!/^\d{1,3}$/.test(base)) {
+    res.status(400).json({ message: 'El prefijo debe tener el formato de código del módulo (ej. 051)' });
+    return;
+  }
+  const prefijoNormalizado = `${base.padStart(3, '0')}C`;
+
+  const row = await queryOne<{ max_num: number | null }>(
+    `SELECT MAX(CAST(SUBSTRING(caja_modulo, LENGTH(?) + 1) AS UNSIGNED)) AS max_num
+     FROM modulos_caja
+     WHERE caja_modulo LIKE CONCAT(?, '%')`,
+    [prefijoNormalizado, prefijoNormalizado],
+  );
+
+  const siguiente = (row?.max_num ?? 0) + 1;
+  res.json({ prefijo: prefijoNormalizado, siguiente: `${prefijoNormalizado}${String(siguiente).padStart(6, '0')}` });
 }
 
 export async function createModuloCaja(req: Request, res: Response): Promise<void> {

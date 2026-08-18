@@ -80,7 +80,7 @@ export function getApiErrorMessage(error: unknown): string {
 export interface UserInput {
   cc: string;
   nombre: string;
-  contrasena: string;
+  contrasena?: string;
   rol: Role;
   sede: string;
 }
@@ -142,10 +142,12 @@ export const authApi = {
 
 export const usersApi = {
   list: () => api.get<User[]>('/users'),
-  get: (cc: string) => api.get<User>(`/users/${cc}`),
+  get: (id: number) => api.get<User>(`/users/${id}`),
   create: (data: UserInput) => api.post<User>('/users', data),
-  update: (cc: string, data: Partial<UserInput>) => api.put<User>(`/users/${cc}`, data),
-  remove: (cc: string) => api.delete(`/users/${cc}`),
+  update: (id: number, data: Partial<UserInput>) => api.put<User>(`/users/${id}`, data),
+  remove: (id: number) => api.delete(`/users/${id}`),
+  suspender: (id: number, suspendidoHasta: string | null) =>
+    api.patch(`/users/${id}/suspension`, { suspendido_hasta: suspendidoHasta }),
   byRol: (rol: Role, params?: { sede?: string }) =>
     api.get<User[]>(`/usuarios/${rol}`, { params }),
 };
@@ -217,6 +219,8 @@ export const modulosCajaApi = {
     api.get<{ total: number }>('/modulos_caja/count_fuiddatosreal', {
       params: { caja_modulo: cajaModulo },
     }),
+  siguienteNumero: (prefijo: string) =>
+    api.get<{ prefijo: string; siguiente: string }>(`/modulos_caja/next/${prefijo}`),
 };
 
 export const asignacionCajaTecnicaApi = {
@@ -233,7 +237,8 @@ export const asignacionCajaCalidadApi = {
 };
 
 export const fuidApi = {
-  list: () => api.get<FuidDato[]>('/fuiddatosreal'),
+  list: (params?: { caja?: string; limit?: number; offset?: number }) =>
+    api.get<FuidDato[]>('/fuiddatosreal', { params }),
   get: (id: string | number) => api.get<FuidDato>(`/fuiddatosreal/${id}`),
   create: (data: DataRow) => api.post<FuidDato>('/fuiddatosreal', data),
   update: (id: string | number, data: DataRow) => api.put<FuidDato>(`/fuiddatosreal/${id}`, data),

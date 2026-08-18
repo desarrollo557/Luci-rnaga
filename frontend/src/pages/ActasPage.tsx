@@ -12,7 +12,6 @@ import {
   Modal,
   PageHeader,
   Select,
-  Spinner,
   Table,
   type Column,
 } from '@/components/ui';
@@ -53,14 +52,15 @@ function EstadoBadge({ estado }: { estado: string }) {
   return <Badge color={color}>{estado || '—'}</Badge>;
 }
 
-function FuidCount({ cajaModulo }: { cajaModulo: string }) {
-  const fuidQuery = useQuery({
-    queryKey: ['modulos-caja', 'fuid-count', cajaModulo],
-    queryFn: () => modulosCajaApi.countFuidDatosReal(cajaModulo).then((res) => res.data),
+/** Consulta el siguiente número de caja global del prefijo contra el backend.
+ *  Solo se activa para LIDER/ADMIN: son quienes crean cajas (CALIDAD/TECNICA no,
+ *  y el endpoint next/:prefijo está restringido a esos roles). */
+function useSiguienteCaja(prefijo: string, enabled: boolean) {
+  return useQuery({
+    queryKey: ['modulos-caja', 'next', prefijo],
+    queryFn: () => modulosCajaApi.siguienteNumero(prefijo).then((res) => res.data.siguiente),
+    enabled: Boolean(prefijo) && enabled,
   });
-
-  if (fuidQuery.isPending) return <Spinner className="size-4 text-primary-600" />;
-  return <span>{fuidQuery.data?.total ?? 0}</span>;
 }
 
 export default function ActasPage() {
@@ -79,7 +79,6 @@ export default function ActasPage() {
     queryKey: ['modulos-caja', 'list', id],
     queryFn: () => modulosCajaApi.list(id as string).then((res) => res.data),
     enabled: Boolean(id),
-    refetchInterval: 60_000,
   });
 
   const moduloQuery = useQuery({
@@ -94,6 +93,11 @@ export default function ActasPage() {
   const cajaPlaceholder = /^\d{1,3}$/.test(codigoModulo)
     ? `${codigoModulo.padStart(3, '0')}C000000`
     : '000C000000';
+
+  // Siguiente número de caja global del prefijo (evita duplicados entre módulos).
+  const prefijoCaja = /^\d{1,3}$/.test(codigoModulo) ? `${codigoModulo.padStart(3, '0')}C` : '';
+  const siguienteCajaQuery = useSiguienteCaja(prefijoCaja, isManager);
+  const siguienteCaja = siguienteCajaQuery.data ?? null;
 
   const createMutation = useMutation({
     mutationFn: (data: ModuloCajaInput) => modulosCajaApi.create(data),
@@ -178,22 +182,25 @@ export default function ActasPage() {
 
   const openNuevaCaja = () => {
     setEditingCaja(null);
-    const codigoModulo = moduloQuery.data?.codigo ?? '';
     const actaModulo = moduloQuery.data?.acta_transferencia_modulo ?? '';
     // Entidades de referencia: se toman de una caja existente del módulo, así la
     // nueva caja hereda los mismos valores que muestra la tabla de actas.
     const cajaReferencia = cajasQuery.data?.find(
       (c) => c.entidad_remitente_caja?.trim() || c.entidad_productora_caja?.trim(),
     );
-    // Prefijo de caja: los 3 primeros dígitos del código del módulo + "C" (ej. 015C).
-    const prefijoCaja = /^\d{1,3}$/.test(codigoModulo) ? `${codigoModulo.padStart(3, '0')}C` : '';
+    // Siguiente número de caja: máximo global del prefijo + 1 (ej. 051C000463 → 051C000464,
+    // sin duplicar secuencias usadas por otros módulos).
     setCajaForm({
       ...EMPTY_CAJA_FORM,
-      caja_modulo: prefijoCaja,
+      caja_modulo: siguienteCaja ?? prefijoCaja,
       acta_trans_caja: actaModulo,
       entidad_remitente_caja:
         cajaReferencia?.entidad_remitente_caja ?? moduloQuery.data?.entidad_remitente ?? '',
       entidad_productora_caja: cajaReferencia?.entidad_productora_caja ?? '',
+      unidad_administrativa_caja: cajaReferencia?.unidad_administrativa_caja ?? '',
+      oficina_productora_caja: cajaReferencia?.oficina_productora_caja ?? '',
+      objeto_caja: cajaReferencia?.objeto_caja ?? '',
+      fecha_trans_caja: moduloQuery.data?.fecha_trans_modulo?.slice(0, 10) ?? '',
     });
     setCajaErrors({});
     setModalOpen(true);
@@ -229,7 +236,7 @@ export default function ActasPage() {
     {
       key: 'fuid',
       header: 'N° FUID',
-      render: (caja) => <FuidCount cajaModulo={caja.caja_modulo} />,
+      render: (caja) => <span>{caja.total_fuids ?? 0}</span>,
     },
     {
       key: 'estado_caja',

@@ -5,6 +5,7 @@ export interface User {
   contrasena: string;
   rol: string;
   sede: string | null;
+  suspendido_hasta: string | null;
 }
 
 export interface SubModulo {
@@ -21,6 +22,7 @@ export interface ModuloCliente {
   acta_transferencia_modulo: string;
   fecha_trans_modulo: string | null;
   id_submodulo: number;
+  total_cajas?: number;
 }
 
 export interface ModuloCaja {
@@ -35,6 +37,7 @@ export interface ModuloCaja {
   oficina_productora_caja: string;
   objeto_caja: string;
   estado_caja: string;
+  total_fuids?: number;
 }
 
 export interface FuidDato {

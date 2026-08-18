@@ -17,14 +17,18 @@ export async function listSubModulos(req: Request, res: Response): Promise<void>
     sql = 'SELECT * FROM sub_modulos WHERE sede_submodulos = ?';
     params.push(sede);
   } else if (rol === 'TECNICA') {
-    sql = `SELECT sm.* FROM sub_modulos sm
-      JOIN asignacion_tecnica at ON sm.id = at.modulo_id
-      WHERE at.usuario_id = ? AND sm.sede_submodulos = ?`;
+    // Los submódulos visibles derivan de los módulos cliente asignados al usuario
+    // (modulo_tecnica -> moduloscliente.id_submodulo -> sub_modulos.id).
+    sql = `SELECT DISTINCT sm.* FROM sub_modulos sm
+      JOIN moduloscliente m ON m.id_submodulo = sm.id
+      JOIN modulo_tecnica mt ON mt.modulo_id = m.id
+      WHERE mt.usuario_id = ? AND sm.sede_submodulos = ?`;
     params.push(id, sede);
   } else if (rol === 'CALIDAD') {
-    sql = `SELECT sm.* FROM sub_modulos sm
-      JOIN asignacion_calidad ac ON sm.id = ac.modulo_id
-      WHERE ac.usuario_id = ? AND sm.sede_submodulos = ?`;
+    sql = `SELECT DISTINCT sm.* FROM sub_modulos sm
+      JOIN moduloscliente m ON m.id_submodulo = sm.id
+      JOIN modulo_calidad mc ON mc.modulo_id = m.id
+      WHERE mc.usuario_id = ? AND sm.sede_submodulos = ?`;
     params.push(id, sede);
   } else {
     res.status(403).json({ message: 'Rol no autorizado' });

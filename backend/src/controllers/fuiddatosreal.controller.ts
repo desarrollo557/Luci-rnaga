@@ -5,6 +5,8 @@ import type { FuidDato } from '../types/db.js';
 import type { FuidCreateDto, FuidUpdateDto } from '../types/index.js';
 import { fuidValues, fuidOnDuplicateUpdate, isSuggestionField } from '../services/fuid.service.js';
 
+const fechaActual = (): string => new Date().toISOString().slice(0, 10);
+
 export async function listFuid(req: Request, res: Response): Promise<void> {
   const user = req.session.user;
   if (!user) {
@@ -12,15 +14,40 @@ export async function listFuid(req: Request, res: Response): Promise<void> {
     return;
   }
 
-  if (user.rol === 'LIDER' || user.rol === 'CALIDAD' || user.rol === 'ADMIN') {
-    const results = await query<FuidDato>('SELECT * FROM fuiddatosreal');
+  const caja = String(req.query.caja ?? '');
+  const rawLimit = Number(req.query.limit ?? 500);
+  const rawOffset = Number(req.query.offset ?? 0);
+  const limit = Number.isInteger(rawLimit) ? Math.min(Math.max(rawLimit, 0), 5000) : 500;
+  const offset = Number.isInteger(rawOffset) ? Math.max(rawOffset, 0) : 0;
+
+  if (user.rol === 'LIDER' || user.rol === 'ADMIN') {
+    const results = caja
+      ? await query<FuidDato>(
+          'SELECT * FROM fuiddatosreal WHERE caja = ? LIMIT ? OFFSET ?',
+          [caja, limit, offset],
+        )
+      : await query<FuidDato>('SELECT * FROM fuiddatosreal LIMIT ? OFFSET ?', [limit, offset]);
     res.json(results);
     return;
   }
 
-  if (user.rol === 'TECNICA') {
-    const nombreCompleto = `${user.nombre} (${user.cc})`;
-    const results = await query<FuidDato>('SELECT * FROM fuiddatosreal WHERE elaborado_por = ?', [nombreCompleto]);
+  if (user.rol === 'TECNICA' || user.rol === 'CALIDAD') {
+    // El técnico/calidad ve los FUIDs de las cajas que le fueron asignadas,
+    // sin importar quién los digitó (la caja es del equipo asignado).
+    const tabla = user.rol === 'CALIDAD' ? 'asignacion_caja_calidad' : 'asignacion_caja_tecnica';
+    const sql = caja
+      ? `SELECT f.* FROM fuiddatosreal f
+         JOIN modulos_caja mc ON mc.caja_modulo = f.caja
+         JOIN ${tabla} ac ON ac.modulo_id = mc.id
+         WHERE ac.usuario_id = ? AND f.caja = ?
+         LIMIT ? OFFSET ?`
+      : `SELECT f.* FROM fuiddatosreal f
+         JOIN modulos_caja mc ON mc.caja_modulo = f.caja
+         JOIN ${tabla} ac ON ac.modulo_id = mc.id
+         WHERE ac.usuario_id = ?
+         LIMIT ? OFFSET ?`;
+    const params = caja ? [user.id, caja, limit, offset] : [user.id, limit, offset];
+    const results = await query<FuidDato>(sql, params);
     res.json(results);
     return;
   }
@@ -72,6 +99,21 @@ export async function createFuid(req: Request, res: Response): Promise<void> {
   if (!user || !['LIDER', 'ADMIN', 'TECNICA'].includes(user.rol)) {
     res.status(403).json({ error: 'Acceso denegado' });
     return;
+  }
+
+  // El técnico solo puede digitar en las cajas que le fueron asignadas.
+  if (user.rol === 'TECNICA') {
+    const caja = body.caja;
+    const [cajaAsignada] = await query<{ id: number }>(
+      `SELECT mc.id FROM modulos_caja mc
+       JOIN asignacion_caja_tecnica act ON act.modulo_id = mc.id
+       WHERE act.usuario_id = ? AND mc.caja_modulo = ? LIMIT 1`,
+      [user.id, caja],
+    );
+    if (!cajaAsignada) {
+      res.status(403).json({ error: 'No tiene asignada la caja especificada' });
+      return;
+    }
   }
 
   const conn = await pool.getConnection();
@@ -135,6 +177,25 @@ export async function updateFuid(req: Request, res: Response): Promise<void> {
   }
 
   const { cc, rol } = user;
+
+  if (rol === 'CALIDAD') {
+    const [cajaAsignada] = await query<{ id: number }>(
+      `SELECT mc.id FROM modulos_caja mc
+       JOIN asignacion_caja_calidad ac ON ac.modulo_id = mc.id
+       WHERE ac.usuario_id = ? AND mc.caja_modulo = ? LIMIT 1`,
+      [user.id, registro.caja],
+    );
+    if (!cajaAsignada) {
+      res.status(403).json({ error: 'No autorizado para actualizar este registro' });
+      return;
+    }
+  }
+
+  if (rol === 'TECNICA' && registro.fecha_del_dato !== fechaActual()) {
+    res.status(403).json({ error: 'Los registros de días anteriores no pueden ser modificados' });
+    return;
+  }
+
   const nombreCompletoMayus = `${user.nombre.toUpperCase()} (${cc})`;
   const isCreator =
     rol !== 'LIDER' && rol !== 'ADMIN' && rol !== 'CALIDAD' &&
@@ -179,8 +240,13 @@ export async function deleteFuid(req: Request, res: Response): Promise<void> {
   const { cc, rol } = user;
   const nombreCompletoMayus = `${user.nombre.toUpperCase()} (${cc})`;
   const isCreator =
-    rol !== 'LIDER' && rol !== 'ADMIN' && rol !== 'CALIDAD' &&
+    rol !== 'LIDER' && rol !== 'ADMIN' &&
     (registro.elaborado_por?.toUpperCase() !== nombreCompletoMayus);
+
+  if (rol === 'TECNICA' && registro.fecha_del_dato !== fechaActual()) {
+    res.status(403).json({ error: 'Los registros de días anteriores no pueden ser modificados' });
+    return;
+  }
 
   if (isCreator) {
     res.status(403).json({ error: 'No autorizado para eliminar este registro' });
@@ -237,8 +303,8 @@ export async function marcarOk(req: Request, res: Response): Promise<void> {
   }
   const { rol, nombre, cc, sede } = user;
 
-  if (rol !== 'LIDER' && rol !== 'ADMIN' && rol !== 'TECNICA') {
-    res.status(403).json({ success: false, error: 'Acceso denegado. Solo LIDER, ADMIN o TECNICA pueden realizar esta acción.' });
+  if (rol !== 'LIDER' && rol !== 'ADMIN' && rol !== 'TECNICA' && rol !== 'CALIDAD') {
+    res.status(403).json({ success: false, error: 'Acceso denegado. Solo LIDER, ADMIN, TECNICA o CALIDAD pueden realizar esta acción.' });
     return;
   }
 
@@ -253,6 +319,29 @@ export async function marcarOk(req: Request, res: Response): Promise<void> {
   const conn = await pool.getConnection();
   try {
     await conn.beginTransaction();
+
+    // El técnico/calidad solo puede marcar OK en cajas que le fueron asignadas.
+    if (rol === 'TECNICA' || rol === 'CALIDAD') {
+      const tabla = rol === 'CALIDAD' ? 'asignacion_caja_calidad' : 'asignacion_caja_tecnica';
+      const [cajasAutorizadas] = await conn.query<mysql.RowDataPacket[]>(
+        `SELECT f.id FROM fuiddatosreal f
+         JOIN modulos_caja mc ON mc.caja_modulo = f.caja
+         JOIN ${tabla} ac ON ac.modulo_id = mc.id
+         WHERE ac.usuario_id = ? AND f.id IN (?)`,
+        [user.id, ids],
+      );
+      const autorizados = new Set((cajasAutorizadas as Array<{ id: number }>).map((r) => r.id));
+      const noAutorizados = ids.filter((id) => !autorizados.has(id));
+      if (noAutorizados.length > 0) {
+        await conn.rollback();
+        res.status(403).json({
+          success: false,
+          error: `No tiene asignadas ${noAutorizados.length} de las cajas seleccionadas`,
+        });
+        return;
+      }
+    }
+
     const [result] = await conn.query(
       `UPDATE fuiddatosreal
        SET historial_y_cambios = 'OK', cambio_calidad = ?, sede_calidad = ?

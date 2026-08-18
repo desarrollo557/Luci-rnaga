@@ -113,16 +113,6 @@ const PROCESOS_ATAJOS: ProcesoAtajo[] = [
   },
 ];
 
-function CajasCount({ moduloId }: { moduloId: number }) {
-  const cajasQuery = useQuery({
-    queryKey: ['modulos-cliente', 'cajas', moduloId],
-    queryFn: () => modulosClienteApi.countCajas(moduloId).then((res) => res.data),
-  });
-
-  if (cajasQuery.isPending) return <Spinner className="size-4 text-primary-600" />;
-  return <span>{cajasQuery.data?.total ?? 0}</span>;
-}
-
 function SeccionAsignacion({
   moduloId,
   rol,
@@ -287,14 +277,12 @@ export default function ClientesPage() {
   const subModulosQuery = useQuery({
     queryKey: ['sub-modulos'],
     queryFn: () => subModulosApi.list().then((res) => res.data),
-    refetchInterval: 60_000,
   });
 
   const modulosQuery = useQuery({
     queryKey: ['modulos-cliente', subModuloId],
     queryFn: () => modulosClienteApi.list(subModuloId ?? undefined).then((res) => res.data),
-    enabled: subModuloId !== null,
-    refetchInterval: 60_000,
+    enabled: isManager ? subModuloId !== null : true,
   });
 
   const createSubModuloMutation = useMutation({
@@ -395,7 +383,14 @@ export default function ClientesPage() {
 
   const openNuevoModulo = () => {
     setEditingModulo(null);
-    setModuloForm({ ...EMPTY_MODULO_FORM });
+    // Autocompletar desde el sub-módulo seleccionado: el código y la entidad
+    // remitente ya existen lógicamente en la jerarquía (sub_módulo → módulo).
+    const subModulo = (subModulosQuery.data ?? []).find((sm) => sm.id === subModuloId);
+    setModuloForm({
+      ...EMPTY_MODULO_FORM,
+      codigo: subModulo?.codigo ?? '',
+      entidad_remitente: subModulo?.entidad_remitente ?? '',
+    });
     setModuloErrors({});
     setModuloModalOpen(true);
   };
@@ -424,7 +419,7 @@ export default function ClientesPage() {
     {
       key: 'cajas',
       header: 'N° Cajas',
-      render: (modulo) => <CajasCount moduloId={modulo.id} />,
+      render: (modulo) => <span>{modulo.total_cajas ?? 0}</span>,
     },
     {
       key: 'acciones',
@@ -515,20 +510,24 @@ export default function ClientesPage() {
         />
       </Card>
 
-      {subModuloId === null ? (
+      {isManager && subModuloId === null ? (
         <Card>
           <p className="text-sm text-silver-500">
             Seleccione un sub-módulo para ver sus módulos cliente.
           </p>
         </Card>
       ) : (
-        <div key={`modulos-${subModuloId}`} className="form-fill-anim">
+        <div key={`modulos-${subModuloId ?? 'todos'}`} className="form-fill-anim">
           <Table
             columns={columns}
             data={modulosQuery.data ?? []}
             rowKey={(modulo) => modulo.id}
             loading={modulosQuery.isPending}
-            emptyMessage="No hay módulos cliente en este sub-módulo"
+            emptyMessage={
+              isManager
+                ? 'No hay módulos cliente en este sub-módulo'
+                : 'No tiene módulos asignados. Contacte al administrador.'
+            }
           />
         </div>
       )}

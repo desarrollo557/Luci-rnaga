@@ -20,7 +20,7 @@ import { fuidApi, getApiErrorMessage, modulosCajaApi } from '@/lib/api';
 import { invalidateDomain } from '@/lib/queryInvalidation';
 import { required } from '@/lib/validation';
 import { useAuthStore } from '@/stores/authStore';
-import { SUGGESTION_FIELDS, type DataRow, type FuidDato, type SessionUser } from '@/types';
+import { SUGGESTION_FIELDS, type DataRow, type FuidDato, type ModuloCaja, type SessionUser } from '@/types';
 
 type SuggestionField = (typeof SUGGESTION_FIELDS)[number];
 
@@ -166,13 +166,23 @@ function formFromRecord(record: FuidDato): FuidFormValues {
   };
 }
 
-function emptyFormFor(cajaId: string, user: SessionUser | null, defaultNOrden: number): FuidFormValues {
+function emptyFormFor(cajaId: string, user: SessionUser | null, defaultNOrden: number, caja?: ModuloCaja | null): FuidFormValues {
   return {
     ...EMPTY_FORM,
     caja: cajaId,
     n_orden: String(defaultNOrden),
     elaborado_por: user ? `${user.nombre} (${user.cc})` : '',
     sede: user?.sede ?? '',
+    // Datos derivados de la caja seleccionada: la persona solo completa UPD y los
+    // campos específicos del documento; el resto ya está lógicamente creado en la caja.
+    codigo: caja?.id_modulo_caja ? String(caja.id_modulo_caja) : '',
+    entidad_remitente: caja?.entidad_remitente_caja ?? '',
+    entidad_productora: caja?.entidad_productora_caja ?? '',
+    unidad_administrativa: caja?.unidad_administrativa_caja ?? '',
+    oficina_productora: caja?.oficina_productora_caja ?? '',
+    objeto: caja?.objeto_caja ?? '',
+    nro_acta_transferible: caja?.acta_trans_caja ?? '',
+    fecha_transferencia: caja?.fecha_trans_caja?.slice(0, 10) ?? '',
   };
 }
 
@@ -272,15 +282,16 @@ interface FuidFormModalProps {
   cajaId: string;
   editing: FuidDato | null;
   defaultNOrden: number;
+  caja?: ModuloCaja | null;
   onClose: () => void;
 }
 
-function FuidFormModal({ open, cajaId, editing, defaultNOrden, onClose }: FuidFormModalProps) {
+function FuidFormModal({ open, cajaId, editing, defaultNOrden, caja, onClose }: FuidFormModalProps) {
   const queryClient = useQueryClient();
   const user = useAuthStore((state) => state.user);
 
   const [form, setForm] = useState<FuidFormValues>(() =>
-    editing ? formFromRecord(editing) : emptyFormFor(cajaId, user, defaultNOrden),
+    editing ? formFromRecord(editing) : emptyFormFor(cajaId, user, defaultNOrden, caja),
   );
   const [errors, setErrors] = useState<Partial<Record<keyof FuidFormValues, string>>>({});
 
@@ -572,7 +583,9 @@ export default function DatosPage() {
   const navigate = useNavigate();
   const { cajaId } = useParams<{ cajaId: string }>();
   const user = useAuthStore((state) => state.user);
-  const canMarcarOk = user?.rol === 'LIDER' || user?.rol === 'ADMIN' || user?.rol === 'TECNICA';
+  const canMarcarOk = user?.rol === 'LIDER' || user?.rol === 'ADMIN' || user?.rol === 'TECNICA' || user?.rol === 'CALIDAD';
+  const canCrear = user?.rol !== 'CALIDAD';
+  const canEliminar = user?.rol !== 'CALIDAD';
 
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<FuidDato | null>(null);
@@ -589,9 +602,9 @@ export default function DatosPage() {
   const cajaCode = cajaQuery.data?.caja_modulo ?? cajaId ?? '';
 
   const fuidQuery = useQuery({
-    queryKey: ['fuiddatosreal', 'list'],
-    queryFn: () => fuidApi.list().then((res) => res.data),
-    refetchInterval: 60_000,
+    queryKey: ['fuiddatosreal', 'list', cajaCode],
+    queryFn: () => fuidApi.list({ caja: cajaCode }).then((res) => res.data),
+    enabled: Boolean(cajaCode),
   });
 
   const cajaDuplicatesQuery = useQuery({
@@ -610,10 +623,7 @@ export default function DatosPage() {
     }
   }, [cajaDuplicatesQuery.data, cajaCode]);
 
-  const registros = useMemo(
-    () => (fuidQuery.data ?? []).filter((registro) => registro.caja === cajaCode),
-    [fuidQuery.data, cajaCode],
-  );
+  const registros = useMemo(() => fuidQuery.data ?? [], [fuidQuery.data]);
 
   const defaultNOrden = useMemo(() => {
     if (registros.length === 0) return 1;
@@ -708,9 +718,11 @@ export default function DatosPage() {
           <Button variant="secondary" size="sm" onClick={() => openEditar(registro)}>
             <Pencil className="size-4" /> Editar
           </Button>
-          <Button variant="danger" size="sm" onClick={() => setDeleteTarget(registro)}>
-            <Trash2 className="size-4" /> Eliminar
-          </Button>
+          {canEliminar && (
+            <Button variant="danger" size="sm" onClick={() => setDeleteTarget(registro)}>
+              <Trash2 className="size-4" /> Eliminar
+            </Button>
+          )}
         </div>
       ),
     },
@@ -745,9 +757,11 @@ export default function DatosPage() {
         description="Clientes / Actas / Cajas / Digitación"
         actions={
           <>
-            <Button onClick={openNuevo}>
-              <Plus className="size-4" /> Nuevo Registro
-            </Button>
+            {canCrear && (
+              <Button onClick={openNuevo}>
+                <Plus className="size-4" /> Nuevo Registro
+              </Button>
+            )}
             <Button variant="secondary" onClick={() => navigate(-1)}>
               <ArrowLeft className="size-4" /> Volver a Cajas
             </Button>
@@ -764,9 +778,11 @@ export default function DatosPage() {
       ) : registros.length === 0 ? (
         <Card className="flex flex-col items-center gap-4 py-12">
           <p className="text-sm text-silver-500">No hay registros FUID en esta caja</p>
-          <Button onClick={openNuevo}>
-            <Plus className="size-4" /> Nuevo Registro
-          </Button>
+          {canCrear && (
+            <Button onClick={openNuevo}>
+              <Plus className="size-4" /> Nuevo Registro
+            </Button>
+          )}
         </Card>
       ) : (
         <>
@@ -799,6 +815,7 @@ export default function DatosPage() {
           cajaId={cajaCode}
           editing={editing}
           defaultNOrden={defaultNOrden}
+          caja={cajaQuery.data}
           onClose={() => setModalOpen(false)}
         />
       )}
