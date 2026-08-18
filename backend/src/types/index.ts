@@ -85,3 +85,24 @@ export interface FuidCreateDto {
 }
 
 export type FuidUpdateDto = Partial<FuidCreateDto>;
+
+export interface AssignRangeDto {
+  usuario_id: number;
+  sub_modulo_id: number;
+  upd_inicio: string;
+  upd_fin: string;
+}
+
+export interface NextUpdResult {
+  upd: string;
+  sub_modulo_id: number;
+}
+
+export interface AvanceRow {
+  usuario_id: number;
+  nombre: string;
+  total_asignadas: number;
+  finalizadas: number;
+  pendientes: number;
+  porcentaje: number;
+}
