@@ -29,8 +29,8 @@ const NAV_ITEMS: NavItem[] = [
   { label: 'Administración', to: '/admin', icon: LayoutDashboard, roles: ['ADMIN'] },
   { label: 'Clientes', to: '/clientes', icon: Building2, roles: ['LIDER', 'TECNICA', 'CALIDAD'] },
   { label: 'Producción', to: '/produccion', icon: Factory, roles: ['LIDER', 'CALIDAD'] },
-  { label: 'Inventario', to: '/inventario', icon: Package, roles: ['LIDER', 'CALIDAD'] },
-  { label: 'Historial', to: '/historial', icon: History, roles: ['LIDER', 'CALIDAD'] },
+  { label: 'Inventario', to: '/inventario', icon: Package, roles: ['LIDER'] },
+  { label: 'Historial', to: '/historial', icon: History, roles: ['LIDER'] },
 ];
 
 const ROL_LABEL: Record<Role, string> = {
@@ -74,14 +74,21 @@ export default function AppLayout() {
         )}
       >
         <div className="flex h-16 shrink-0 items-center gap-3 border-b border-silver-800 px-5">
-          <div className="flex size-10 items-center justify-center rounded-lg bg-white p-1 shadow-sm">
+          <div className="relative flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-full bg-gradient-to-br from-primary-500 to-primary-700 shadow-md shadow-primary-950/40 ring-1 ring-white/10">
             <img
               src="/images/siar.png"
               alt="Logo SIAR"
-              className="size-8 object-contain"
+              className="size-9 rounded-full object-cover"
             />
           </div>
-          <span className="text-lg font-bold text-white">Luciérnaga</span>
+          <div className="min-w-0">
+            <span className="block truncate text-base font-bold leading-tight tracking-tight text-white">
+              Luciérnaga
+            </span>
+            <span className="block truncate text-[10px] font-semibold uppercase tracking-widest text-primary-300">
+              Gestión FUID
+            </span>
+          </div>
           <button
             type="button"
             onClick={() => setSidebarOpen(false)}

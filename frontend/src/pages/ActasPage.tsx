@@ -15,7 +15,7 @@ import {
   Table,
   type Column,
 } from '@/components/ui';
-import { getApiErrorMessage, modulosCajaApi, modulosClienteApi, type ModuloCajaInput } from '@/lib/api';
+import { modulosCajaApi, modulosClienteApi, type ModuloCajaInput } from '@/lib/api';
 import { invalidateDomain } from '@/lib/queryInvalidation';
 import { validCaja } from '@/lib/validation';
 import { useAuthStore } from '@/stores/authStore';
@@ -106,7 +106,6 @@ export default function ActasPage() {
       setModalOpen(false);
       void invalidateDomain(queryClient, 'modulos-caja');
     },
-    onError: (error) => toast.error(getApiErrorMessage(error)),
   });
 
   const updateMutation = useMutation({
@@ -117,7 +116,6 @@ export default function ActasPage() {
       setModalOpen(false);
       void invalidateDomain(queryClient, 'modulos-caja');
     },
-    onError: (error) => toast.error(getApiErrorMessage(error)),
   });
 
   const deleteMutation = useMutation({
@@ -127,7 +125,6 @@ export default function ActasPage() {
       setDeleteTarget(null);
       void invalidateDomain(queryClient, 'modulos-caja');
     },
-    onError: (error) => toast.error(getApiErrorMessage(error)),
   });
 
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
@@ -273,6 +270,8 @@ export default function ActasPage() {
       <PageHeader
         title="Actas"
         description="Clientes / Actas — Cajas del módulo cliente"
+        backTo="/clientes"
+        backLabel="Módulos de Cliente"
         actions={
           isManager ? (
             <Button onClick={openNuevaCaja} disabled={!id}>

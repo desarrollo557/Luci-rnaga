@@ -22,15 +22,14 @@ import {
   ConfirmDialog,
   DatePicker,
   Input,
+  LoadingState,
   Modal,
   PageHeader,
   Select,
-  Spinner,
   Table,
   type Column,
 } from '@/components/ui';
 import {
-  getApiErrorMessage,
   modulosClienteApi,
   subModulosApi,
   usersApi,
@@ -92,7 +91,7 @@ const PROCESOS_ATAJOS: ProcesoAtajo[] = [
     desc: 'Control de inventario de cajas',
     icon: Package,
     to: '/inventario',
-    roles: ['LIDER', 'CALIDAD'],
+    roles: ['LIDER'],
     accent: 'bg-silver-100 text-silver-600',
   },
   {
@@ -100,7 +99,7 @@ const PROCESOS_ATAJOS: ProcesoAtajo[] = [
     desc: 'Registro de operaciones',
     icon: History,
     to: '/historial',
-    roles: ['LIDER', 'CALIDAD'],
+    roles: ['LIDER'],
     accent: 'bg-amber-50 text-amber-600',
   },
   {
@@ -153,7 +152,6 @@ function SeccionAsignacion({
       toast.success('Usuarios asignados correctamente');
       void invalidateDomain(queryClient, 'users');
     },
-    onError: (error) => toast.error(getApiErrorMessage(error)),
   });
 
   const eliminarMutation = useMutation({
@@ -163,7 +161,6 @@ function SeccionAsignacion({
       toast.success('Usuarios eliminados correctamente');
       void invalidateDomain(queryClient, 'users');
     },
-    onError: (error) => toast.error(getApiErrorMessage(error)),
   });
 
   const asignadosIds = new Set((asignadosQuery.data ?? []).map((usuario) => usuario.id));
@@ -212,7 +209,7 @@ function SeccionAsignacion({
 
       {loading ? (
         <div className="flex justify-center py-6">
-          <Spinner className="size-6 text-primary-600" />
+          <LoadingState message="Estamos consultando la información…" />
         </div>
       ) : (
         <ul className="max-h-64 space-y-1 overflow-y-auto">
@@ -292,7 +289,6 @@ export default function ClientesPage() {
       setSubModuloModalOpen(false);
       void invalidateDomain(queryClient, 'sub-modulos');
     },
-    onError: (error) => toast.error(getApiErrorMessage(error)),
   });
 
   const createModuloMutation = useMutation({
@@ -302,7 +298,6 @@ export default function ClientesPage() {
       setModuloModalOpen(false);
       void invalidateDomain(queryClient, 'modulos-cliente');
     },
-    onError: (error) => toast.error(getApiErrorMessage(error)),
   });
 
   const updateModuloMutation = useMutation({
@@ -313,7 +308,6 @@ export default function ClientesPage() {
       setModuloModalOpen(false);
       void invalidateDomain(queryClient, 'modulos-cliente');
     },
-    onError: (error) => toast.error(getApiErrorMessage(error)),
   });
 
   const deleteModuloMutation = useMutation({
@@ -323,7 +317,6 @@ export default function ClientesPage() {
       setDeleteTarget(null);
       void invalidateDomain(queryClient, 'modulos-cliente');
     },
-    onError: (error) => toast.error(getApiErrorMessage(error)),
   });
 
   const handleSubModuloSubmit = (event: FormEvent<HTMLFormElement>) => {

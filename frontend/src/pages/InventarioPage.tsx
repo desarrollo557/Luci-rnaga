@@ -3,7 +3,8 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { Pencil, Plus, RefreshCw, RotateCcw, Search, Trash2 } from 'lucide-react';
 import { Badge, Button, ConfirmDialog, DatePicker, Input, Modal, PageHeader, Select, Table, type Column } from '@/components/ui';
-import { getApiErrorMessage, inventarioApi } from '@/lib/api';
+import { inventarioApi } from '@/lib/api';
+import { toastApiError } from '@/lib/feedback';
 import { cn } from '@/lib/cn';
 import { invalidateDomain } from '@/lib/queryInvalidation';
 import type { DataRow, Inventario } from '@/types';
@@ -227,7 +228,7 @@ export default function InventarioPage() {
       setModalOpen(false);
     },
     onError: (error) => {
-      toast.error(getApiErrorMessage(error));
+      toastApiError(error);
     },
   });
 
