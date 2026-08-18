@@ -16,11 +16,18 @@ import {
   Table,
   type Column,
 } from '@/components/ui';
-import { fuidApi, modulosCajaApi } from '@/lib/api';
+import { fuidApi, getApiErrorCode, modulosCajaApi, rangosUpdApi } from '@/lib/api';
 import { invalidateDomain } from '@/lib/queryInvalidation';
 import { required } from '@/lib/validation';
 import { useAuthStore } from '@/stores/authStore';
-import { SUGGESTION_FIELDS, type DataRow, type FuidDato, type ModuloCaja, type SessionUser } from '@/types';
+import {
+  SUGGESTION_FIELDS,
+  type DataRow,
+  type FuidDato,
+  type ModuloCaja,
+  type NextUpdErrorCode,
+  type SessionUser,
+} from '@/types';
 
 type SuggestionField = (typeof SUGGESTION_FIELDS)[number];
 
@@ -37,6 +44,9 @@ interface CajaDuplicateGroup {
 interface CajaDuplicatesResponse {
   duplicates: CajaDuplicateGroup[];
 }
+
+/** Estados del campo UPD autocompletado para TECNICA en registros nuevos. */
+type UpdState = 'cargando' | 'listo' | 'sin_rango' | 'agotado' | 'error';
 
 interface FuidFormValues {
   fecha_del_dato: string;
@@ -303,6 +313,51 @@ function FuidFormModal({ open, cajaId, editing, defaultNOrden, caja, onClose }: 
     enabled: Boolean(debouncedUpd) && !editing,
   });
 
+  // TECNICA en registros nuevos: el UPD es fijo y se autocompleta desde el rango
+  // activo del usuario para el sub-módulo de la caja (GET /rangos-upd/next).
+  const isTecnica = user?.rol === 'TECNICA';
+  const updAutocomplete = isTecnica && !editing;
+
+  const debouncedCaja = useDebouncedValue(form.caja.trim(), 500);
+  const nextUpdQuery = useQuery({
+    queryKey: ['rangos-upd', 'next', debouncedCaja],
+    queryFn: () => rangosUpdApi.siguienteUpd(debouncedCaja).then((res) => res.data),
+    // Sin caja no hay consulta; el 409 (SIN_RANGO|AGOTADO|CAJA_SIN_SUBMODULO) es
+    // determinístico, no se reintenta para evitar toasts duplicados.
+    enabled: updAutocomplete && Boolean(debouncedCaja),
+    retry: false,
+  });
+  const nextUpdCode = getApiErrorCode(nextUpdQuery.error) as NextUpdErrorCode | undefined;
+
+  const updState: UpdState = (() => {
+    if (!updAutocomplete || !debouncedCaja) return 'listo';
+    if (nextUpdQuery.isPending) return 'cargando';
+    if (nextUpdQuery.data) return 'listo';
+    if (nextUpdCode === 'SIN_RANGO') return 'sin_rango';
+    if (nextUpdCode === 'AGOTADO') return 'agotado';
+    return 'error';
+  })();
+
+  // Sin caja aún: el campo queda bloqueado hasta que haya una caja que derive sub-módulo.
+  const updSinCaja = updAutocomplete && !debouncedCaja;
+  // Bloqueo de envío: sin rango, agotado, caja sin sub-módulo, o mientras consulta.
+  const updBlockedSubmit =
+    updState === 'cargando' ||
+    updState === 'sin_rango' ||
+    updState === 'agotado' ||
+    (updState === 'error' && nextUpdCode === 'CAJA_SIN_SUBMODULO');
+
+  // Sincroniza el UPD sugerido al formulario; se limpia mientras consulta o ante
+  // error para no enviar un valor obsoleto de otra caja.
+  useEffect(() => {
+    if (!updAutocomplete) return;
+    if (nextUpdQuery.status === 'success' && nextUpdQuery.data) {
+      setForm((prev) => ({ ...prev, upd: nextUpdQuery.data.upd }));
+    } else if (nextUpdQuery.status === 'pending' || nextUpdQuery.status === 'error') {
+      setForm((prev) => ({ ...prev, upd: '' }));
+    }
+  }, [updAutocomplete, nextUpdQuery.status, nextUpdQuery.data]);
+
   const setField = (field: keyof FuidFormValues) => (event: ChangeEvent<HTMLInputElement>) =>
     setForm((prev) => ({ ...prev, [field]: event.target.value }));
 
@@ -331,6 +386,8 @@ function FuidFormModal({ open, cajaId, editing, defaultNOrden, caja, onClose }: 
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    // TECNICA sin rango/agotado/caja sin sub-módulo: el UPD no se puede asignar, bloqueado.
+    if (updBlockedSubmit) return;
     const nextErrors: Partial<Record<keyof FuidFormValues, string>> = {};
     const updError = required(form.upd, 'El UPD');
     if (updError) nextErrors.upd = updError;
@@ -361,6 +418,18 @@ function FuidFormModal({ open, cajaId, editing, defaultNOrden, caja, onClose }: 
 
   const updError = errors.upd ?? (updExistsQuery.data ? 'Este UPD ya existe en la base de datos' : undefined);
 
+  const updFieldError = (() => {
+    if (updState === 'sin_rango') return 'No tienes un rango de UPD asignado para este sub-módulo';
+    if (updState === 'agotado') return 'Tu rango de UPD está agotado. Contacta a tu líder.';
+    if (updState === 'error') return 'No se pudo asignar el UPD automáticamente. Inténtalo de nuevo.';
+    return updError;
+  })();
+
+  const updReadOnly = updAutocomplete;
+  const updDisabled = updAutocomplete && (updSinCaja || updState !== 'listo');
+  const updHint = updSinCaja ? 'Selecciona la caja para autocompletar el UPD' : undefined;
+  const updPlaceholder = updState === 'cargando' ? 'Consultando UPD…' : undefined;
+
   return (
     <Modal
       open={open}
@@ -372,7 +441,7 @@ function FuidFormModal({ open, cajaId, editing, defaultNOrden, caja, onClose }: 
           <Button variant="ghost" onClick={onClose} disabled={isSaving}>
             Cancelar
           </Button>
-          <Button type="submit" form="fuid-form" loading={isSaving}>
+          <Button type="submit" form="fuid-form" loading={isSaving} disabled={updBlockedSubmit}>
             Guardar
           </Button>
         </>
@@ -524,7 +593,16 @@ function FuidFormModal({ open, cajaId, editing, defaultNOrden, caja, onClose }: 
               error={errors.caja}
               placeholder="000C000000"
             />
-            <Input label="UPD" value={form.upd} onChange={setField('upd')} error={updError} />
+            <Input
+              label="UPD"
+              value={form.upd}
+              onChange={setField('upd')}
+              error={updFieldError}
+              readOnly={updReadOnly}
+              disabled={updDisabled}
+              hint={updHint}
+              placeholder={updPlaceholder}
+            />
             <Input label="Tomo" value={form.tomo} onChange={setField('tomo')} />
             <Input label="Otro" value={form.otro} onChange={setField('otro')} />
             <SuggestionInput
