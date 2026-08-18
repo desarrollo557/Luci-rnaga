@@ -4,6 +4,7 @@ export * from './Card';
 export * from './ConfirmDialog';
 export * from './DatePicker';
 export * from './Input';
+export * from './LoadingState';
 export * from './Modal';
 export * from './PageHeader';
 export * from './Select';

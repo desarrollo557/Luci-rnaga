@@ -15,6 +15,7 @@ declare module 'express-session' {
 export interface LoginRequest {
   cc: string;
   contrasena: string;
+  rol: string;
 }
 
 export interface LoginResponse {
