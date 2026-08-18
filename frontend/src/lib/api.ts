@@ -223,9 +223,12 @@ export const asignacionCalidadApi = {
 };
 
 export const modulosCajaApi = {
-  list: (idModuloCaja: string | number) =>
+  list: (
+    idModuloCaja: string | number,
+    params?: { limit?: number; offset?: number }
+  ) =>
     api.get<ModuloCaja[]>('/modulos_caja', {
-      params: { id_modulo_caja: idModuloCaja },
+      params: { id_modulo_caja: idModuloCaja, ...params },
     }),
   get: (id: string | number) => api.get<ModuloCaja>(`/modulos_caja/${id}`),
   create: (data: ModuloCajaInput) => api.post<ModuloCaja>('/modulos_caja', data),

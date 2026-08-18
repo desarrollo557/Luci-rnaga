@@ -1,21 +1,39 @@
-import type { ReactNode } from 'react';
 import { cn } from '@/lib/cn';
 import { Spinner } from './Spinner';
+import { useState, useEffect } from 'react';
 
-export interface LoadingStateProps {
-  /** Mensaje acompañante del spinner, ej: "Estamos consultando la información...". */
+/** Componente de loading consistente usado en todas las pages */
+export function LoadingState({
+  message = 'Cargando información…',
+  className,
+}: {
   message?: string;
   className?: string;
-  children?: ReactNode;
-}
-
-/** Spinner con mensaje comunicativo para estados de carga de consultas. */
-export function LoadingState({ message = 'Estamos consultando la información…', className, children }: LoadingStateProps) {
+}) {
   return (
-    <div className={cn('flex flex-col items-center justify-center gap-3 py-10 text-silver-500', className)}>
-      <Spinner className="size-6 text-primary-600" />
-      <p className="text-sm">{message}</p>
-      {children}
+    <div className={cn('flex items-center justify-center py-8', className)}>
+      <Spinner className="size-6" />
+      <span className="ml-2 text-silver-600">{message}</span>
     </div>
   );
+}
+
+/** Estados de loading para botones consistentes */
+export function useButtonLoading(mutation: any, deps: any[] = []) {
+  const [isLoading, setIsLoading] = useState(false);
+
+  useEffect(() => {
+    setIsLoading(mutation.isPending);
+    const unsubscribe = mutation.addEventListener?.('pending', () => setIsLoading(true));
+    const unsubscribe2 = mutation.addEventListener?.('success', () => setIsLoading(false));
+    const unsubscribe3 = mutation.addEventListener?.('error', () => setIsLoading(false));
+
+    return () => {
+      unsubscribe?.();
+      unsubscribe2?.();
+      unsubscribe3?.();
+    };
+  }, deps);
+
+  return isLoading;
 }

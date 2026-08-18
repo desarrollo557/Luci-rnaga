@@ -11,6 +11,7 @@ import DatosPage from '@/pages/DatosPage';
 import HistorialPage from '@/pages/HistorialPage';
 import InventarioPage from '@/pages/InventarioPage';
 import Login from '@/pages/Login';
+import MiAvancePage from '@/pages/MiAvancePage';
 import ProduccionPage from '@/pages/ProduccionPage';
 import RangosUpdPage from '@/pages/RangosUpdPage';
 import RevisionPage from '@/pages/RevisionPage';
@@ -42,6 +43,7 @@ function ProtectedLayout() {
     '/inventario': ['LIDER'],
     '/historial': ['LIDER'],
     '/rangos-upd': ['LIDER', 'ADMIN'],
+    '/mi-avance': ['TECNICA'],
   };
   const allowedRoles = Object.entries(roleRestrictedRoutes).find(([path]) =>
     location.pathname.startsWith(path),
@@ -81,6 +83,7 @@ export default function App() {
         <Route path="/inventario" element={<InventarioPage />} />
         <Route path="/historial" element={<HistorialPage />} />
         <Route path="/rangos-upd" element={<RangosUpdPage />} />
+        <Route path="/mi-avance" element={<MiAvancePage />} />
       </Route>
       <Route
         path="*"

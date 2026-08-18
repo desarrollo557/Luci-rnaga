@@ -6,6 +6,7 @@ import {
   Hash,
   History,
   LayoutDashboard,
+  LineChart,
   LogOut,
   Menu,
   Package,
@@ -33,6 +34,7 @@ const NAV_ITEMS: NavItem[] = [
   { label: 'Inventario', to: '/inventario', icon: Package, roles: ['LIDER'] },
   { label: 'Historial', to: '/historial', icon: History, roles: ['LIDER'] },
   { label: 'Rangos UPD', to: '/rangos-upd', icon: Hash, roles: ['LIDER', 'ADMIN'] },
+  { label: 'Mi Avance', to: '/mi-avance', icon: LineChart, roles: ['TECNICA'] },
 ];
 
 const ROL_LABEL: Record<Role, string> = {

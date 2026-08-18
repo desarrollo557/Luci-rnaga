@@ -1,5 +1,7 @@
 export type Role = 'ADMIN' | 'LIDER' | 'TECNICA' | 'CALIDAD';
 
+export type UpdFormat = string; // Formato: UPD seguido de 7 dígitos (ej. UPD1234567), validación en runtime via regex
+
 export type DataRow = Record<string, string | number | null | undefined>;
 
 export interface SessionUser {
@@ -56,6 +58,7 @@ export interface ModuloCaja {
   objeto_caja: string;
   estado_caja: string;
   total_fuids?: number;
+  upd: UpdFormat | null;
 }
 
 export interface FuidDato {
