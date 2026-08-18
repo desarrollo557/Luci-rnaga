@@ -151,7 +151,7 @@ export default function AppLayout() {
           <div className="ml-auto flex items-center gap-3">
             <div className="hidden text-right sm:block">
               <p className="text-sm font-medium leading-tight text-silver-800">{user.nombre}</p>
-              <p className="text-xs leading-tight text-silver-500">C.C. {user.cc}</p>
+              <p className="text-xs leading-tight text-silver-500">C.C.  {user.cc}</p>
             </div>
             <Badge color="red">{ROL_LABEL[user.rol]}</Badge>
             <button
