@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useLocation, useParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArrowLeft, CheckCircle2, Pencil, Plus, Trash2 } from 'lucide-react';
+import { CheckCircle2, Pencil, Plus, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import {
   Badge,
@@ -10,13 +10,13 @@ import {
   ConfirmDialog,
   DatePicker,
   Input,
+  LoadingState,
   Modal,
   PageHeader,
-  Spinner,
   Table,
   type Column,
 } from '@/components/ui';
-import { fuidApi, getApiErrorMessage, modulosCajaApi } from '@/lib/api';
+import { fuidApi, modulosCajaApi } from '@/lib/api';
 import { invalidateDomain } from '@/lib/queryInvalidation';
 import { required } from '@/lib/validation';
 import { useAuthStore } from '@/stores/authStore';
@@ -316,7 +316,6 @@ function FuidFormModal({ open, cajaId, editing, defaultNOrden, caja, onClose }: 
       onClose();
       void invalidateDomain(queryClient, 'fuiddatosreal');
     },
-    onError: (error) => toast.error(getApiErrorMessage(error)),
   });
 
   const updateMutation = useMutation({
@@ -326,7 +325,6 @@ function FuidFormModal({ open, cajaId, editing, defaultNOrden, caja, onClose }: 
       onClose();
       void invalidateDomain(queryClient, 'fuiddatosreal');
     },
-    onError: (error) => toast.error(getApiErrorMessage(error)),
   });
 
   const isSaving = createMutation.isPending || updateMutation.isPending;
@@ -580,12 +578,13 @@ function FuidFormModal({ open, cajaId, editing, defaultNOrden, caja, onClose }: 
 
 export default function DatosPage() {
   const queryClient = useQueryClient();
-  const navigate = useNavigate();
+  const location = useLocation();
   const { cajaId } = useParams<{ cajaId: string }>();
   const user = useAuthStore((state) => state.user);
   const canMarcarOk = user?.rol === 'LIDER' || user?.rol === 'ADMIN' || user?.rol === 'TECNICA' || user?.rol === 'CALIDAD';
   const canCrear = user?.rol !== 'CALIDAD';
   const canEliminar = user?.rol !== 'CALIDAD';
+  const fromPath = (location.state as { from?: string } | null)?.from ?? `/clientes`;
 
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<FuidDato | null>(null);
@@ -637,7 +636,6 @@ export default function DatosPage() {
       setDeleteTarget(null);
       void invalidateDomain(queryClient, 'fuiddatosreal');
     },
-    onError: (error) => toast.error(getApiErrorMessage(error)),
   });
 
   const marcarOkMutation = useMutation({
@@ -647,7 +645,6 @@ export default function DatosPage() {
       setSelectedIds(new Set());
       void invalidateDomain(queryClient, 'fuiddatosreal');
     },
-    onError: (error) => toast.error(getApiErrorMessage(error)),
   });
 
   const handleMarcarOk = () => {
@@ -755,6 +752,8 @@ export default function DatosPage() {
       <PageHeader
         title={`Digitación FUID — Caja ${cajaCode}`}
         description="Clientes / Actas / Cajas / Digitación"
+        backTo={fromPath}
+        backLabel="Volver a Cajas"
         actions={
           <>
             {canCrear && (
@@ -762,9 +761,6 @@ export default function DatosPage() {
                 <Plus className="size-4" /> Nuevo Registro
               </Button>
             )}
-            <Button variant="secondary" onClick={() => navigate(-1)}>
-              <ArrowLeft className="size-4" /> Volver a Cajas
-            </Button>
           </>
         }
       />
@@ -772,7 +768,7 @@ export default function DatosPage() {
       {fuidQuery.isPending ? (
         <Card>
           <div className="flex justify-center py-10">
-            <Spinner className="size-6 text-primary-600" />
+            <LoadingState message="Estamos consultando la información…" />
           </div>
         </Card>
       ) : registros.length === 0 ? (

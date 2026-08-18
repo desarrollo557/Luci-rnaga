@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { BarChart3, Boxes, CheckCircle2, Clock, FileText, FolderOpen, MapPin, Percent, Users } from 'lucide-react';
-import { Badge, Card, PageHeader, Spinner, Table, type Column } from '@/components/ui';
+import { Badge, Card, LoadingState, PageHeader, Table, type Column } from '@/components/ui';
 import { reportesApi } from '@/lib/api';
 import { cn } from '@/lib/cn';
 
@@ -41,7 +41,7 @@ export default function ProduccionPage() {
   if (isLoading || !stats) {
     return (
       <div className="flex min-h-[50vh] items-center justify-center">
-        <Spinner className="size-6" />
+        <LoadingState message="Estamos consultando la información…" />
       </div>
     );
   }

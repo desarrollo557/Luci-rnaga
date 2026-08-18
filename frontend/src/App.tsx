@@ -35,6 +35,19 @@ function ProtectedLayout() {
   if (isAdmin && !isAdminRoute) return <Navigate to="/admin" replace />;
   if (!isAdmin && isAdminRoute) return <Navigate to="/clientes" replace />;
 
+  // Guarda de ruta por rol: las páginas solo se renderizan si el rol tiene permiso.
+  const roleRestrictedRoutes: Record<string, string[]> = {
+    '/produccion': ['LIDER', 'CALIDAD'],
+    '/inventario': ['LIDER'],
+    '/historial': ['LIDER'],
+  };
+  const allowedRoles = Object.entries(roleRestrictedRoutes).find(([path]) =>
+    location.pathname.startsWith(path),
+  )?.[1];
+  if (allowedRoles && !allowedRoles.includes(user.rol)) {
+    return <Navigate to="/clientes" replace />;
+  }
+
   return <AppLayout />;
 }
 
