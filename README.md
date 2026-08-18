@@ -103,6 +103,18 @@ O por separado: `npm run dev:backend` / `npm run dev:frontend`.
 └── package.json             # Orquestación raíz (concurrently)
 ```
 
+## Flujo de trabajo en Git
+
+El proyecto usa ramas `develop`, `production` y `main` con pipelines de validación en cada una. **Documentación completa y secuencia paso a paso: [`docs/GIT_WORKFLOW.md`](docs/GIT_WORKFLOW.md).**
+
+Resumen:
+
+1. Desarrollás en feature branches desde `develop` → PR → merge.
+2. Al publicar, PR `develop` → `production` → merge.
+3. Al liberar versión, PR `production` → `main` + tag `vX.Y.Z`.
+
+Cada PR dispara un pipeline orquestador (`.github/workflows/ci.yml`) que corre typecheck y build de backend y frontend. Si falla, el PR no se mergea.
+
 ## Roles y acceso
 
 | Rol | Acceso |
