@@ -16,6 +16,11 @@ export class WorkDriveError extends Error {
   }
 }
 
+/** Invalida el token en caché para forzar una renovación en la siguiente llamada. */
+export function invalidateAccessTokenCache(): void {
+  cachedToken = null;
+}
+
 function getDomains(): { auth: string; workdrive: string } {
   const dc = (process.env.ZOHO_DC || 'US').toUpperCase();
   const domain = DC_DOMAINS[dc] || 'zoho.com';
@@ -102,7 +107,10 @@ export async function uploadToFolder(buffer: Buffer, filename: string): Promise<
   let res: Response;
   try {
     res = await doAttempt(token);
-    if (res.status === 401 || res.status === 403) {
+    const rawBody = await res.clone().text().catch(() => '');
+    if (res.status === 401 || res.status === 403 || rawBody.includes('Invalid OAuth scope') || rawBody.includes('F7007')) {
+      // Token con scope insuficiente (p.ej. tras regenerarlo en la consola de Zoho):
+      // descartar la caché, obtener un access token fresco con el refresh token actual e intentar una vez más.
       cachedToken = null;
       const freshToken = await getAccessToken();
       res = await doAttempt(freshToken);
@@ -122,6 +130,44 @@ export async function uploadToFolder(buffer: Buffer, filename: string): Promise<
   }
   const data = (await res.json()) as { data?: Array<{ attributes?: { resource_id?: string } }> };
   return { fileId: data?.data?.[0]?.attributes?.resource_id };
+}
+
+/** Elimina un archivo de WorkDrive por su file_id (resource_id). */
+export async function deleteFile(fileId: string): Promise<void> {
+  const { workdrive } = getDomains();
+  const url = `${workdrive}/api/v1/files/${fileId}`;
+
+  const doAttempt = (token: string): Promise<Response> =>
+    fetch(url, {
+      method: 'DELETE',
+      headers: { Authorization: `Zoho-oauthtoken ${token}` },
+    });
+
+  const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+  const token = await getAccessToken();
+  let res: Response;
+  try {
+    res = await doAttempt(token);
+    if (res.status === 401 || res.status === 403) {
+      invalidateAccessTokenCache();
+      const freshToken = await getAccessToken();
+      res = await doAttempt(freshToken);
+    } else if (res.status === 429 || res.status >= 500) {
+      await sleep(1500);
+      res = await doAttempt(token);
+    }
+  } catch (cause) {
+    throw new WorkDriveError('No se pudo eliminar el archivo de Zoho WorkDrive: falló la conexión con el servidor', { cause });
+  }
+  if (!res.ok && res.status !== 404) {
+    const raw = await res.text().catch(() => '');
+    const detail = bodySnippet(raw) || `HTTP ${res.status}`;
+    throw new WorkDriveError(`No se pudo eliminar el archivo de Zoho WorkDrive: HTTP ${res.status} — ${detail}`, {
+      cause: new Error(`HTTP ${res.status}: ${raw}`),
+    });
+  }
+  // 404 = ya no existe, OK silencioso
 }
 
 /** True when the required Zoho env vars are present. */

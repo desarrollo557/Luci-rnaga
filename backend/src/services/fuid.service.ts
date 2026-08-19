@@ -103,6 +103,14 @@ export const SUGGESTION_FIELDS = [
   'numero_doc_hasta',
   'caja_interna',
   'notas',
+  'entidad_remitente',
+  'asunto',
+  'tomo',
+  'soporte',
+  'frecuencia',
+  'sede',
+  'tiempo',
+  'asunto_3',
 ] as const;
 
 export type SuggestionField = (typeof SUGGESTION_FIELDS)[number];

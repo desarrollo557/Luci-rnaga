@@ -110,6 +110,20 @@ export async function updateModuloCliente(req: Request, res: Response): Promise<
 
 export async function deleteModuloCliente(req: Request, res: Response): Promise<void> {
   const { id } = req.params;
+
+  // No se puede eliminar un módulo cliente con cajas asociadas: la FK
+  // (modulos_caja.id_modulo_caja) lo impediría con un 500 genérico.
+  const dependientes = await query<{ total: number }>(
+    'SELECT COUNT(*) AS total FROM modulos_caja WHERE id_modulo_caja = ?',
+    [id],
+  );
+  if ((dependientes[0]?.total ?? 0) > 0) {
+    res.status(409).json({
+      error: `No se puede eliminar: el módulo tiene ${dependientes[0].total} caja(s) asociada(s)`,
+    });
+    return;
+  }
+
   await query('DELETE FROM moduloscliente WHERE id = ?', [id]);
   res.send('Módulo cliente eliminado');
 }

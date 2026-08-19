@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
   AlertCircle,
@@ -201,13 +201,15 @@ export default function MiAvancePage() {
                   { value: '', label: 'Todos los sub-módulos' },
                   ...subModulos.map((sm) => ({ value: String(sm.id), label: `${sm.codigo} — ${sm.entidad_remitente}` })),
                 ]}
-                value={subModuloId ?? ''}
+                value={subModuloId != null ? String(subModuloId) : ''}
                 onChange={(value) => setSubModuloId(value ? Number(value) : undefined)}
                 placeholder="Seleccione un sub-módulo"
+                size="lg"
+                className="min-w-72"
               />
             </div>
             <Button
-              variant="outline"
+              variant="ghost"
               onClick={() => refetch()}
             >
               <Loader2 className="size-4 mr-1" /> Actualizar

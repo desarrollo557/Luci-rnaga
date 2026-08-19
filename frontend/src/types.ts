@@ -133,10 +133,29 @@ export interface Inventario {
   ESTADO_ENTREGA: string | null;
   MES_ENTREGA_PACA: string | null;
   FECHA_CREACION: string | null;
+  FECHA_ACTUALIZACION: string | null;
+  USUARIO_ACTUALIZACION: string | null;
   ZOHO_FILE_ID: string | null;
   ZOHO_SYNC_STATE: string | null;
   ZOHO_SYNC_AT: string | null;
   ZOHO_SYNC_ERROR: string | null;
+}
+
+export interface InventarioFuidResponse {
+  inventario: Inventario;
+  filas: FuidConEstado[];
+  total: number;
+  limit: number;
+  offset: number;
+  q?: string | null;
+  stats?: {
+    total_filas: number;
+    total_cajas: number;
+    total_upds: number;
+    total_folios: number;
+    fecha_inicial_min: string | null;
+    fecha_final_max: string | null;
+  } | null;
 }
 
 export interface Historial {
@@ -267,4 +286,12 @@ export const SUGGESTION_FIELDS = [
   'numero_doc_hasta',
   'caja_interna',
   'notas',
+  'entidad_remitente',
+  'asunto',
+  'tomo',
+  'soporte',
+  'frecuencia',
+  'sede',
+  'tiempo',
+  'asunto_3',
 ] as const;

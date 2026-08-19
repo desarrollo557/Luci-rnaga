@@ -37,10 +37,11 @@ import {
   type RolAsignacion,
   type SubModuloInput,
 } from '@/lib/api';
+import { toastApiError } from '@/lib/feedback';
 import { invalidateDomain } from '@/lib/queryInvalidation';
 import { useAuthStore } from '@/stores/authStore';
 import { cn } from '@/lib/cn';
-import type { ModuloCliente, Role } from '@/types';
+import type { ModuloCliente, Role, SubModulo } from '@/types';
 
 interface SubModuloForm {
   codigo: string;
@@ -260,6 +261,8 @@ export default function ClientesPage() {
 
   const [subModuloId, setSubModuloId] = useState<number | null>(null);
   const [subModuloModalOpen, setSubModuloModalOpen] = useState(false);
+  const [editingSubModulo, setEditingSubModulo] = useState<SubModulo | null>(null);
+  const [subModuloDeleteTarget, setSubModuloDeleteTarget] = useState<SubModulo | null>(null);
   const [moduloModalOpen, setModuloModalOpen] = useState(false);
   const [editingModulo, setEditingModulo] = useState<ModuloCliente | null>(null);
   const [asignarModulo, setAsignarModulo] = useState<ModuloCliente | null>(null);
@@ -289,6 +292,36 @@ export default function ClientesPage() {
       setSubModuloModalOpen(false);
       void invalidateDomain(queryClient, 'sub-modulos');
     },
+    onError: (error) => {
+      toastApiError(error, { context: 'No se pudo crear el sub-módulo:' });
+    },
+  });
+
+  const updateSubModuloMutation = useMutation({
+    mutationFn: ({ id, data }: { id: number; data: SubModuloInput }) => subModulosApi.update(id, data),
+    onSuccess: () => {
+      toast.success('Sub-módulo actualizado');
+      setSubModuloModalOpen(false);
+      setEditingSubModulo(null);
+      void invalidateDomain(queryClient, 'sub-modulos');
+    },
+    onError: (error) => {
+      toastApiError(error, { context: 'No se pudo actualizar el sub-módulo:' });
+    },
+  });
+
+  const deleteSubModuloMutation = useMutation({
+    mutationFn: (id: number) => subModulosApi.remove(id),
+    onSuccess: () => {
+      toast.success('Sub-módulo eliminado');
+      setSubModuloDeleteTarget(null);
+      setSubModuloId(null);
+      void invalidateDomain(queryClient, 'sub-modulos');
+      void invalidateDomain(queryClient, 'modulos-cliente');
+    },
+    onError: (error) => {
+      toastApiError(error, { context: 'No se pudo eliminar el sub-módulo:' });
+    },
   });
 
   const createModuloMutation = useMutation({
@@ -297,6 +330,9 @@ export default function ClientesPage() {
       toast.success('Módulo cliente creado');
       setModuloModalOpen(false);
       void invalidateDomain(queryClient, 'modulos-cliente');
+    },
+    onError: (error) => {
+      toastApiError(error, { context: 'No se pudo crear el módulo cliente:' });
     },
   });
 
@@ -308,6 +344,9 @@ export default function ClientesPage() {
       setModuloModalOpen(false);
       void invalidateDomain(queryClient, 'modulos-cliente');
     },
+    onError: (error) => {
+      toastApiError(error, { context: 'No se pudo actualizar el módulo cliente:' });
+    },
   });
 
   const deleteModuloMutation = useMutation({
@@ -316,6 +355,9 @@ export default function ClientesPage() {
       toast.success('Módulo cliente eliminado');
       setDeleteTarget(null);
       void invalidateDomain(queryClient, 'modulos-cliente');
+    },
+    onError: (error) => {
+      toastApiError(error, { context: 'No se pudo eliminar el módulo cliente:' });
     },
   });
 
@@ -329,11 +371,16 @@ export default function ClientesPage() {
     setSubModuloErrors(nextErrors);
     if (Object.keys(nextErrors).length > 0) return;
 
-    createSubModuloMutation.mutate({
+    const payload: SubModuloInput = {
       codigo: subModuloForm.codigo.trim(),
       entidad_remitente: subModuloForm.entidad_remitente.trim(),
       sede_submodulos: subModuloForm.sede_submodulos.trim(),
-    });
+    };
+    if (editingSubModulo) {
+      updateSubModuloMutation.mutate({ id: editingSubModulo.id, data: payload });
+    } else {
+      createSubModuloMutation.mutate(payload);
+    }
   };
 
   const handleModuloSubmit = (event: FormEvent<HTMLFormElement>) => {
@@ -369,9 +416,25 @@ export default function ClientesPage() {
   };
 
   const openNuevoSubModulo = () => {
+    setEditingSubModulo(null);
     setSubModuloForm({ ...EMPTY_SUB_MODULO_FORM });
     setSubModuloErrors({});
     setSubModuloModalOpen(true);
+  };
+
+  const openEditarSubModulo = (subModulo: SubModulo) => {
+    setEditingSubModulo(subModulo);
+    setSubModuloForm({
+      codigo: subModulo.codigo,
+      entidad_remitente: subModulo.entidad_remitente,
+      sede_submodulos: subModulo.sede_submodulos,
+    });
+    setSubModuloErrors({});
+    setSubModuloModalOpen(true);
+  };
+
+  const handleEliminarSubModulo = (subModulo: SubModulo) => {
+    setSubModuloDeleteTarget(subModulo);
   };
 
   const openNuevoModulo = () => {
@@ -503,6 +566,38 @@ export default function ClientesPage() {
         />
       </Card>
 
+      {isManager && subModuloId !== null && (() => {
+        const seleccionado = (subModulosQuery.data ?? []).find((sm) => sm.id === subModuloId);
+        if (!seleccionado) return null;
+        return (
+          <Card>
+            <div className="mb-4 flex items-center gap-3">
+              <div className="flex size-11 items-center justify-center rounded-xl bg-primary-50 text-primary-600">
+                <Building2 className="size-5" />
+              </div>
+              <div>
+                <h3 className="font-semibold text-silver-800">Sub-módulo seleccionado</h3>
+                <p className="text-xs text-silver-500">
+                  {seleccionado.codigo} — {seleccionado.entidad_remitente} · {seleccionado.sede_submodulos}
+                </p>
+              </div>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <Button variant="secondary" onClick={() => openEditarSubModulo(seleccionado)}>
+                <Pencil className="size-4" /> Editar Sub-módulo
+              </Button>
+              <Button
+                variant="danger"
+                onClick={() => handleEliminarSubModulo(seleccionado)}
+                loading={deleteSubModuloMutation.isPending && subModuloDeleteTarget?.id === seleccionado.id}
+              >
+                <Trash2 className="size-4" /> Eliminar Sub-módulo
+              </Button>
+            </div>
+          </Card>
+        );
+      })()}
+
       {isManager && subModuloId === null ? (
         <Card>
           <p className="text-sm text-silver-500">
@@ -527,19 +622,29 @@ export default function ClientesPage() {
 
       <Modal
         open={subModuloModalOpen}
-        onClose={() => setSubModuloModalOpen(false)}
-        title="Nuevo Sub-Módulo"
+        onClose={() => {
+          setSubModuloModalOpen(false);
+          setEditingSubModulo(null);
+        }}
+        title={editingSubModulo ? 'Editar Sub-Módulo' : 'Nuevo Sub-Módulo'}
         footer={
           <>
             <Button
               variant="ghost"
-              onClick={() => setSubModuloModalOpen(false)}
-              disabled={createSubModuloMutation.isPending}
+              onClick={() => {
+                setSubModuloModalOpen(false);
+                setEditingSubModulo(null);
+              }}
+              disabled={createSubModuloMutation.isPending || updateSubModuloMutation.isPending}
             >
               Cancelar
             </Button>
-            <Button type="submit" form="submodulo-form" loading={createSubModuloMutation.isPending}>
-              Crear
+            <Button
+              type="submit"
+              form="submodulo-form"
+              loading={createSubModuloMutation.isPending || updateSubModuloMutation.isPending}
+            >
+              {editingSubModulo ? 'Guardar' : 'Crear'}
             </Button>
           </>
         }
@@ -649,13 +754,29 @@ export default function ClientesPage() {
       <ConfirmDialog
         open={deleteTarget !== null}
         title="Eliminar módulo cliente"
-        description={`¿Estás seguro de que deseas eliminar el módulo ${deleteTarget?.codigo ?? ''}?`}
+        description={`¿Estás seguro de que deseas eliminar el módulo ${deleteTarget?.codigo ?? ''}? Esta acción no se puede deshacer.`}
         confirmLabel="Eliminar"
         loading={deleteModuloMutation.isPending}
+        requireCc
+        userCc={user?.cc ?? ''}
         onConfirm={() => {
           if (deleteTarget) deleteModuloMutation.mutate(deleteTarget.id);
         }}
         onCancel={() => setDeleteTarget(null)}
+      />
+
+      <ConfirmDialog
+        open={subModuloDeleteTarget !== null}
+        title="Eliminar sub-módulo"
+        description={`¿Estás seguro de que deseas eliminar el sub-módulo ${subModuloDeleteTarget?.codigo ?? ''} — ${subModuloDeleteTarget?.entidad_remitente ?? ''}? Esta acción no se puede deshacer.`}
+        confirmLabel="Eliminar"
+        loading={deleteSubModuloMutation.isPending}
+        requireCc
+        userCc={user?.cc ?? ''}
+        onConfirm={() => {
+          if (subModuloDeleteTarget) deleteSubModuloMutation.mutate(subModuloDeleteTarget.id);
+        }}
+        onCancel={() => setSubModuloDeleteTarget(null)}
       />
     </div>
   );

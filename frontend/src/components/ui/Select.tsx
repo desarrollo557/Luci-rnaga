@@ -20,6 +20,7 @@ export interface SelectProps {
   className?: string;
   id?: string;
   required?: boolean;
+  size?: 'sm' | 'md' | 'lg';
 }
 
 export const Select = function Select({
@@ -34,6 +35,7 @@ export const Select = function Select({
   className,
   id,
   required,
+  size = 'md',
 }: SelectProps) {
   const [open, setOpen] = useState(false);
   const [position, setPosition] = useState<{ top: number; left: number; width: number } | null>(null);
@@ -112,7 +114,10 @@ export const Select = function Select({
           aria-invalid={error ? true : undefined}
           aria-required={required || undefined}
           className={cn(
-            'flex h-10 w-full items-center justify-between gap-2 rounded-lg border border-silver-300 bg-white px-3 text-sm text-silver-800 shadow-sm transition-all duration-200 ease-in-out hover:border-silver-400 hover:shadow focus:border-primary-500 focus:outline-none focus:ring-4 focus:ring-primary-500/15 disabled:cursor-not-allowed disabled:bg-silver-50 disabled:hover:border-silver-300 disabled:hover:shadow-none',
+            `flex w-full items-center justify-between gap-2 rounded-lg border border-silver-300 bg-white text-silver-800 shadow-sm transition-all duration-200 ease-in-out hover:border-silver-400 hover:shadow focus:border-primary-500 focus:outline-none focus:ring-4 focus:ring-primary-500/15 disabled:cursor-not-allowed disabled:bg-silver-50 disabled:hover:border-silver-300 disabled:hover:shadow-none`,
+            size === 'sm' && 'h-9 px-2.5 text-sm',
+            size === 'md' && 'h-10 px-3 text-sm',
+            size === 'lg' && 'h-12 px-4 text-base',
             error && 'border-red-400 focus:border-red-500 focus:ring-red-500/15',
           )}
         >
@@ -121,7 +126,8 @@ export const Select = function Select({
           </span>
           <ChevronDown
             className={cn(
-              'size-4 shrink-0 text-silver-400 transition-transform duration-200',
+              'shrink-0 text-silver-400 transition-transform duration-200',
+              size === 'lg' ? 'size-5' : 'size-4',
               open && 'rotate-180',
             )}
           />
@@ -140,7 +146,10 @@ export const Select = function Select({
                 zIndex: 60,
                 width: position.width,
               }}
-              className="max-h-64 overflow-y-auto rounded-xl border border-silver-200 bg-white p-1.5 shadow-2xl ring-1 ring-silver-900/5 animate-[modal-panel-in_0.2s_ease-out]"
+              className={cn(
+                'overflow-y-auto rounded-xl border border-silver-200 bg-white p-1.5 shadow-2xl ring-1 ring-silver-900/5 animate-[modal-panel-in_0.2s_ease-out]',
+                size === 'lg' ? 'max-h-96' : 'max-h-64',
+              )}
             >
               {options.length === 0 ? (
                 <p className="p-3 text-sm text-silver-500">Sin opciones</p>
@@ -155,7 +164,8 @@ export const Select = function Select({
                       aria-selected={isSelected}
                       onClick={() => handleOptionClick(opt.value)}
                       className={cn(
-                        'flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-sm transition-colors duration-150',
+                        'flex w-full items-center justify-between rounded-lg px-3 text-left text-sm transition-colors duration-150',
+                        size === 'lg' ? 'py-2.5' : 'py-2',
                         isSelected
                           ? 'bg-primary-50 font-medium text-primary-700'
                           : 'text-silver-800 hover:bg-primary-50 hover:text-primary-700',

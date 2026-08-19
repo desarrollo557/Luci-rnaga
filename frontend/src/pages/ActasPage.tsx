@@ -1,15 +1,9 @@
 import { useState, type FormEvent } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import {
-  useMutation,
-  useInfiniteQuery,
-  useQuery,
-  useQueryClient,
-} from '@tanstack/react-query';
-import { FileText, Pencil, Plus, Trash2, ChevronLeft, ChevronRight } from 'lucide-react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { FileText, Pencil, Plus, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { exportExcel } from '@/lib/utils';
-import { validators } from '@/lib/useFormValidation';
 import {
   Badge,
   Button,
@@ -23,6 +17,7 @@ import {
   type Column,
 } from '@/components/ui';
 import { modulosCajaApi, modulosClienteApi, type ModuloCajaInput } from '@/lib/api';
+import { getApiErrorMessage } from '@/lib/api';
 import { invalidateDomain } from '@/lib/queryInvalidation';
 import { useAuthStore } from '@/stores/authStore';
 import type { ModuloCaja } from '@/types';
@@ -83,26 +78,14 @@ export default function ActasPage() {
   const [cajaForm, setCajaForm] = useState<CajaForm>(() => ({ ...EMPTY_CAJA_FORM }));
   const [cajaErrors, setCajaErrors] = useState<Partial<Record<keyof CajaForm, string>>>({});
 
-const cajasInfiniteQuery = useInfiniteQuery({
+const cajasQuery = useQuery({
     queryKey: ['modulos-caja', 'list', id],
-    queryFn: ({ pageParam = 1 }) =>
-      modulosCajaApi.list(id as string, { offset: (pageParam - 1) * 10, limit: 10 }).then(
-        (res) => res.data,
-      ),
-    getNextPageParam: (lastPage) =>
-      'length' in lastPage && Array.isArray(lastPage) && lastPage.length >= 10
-        ? Infinity
-        : undefined,
-    initialPageParam: 1,
+    queryFn: () => modulosCajaApi.list(id as string).then((res) => res.data),
     enabled: Boolean(id),
   });
 
-  // Paginación derived state
-  const infinitePages = cajasInfiniteQuery.pages ?? [];
-  const totalPages = cajasInfiniteQuery.pageParams?.length ?? 1;
-
-  // Data actual (primera página)
-  const currentPageData = infinitePages[0] ?? [];
+  const cajasData = cajasQuery.data ?? [];
+  const loadingCajas = cajasQuery.isLoading;
 
   const moduloQuery = useQuery({
     queryKey: ['modulos-cliente', 'get', id],
@@ -129,6 +112,9 @@ const cajasInfiniteQuery = useInfiniteQuery({
       setModalOpen(false);
       void invalidateDomain(queryClient, 'modulos-caja');
     },
+    onError: (error) => {
+      toast.error(getApiErrorMessage(error));
+    },
   });
 
   const updateMutation = useMutation({
@@ -139,6 +125,9 @@ const cajasInfiniteQuery = useInfiniteQuery({
       setModalOpen(false);
       void invalidateDomain(queryClient, 'modulos-caja');
     },
+    onError: (error) => {
+      toast.error(getApiErrorMessage(error));
+    },
   });
 
   const deleteMutation = useMutation({
@@ -148,17 +137,20 @@ const cajasInfiniteQuery = useInfiniteQuery({
       setDeleteTarget(null);
       void invalidateDomain(queryClient, 'modulos-caja');
     },
+    onError: (error) => {
+      toast.error(getApiErrorMessage(error));
+    },
   });
 
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const nextErrors: Partial<Record<keyof CajaForm, string>> = {};
 
-    // Validación directa de campos requeridos y longitud mínima
+    // Validación directa de campos requeridos y formato
     if (!cajaForm.caja_modulo?.trim()) {
       nextErrors.caja_modulo = 'El número de caja es requerido';
-    } else if (cajaForm.caja_modulo!.trim().length < 3) {
-      nextErrors.caja_modulo = 'El número de caja debe tener como mínimo 3 caracteres';
+    } else if (!/^\d{3}C\d{6}$/.test(cajaForm.caja_modulo.trim())) {
+      nextErrors.caja_modulo = 'El número de caja debe tener el formato 000C000000';
     }
     if (!cajaForm.entidad_remitente_caja?.trim()) {
       nextErrors.entidad_remitente_caja = 'La entidad remitente es requerida';
@@ -209,7 +201,8 @@ const cajasInfiniteQuery = useInfiniteQuery({
   };
 
   const handleExportExcel = () => {
-    const rows = infinitePages?.[0] ?? [];
+    // Exportar todas las cajas cargadas
+    const rows = cajasData;
     if (rows.length === 0) {
       toast.error('No hay datos para exportar');
       return;
@@ -234,16 +227,22 @@ const cajasInfiniteQuery = useInfiniteQuery({
 
   const openNuevaCaja = () => {
     setEditingCaja(null);
+    // Si el siguiente número aún no está disponible, no abrir con un prefijo incompleto.
+    if (!siguienteCaja) {
+      toast.error('Espera a que cargue el siguiente número de caja');
+      return;
+    }
     const actaModulo = moduloQuery.data?.acta_transferencia_modulo ?? '';
     // Entidades de referencia: se toman de una caja existente del módulo, así la
     // nueva caja hereda los mismos valores que muestra la tabla de actas.
+    const todasLasCajas: ModuloCaja[] = cajasData;
     const cajaReferencia =
-      infinitePages?.[0]?.find((c) => c.entidad_remitente_caja?.trim() || c.entidad_productora_caja?.trim());
+      todasLasCajas.find((c) => c.entidad_remitente_caja?.trim() || c.entidad_productora_caja?.trim());
     // Siguiente número de caja: máximo global del prefijo + 1 (ej. 051C000463 → 051C000464,
     // sin duplicar secuencias usadas por otros módulos).
     setCajaForm({
       ...EMPTY_CAJA_FORM,
-      caja_modulo: siguienteCaja ?? prefijoCaja,
+      caja_modulo: siguienteCaja,
       acta_trans_caja: actaModulo,
       entidad_remitente_caja:
         cajaReferencia?.entidad_remitente_caja ?? moduloQuery.data?.entidad_remitente ?? '',
@@ -282,22 +281,22 @@ const cajasInfiniteQuery = useInfiniteQuery({
     {
       key: 'fecha_trans_caja',
       header: 'Fecha Trans.',
-      render: (caja) => (caja.fecha_trans_caja ? caja.fecha_trans_caja.slice(0, 10) : '—'),
+      render: (caja: ModuloCaja) => (caja.fecha_trans_caja ? caja.fecha_trans_caja.slice(0, 10) : '—'),
     },
     {
       key: 'fuid',
       header: 'N° FUID',
-      render: (caja) => <span>{caja.total_fuids ?? 0}</span>,
+      render: (caja: ModuloCaja) => <span>{caja.total_fuids ?? 0}</span>,
     },
     {
       key: 'estado_caja',
       header: 'Estado',
-      render: (caja) => <EstadoBadge estado={caja.estado_caja} />,
+      render: (caja: ModuloCaja) => <EstadoBadge estado={caja.estado_caja} />,
     },
     {
       key: 'acciones',
       header: 'Acciones',
-      render: (caja) => (
+      render: (caja: ModuloCaja) => (
         <div className="flex flex-wrap items-center gap-2">
           <Link to={`/clientes/${id}/actas/${caja.id}/cajas`}>
             <Button variant="secondary" size="sm">
@@ -329,10 +328,10 @@ const cajasInfiniteQuery = useInfiniteQuery({
         actions={
           isManager ? (
             <>
-              <Button onClick={openNuevaCaja} disabled={!id} loading={createMutation.isPending}>
+              <Button onClick={openNuevaCaja} disabled={!id || siguienteCajaQuery.isPending} loading={createMutation.isPending}>
                 <Plus className="size-4" /> Nueva Caja
               </Button>
-              <Button onClick={handleExportExcel} variant="outline" loading={cajasInfiniteQuery.isFetching}>
+              <Button onClick={handleExportExcel} variant="ghost" loading={cajasQuery.isFetching}>
                 <FileText className="size-4" /> Exportar Excel
               </Button>
             </>
@@ -342,46 +341,11 @@ const cajasInfiniteQuery = useInfiniteQuery({
 
       <Table
         columns={columns}
-        data={currentPageData}
+        data={cajasData}
         rowKey={(caja) => caja.id}
-        loading={cajasInfiniteQuery.isFetching}
+        loading={loadingCajas}
         emptyMessage="No hay cajas para este módulo cliente"
       />
-
-      {/* Paginación */}
-      {totalPages > 1 && (
-        <div className="mt-4 flex items-center justify-between">
-          <span className="text-sm text-silver-500">
-            Página {currentPage} de {totalPages}
-          </span>
-          <div className="flex items-center gap-2">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => {
-                if (currentPage > 1) {
-                  void cajasInfiniteQuery.fetchPreviousPage();
-                }
-              }}
-              disabled={currentPage <= 1}
-            >
-              <ChevronLeft className="size-3" /> Anterior
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => {
-                if (currentPage < totalPages) {
-                  void cajasInfiniteQuery.fetchNextPage();
-                }
-              }}
-              disabled={currentPage >= totalPages}
-            >
-              Siguiente <ChevronRight className="size-3" />
-            </Button>
-          </div>
-        </div>
-      )}
 
       <Modal
         open={modalOpen}
@@ -407,7 +371,7 @@ const cajasInfiniteQuery = useInfiniteQuery({
           </>
         }
       >
-        <form id="caja-form" onSubmit={handleSubmit} className="grid gap-4 md:grid-cols-2">
+        <form id="caja-form" onSubmit={handleSubmit} autoComplete="off" className="grid gap-4 md:grid-cols-2">
           <Input
             label="Caja (000C000000)"
             value={cajaForm.caja_modulo}

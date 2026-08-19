@@ -4,6 +4,7 @@ import { asyncHandler } from '../utils/asyncHandler.js';
 import {
   listInventario,
   getInventario,
+  getInventarioFuid,
   createInventario,
   updateInventario,
   deleteInventario,
@@ -17,6 +18,7 @@ const router = Router();
 router.get('/inventario', isAuthenticated, isLiderOrAdmin, asyncHandler(listInventario));
 router.get('/inventario/clientes', isAuthenticated, isLiderOrAdmin, asyncHandler(listClientesParaInventario));
 router.get('/inventario/clientes/:codigo', isAuthenticated, isLiderOrAdmin, asyncHandler(getClienteParaInventario));
+router.get('/inventario/:id/fuid', isAuthenticated, isLiderOrAdmin, asyncHandler(getInventarioFuid));
 router.get('/inventario/:id', isAuthenticated, isLiderOrAdmin, asyncHandler(getInventario));
 router.post('/inventario', isAuthenticated, isLiderOrAdmin, asyncHandler(createInventario));
 router.put('/inventario/:id', isAuthenticated, isLiderOrAdmin, asyncHandler(updateInventario));

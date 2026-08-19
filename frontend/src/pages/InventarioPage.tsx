@@ -1,19 +1,78 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { Pencil, Plus, RefreshCw, RotateCcw, Search, Trash2 } from 'lucide-react';
+import { ExternalLink, Eye, Pencil, Plus, RefreshCw, RotateCcw, Search, Trash2 } from 'lucide-react';
 import { Badge, Button, ConfirmDialog, DatePicker, Input, Modal, PageHeader, Select, Table, type Column } from '@/components/ui';
 import { inventarioApi } from '@/lib/api';
 import { toastApiError } from '@/lib/feedback';
 import { cn } from '@/lib/cn';
 import { invalidateDomain } from '@/lib/queryInvalidation';
-import type { DataRow, Inventario } from '@/types';
+import type { DataRow, FuidConEstado, Inventario } from '@/types';
 import { useAuthStore } from '@/stores/authStore';
 
 const ESTADOS_INVENTARIO = ['PENDIENTE', 'EN PROCESO', 'FINALIZADO'];
 const ESTADOS_ENTREGA = ['PENDIENTE', 'EN PROCESO', 'ENTREGADO'];
 
+const FUID_PAGE_SIZE = 50;
+
+/** Encabezado oficial del FUID (fila 8 del Excel) en el orden exacto: [header, campo BD]. */
+const FUID_COLUMNS: ReadonlyArray<readonly [string, keyof FuidConEstado]> = [
+  ['N° Orden', 'n_orden'],
+  ['CÓDIGO', 'codigo'],
+  ['ENTIDAD REMITENTE', 'entidad_remitente'],
+  ['ENTIDAD PRODUCTORA', 'entidad_productora'],
+  ['UNIDAD ADMINISTRATIVA', 'unidad_administrativa'],
+  ['OFICINA PRODUCTORA', 'oficina_productora'],
+  ['OBJETO', 'objeto'],
+  ['SERIE', 'serie'],
+  ['SUBSERIE', 'subserie'],
+  ['ASUNTOS', 'asunto'],
+  ['Desde', 'numero_doc'],
+  ['Hasta', 'numero_doc_hasta'],
+  ['Inicial', 'fecha_inicial'],
+  ['Final', 'fecha_final'],
+  ['CAJA', 'caja'],
+  ['UPD', 'upd'],
+  ['TOMO', 'tomo'],
+  ['OTRO', 'otro'],
+  ['CAJA INTERNA', 'caja_interna'],
+  ['FOLIOS', 'folios'],
+  ['SOPORTE', 'soporte'],
+  ['FRECUENCIA', 'frecuencia'],
+  ['NOTAS', 'notas'],
+  ['ELABORADO POR', 'elaborado_por'],
+  ['FECHA DE INVENTARIO', 'fecha_del_dato'],
+  ['No. ACTA DE TRANSFERENCIA', 'nro_acta_transferible'],
+  ['FECHA DE TRANSFERENCIA', 'fecha_transferencia'],
+];
+
 type InventarioForm = Record<string, string>;
+
+function fmtFecha(value: string | Date | null | undefined): string {
+  if (!value) return '—';
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return '—';
+  const day = String(date.getDate()).padStart(2, '0');
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  return `${day}/${month}/${date.getFullYear()}`;
+}
+
+function fmtFechaHora(valor: string | null | undefined): string {
+  if (!valor) return '—';
+  try {
+    const date = new Date(valor);
+    if (Number.isNaN(date.getTime())) return '—';
+    return date.toLocaleString('es-CO', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  } catch {
+    return '—';
+  }
+}
 
 function emptyForm(): InventarioForm {
   return {
@@ -97,6 +156,10 @@ export default function InventarioPage() {
   const [editing, setEditing] = useState<Inventario | null>(null);
   const [form, setForm] = useState<InventarioForm>(emptyForm());
   const [deleting, setDeleting] = useState<Inventario | null>(null);
+  const [detalle, setDetalle] = useState<Inventario | null>(null);
+  const [fuidPage, setFuidPage] = useState(0);
+  const [fuidQ, setFuidQ] = useState('');
+  const [fuidQInput, setFuidQInput] = useState('');
   const [page, setPage] = useState(0);
   const [fillVersion, setFillVersion] = useState(0);
   const [cargandoCliente, setCargandoCliente] = useState(false);
@@ -118,8 +181,60 @@ export default function InventarioPage() {
     queryFn: async () => (await inventarioApi.clientesParaInventario()).data,
   });
 
+  useEffect(() => {
+    const timeout = setTimeout(() => {
+      setFuidQ(fuidQInput);
+    }, 300);
+    return () => clearTimeout(timeout);
+  }, [fuidQInput]);
+
+  const fuidQuery = useQuery({
+    queryKey: ['inventario-fuid', detalle?.ITEMS, fuidPage, fuidQ],
+    queryFn: async () =>
+      (
+        await inventarioApi.fuid(detalle!.ITEMS, {
+          limit: FUID_PAGE_SIZE,
+          offset: fuidPage * FUID_PAGE_SIZE,
+          q: fuidQ || undefined,
+        })
+      ).data,
+    enabled: detalle !== null,
+  });
+
+  const fuidColumns = useMemo<Column<FuidConEstado>[]>(() => {
+    const dateFields = new Set<string>(['fecha_inicial', 'fecha_final', 'fecha_del_dato', 'fecha_transferencia']);
+    return [
+      {
+        key: 'ESTADO_CAJA',
+        header: 'Estado Caja',
+        render: (row) => {
+          const estado = row.estado_caja;
+          const color =
+            estado === 'PROCESADA' || estado === 'PROCESADO' ? 'green' : estado === 'EN PROCESO' ? 'amber' : 'gray';
+          return <Badge color={color}>{estado || 'Sin estado'}</Badge>;
+        },
+      },
+      ...FUID_COLUMNS.map(([header, campo]) => ({
+        key: header,
+        header,
+        render: (row: FuidConEstado) => (
+          <span>{dateFields.has(campo) ? fmtFecha(row[campo] as string | null) : (row[campo] ?? '—')}</span>
+        ),
+      })),
+    ];
+  }, []);
+
+  const fuidTotal = fuidQuery.data?.total ?? 0;
+  const fuidTotalPages = Math.max(1, Math.ceil(fuidTotal / (fuidQuery.data?.limit ?? FUID_PAGE_SIZE)));
+
   const clientOptions = useMemo(() => {
-    return clientesParaInventario
+    // Deduplica por código: hay moduloscliente con el mismo codigo pero distinto remitente,
+    // y el Select usa el código como key (React rompe con keys duplicadas).
+    const unicos = new Map<string, { codigo: string; entidad_remitente: string }>();
+    for (const c of clientesParaInventario) {
+      if (!unicos.has(c.codigo)) unicos.set(c.codigo, c);
+    }
+    return Array.from(unicos.values())
       .sort((a, b) => a.codigo.localeCompare(b.codigo))
       .map((c) => ({ value: c.codigo, label: `${c.codigo} — ${c.entidad_remitente}` }));
   }, [clientesParaInventario]);
@@ -219,11 +334,11 @@ export default function InventarioPage() {
       await queryClient.invalidateQueries({ queryKey: ['inventario'] });
       const sync = resp.data?.sync;
       if (sync?.state === 'SUBIDO') {
-        toast.success(editing ? 'Registro actualizado. Documento subido a WorkDrive' : 'Registro creado. Documento subido a WorkDrive');
+        toast.success(editing ? 'Inventario actualizado. Documento subido a Zoho Sheet' : 'Inventario creado. Documento subido a Zoho Sheet');
       } else if (sync?.state === 'ERROR') {
-        toast.error('Registro guardado, pero falló la subida a WorkDrive: ' + (sync.error ?? 'Error desconocido'));
+        toast.error('Inventario guardado, pero falló la subida a Zoho Sheet: ' + (sync.error ?? 'Error desconocido'));
       } else {
-        toast.success(editing ? 'Registro actualizado correctamente' : 'Registro creado correctamente');
+        toast.success(editing ? 'Inventario actualizado correctamente' : 'Inventario creado correctamente');
       }
       setModalOpen(false);
     },
@@ -238,11 +353,11 @@ export default function InventarioPage() {
     },
     onSuccess: async () => {
       void invalidateDomain(queryClient, 'inventario');
-      toast.success('Registro eliminado');
+      toast.success('Inventario eliminado');
       setDeleting(null);
     },
     onError: () => {
-      toast.error('Error al eliminar el registro');
+      toast.error('Error al eliminar el inventario');
     },
   });
 
@@ -252,12 +367,12 @@ export default function InventarioPage() {
       await queryClient.invalidateQueries({ queryKey: ['inventario'] });
       const sync = resp.data.sync;
       if (sync.state === 'SUBIDO') {
-        toast.success('Documento subido a WorkDrive');
+        toast.success('Documento subido a Zoho Sheet');
       } else {
         toast.error('Error al subir: ' + (sync.error ?? 'desconocido'));
       }
     },
-    onError: () => toast.error('Error al reintentar la subida a WorkDrive'),
+    onError: () => toast.error('Error al reintentar la subida a Zoho Sheet'),
   });
 
   const retrySync = (row: Inventario) => retryMutation.mutate(row.ITEMS);
@@ -320,12 +435,38 @@ export default function InventarioPage() {
       },
     },
     {
+      key: 'FECHA_ACTUALIZACION',
+      header: 'Últ. Actualización',
+      render: (row) => <span>{fmtFechaHora(row.FECHA_ACTUALIZACION ?? row.FECHA_CREACION)}</span>,
+    },
+    {
+      key: 'USUARIO_ACTUALIZACION',
+      header: 'Modificado por',
+      render: (row) => <span>{row.USUARIO_ACTUALIZACION ?? '—'}</span>,
+    },
+    {
       key: 'zoho',
-      header: 'WorkDrive',
+      header: 'Zoho Sheet',
       render: (row) => {
         const state = row.ZOHO_SYNC_STATE ?? 'PENDIENTE';
         if (state === 'SUBIDO') {
-          return <Badge color="green">Subido</Badge>;
+          const url = row.ZOHO_FILE_ID;
+          const isUrl = typeof url === 'string' && url.startsWith('http');
+          return (
+            <div className="flex flex-col items-start gap-1">
+              <Badge color="green">Subido</Badge>
+              {isUrl && (
+                <a
+                  href={url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-xs text-primary-600 hover:underline"
+                >
+                  Abrir Sheet
+                </a>
+              )}
+            </div>
+          );
         }
         if (state === 'ERROR') {
           return (
@@ -337,7 +478,7 @@ export default function InventarioPage() {
                 size="sm"
                 variant="ghost"
                 onClick={() => retrySync(row)}
-                aria-label="Reintentar subida a WorkDrive"
+                aria-label="Reintentar subida a Zoho Sheet"
                 className="text-silver-500 hover:text-primary-600"
               >
                 <RefreshCw className="size-4" />
@@ -348,30 +489,43 @@ export default function InventarioPage() {
         return <Badge color="gray">Pendiente</Badge>;
       },
     },
-    ...(canEdit
-      ? [
-          {
-            key: 'acciones',
-            header: 'Acciones',
-            render: (row: Inventario) => (
-              <div className="flex items-center gap-1">
-                <Button size="sm" variant="ghost" onClick={() => openEdit(row)} aria-label="Editar">
-                  <Pencil className="size-4" />
-                </Button>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onClick={() => setDeleting(row)}
-                  className="text-red-600 hover:bg-red-50"
-                  aria-label="Eliminar"
-                >
-                  <Trash2 className="size-4" />
-                </Button>
-              </div>
-            ),
-          },
-        ]
-      : []),
+    {
+      key: 'acciones',
+      header: 'Acciones',
+      render: (row: Inventario) => (
+        <div className="flex items-center gap-1">
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => {
+              setDetalle(row);
+              setFuidPage(0);
+              setFuidQ('');
+              setFuidQInput('');
+            }}
+            aria-label="Ver FUID"
+          >
+            <Eye className="size-4" />
+          </Button>
+          {canEdit && (
+            <>
+              <Button size="sm" variant="ghost" onClick={() => openEdit(row)} aria-label="Editar">
+                <Pencil className="size-4" />
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => setDeleting(row)}
+                className="text-red-600 hover:bg-red-50"
+                aria-label="Eliminar"
+              >
+                <Trash2 className="size-4" />
+              </Button>
+            </>
+          )}
+        </div>
+      ),
+    },
   ] as Column<Inventario>[];
 
   return (
@@ -383,7 +537,7 @@ export default function InventarioPage() {
           canEdit ? (
             <Button onClick={openCreate}>
               <Plus className="size-4" />
-              Nuevo Registro
+              Nuevo Inventario
             </Button>
           ) : undefined
         }
@@ -462,7 +616,7 @@ export default function InventarioPage() {
 
         <div className="mt-4 flex items-center justify-between border-t border-silver-100 pt-3 text-sm">
           <span className="font-medium text-silver-600">
-            {filtered.length.toLocaleString('es-CO')} {filtered.length === 1 ? 'registro' : 'registros'}
+            {filtered.length.toLocaleString('es-CO')} {filtered.length === 1 ? 'inventario' : 'inventarios'}
             {hayFiltros && (
               <span className="ml-2 rounded-full bg-primary-100 px-2 py-0.5 text-xs font-semibold text-primary-700">
                 filtrado
@@ -504,7 +658,7 @@ export default function InventarioPage() {
       <Modal
         open={modalOpen}
         onClose={() => setModalOpen(false)}
-        title={editing ? `Editar Inventario #${editing.ITEMS}` : 'Nuevo Registro de Inventario'}
+        title={editing ? `Editar Inventario #${editing.ITEMS}` : 'Nuevo Inventario'}
         size="lg"
         footer={
           <>
@@ -667,12 +821,142 @@ export default function InventarioPage() {
         </div>
       </Modal>
 
+      <Modal
+        open={detalle !== null}
+        onClose={() => setDetalle(null)}
+        title={detalle ? `FUID — ${detalle.CLIENTE ?? ''}` : ''}
+        size="xl"
+        footer={
+          <Button variant="ghost" onClick={() => setDetalle(null)}>
+            Cerrar
+          </Button>
+        }
+      >
+        {detalle && (
+          <div className="space-y-6">
+            <div className="rounded-xl border border-silver-200 bg-silver-50 p-4">
+              <div className="grid grid-cols-2 gap-3 text-sm md:grid-cols-3 lg:grid-cols-6">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-silver-500">Código</p>
+                  <p className="font-medium text-silver-800">{detalle.CODIGO_DEL_CLIENTE ?? '—'}</p>
+                </div>
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-silver-500">Acta</p>
+                  <p className="font-medium text-silver-800">{detalle.No_ACTA ?? '—'}</p>
+                </div>
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-silver-500">Total Cajas</p>
+                  <p className="font-medium text-silver-800">{detalle.TOTAL_CAJAS ?? '—'}</p>
+                </div>
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-silver-500">Estado</p>
+                  {(() => {
+                    const estadoRow = detalle.ESTADO_DEL_INVENTARIO;
+                    const color = estadoRow === 'FINALIZADO' ? 'green' : estadoRow === 'EN PROCESO' ? 'amber' : 'gray';
+                    return <Badge color={color}>{estadoRow ?? 'PENDIENTE'}</Badge>;
+                  })()}
+                </div>
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-silver-500">Funcionario</p>
+                  <p className="font-medium text-silver-800">{detalle.FUNCIONARIO ?? '—'}</p>
+                </div>
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-silver-500">Estado Entrega</p>
+                  {(() => {
+                    const estadoRow = detalle.ESTADO_ENTREGA;
+                    const color = estadoRow === 'ENTREGADO' ? 'green' : estadoRow === 'EN PROCESO' ? 'amber' : 'gray';
+                    return <Badge color={color}>{estadoRow ?? 'PENDIENTE'}</Badge>;
+                  })()}
+                </div>
+              </div>
+              {typeof detalle.ZOHO_FILE_ID === 'string' && detalle.ZOHO_FILE_ID.startsWith('http') && (
+                <a
+                  href={detalle.ZOHO_FILE_ID}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="mt-3 inline-flex items-center gap-1 text-xs text-primary-600 hover:underline"
+                >
+                  <ExternalLink className="size-3.5" />
+                  Abrir Sheet en Zoho
+                </a>
+              )}
+            </div>
+
+            <div className="relative">
+              <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-silver-400" />
+              <input
+                type="search"
+                value={fuidQInput}
+                onChange={(e) => {
+                  setFuidQInput(e.target.value);
+                  setFuidPage(0);
+                }}
+                placeholder="Buscar por caja, UPD, asunto, entidad, serie…"
+                className="h-10 w-full rounded-lg border border-silver-300 bg-silver-50 pl-9 pr-3 text-sm text-silver-900 placeholder:text-silver-400 transition-all duration-200 focus:border-primary-500 focus:bg-white focus:outline-none focus:ring-4 focus:ring-primary-500/20"
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
+              {[
+                { label: 'Registros', value: fuidQuery.data?.stats?.total_filas },
+                { label: 'Cajas', value: fuidQuery.data?.stats?.total_cajas },
+                { label: 'UPDs', value: fuidQuery.data?.stats?.total_upds },
+                { label: 'Folios', value: fuidQuery.data?.stats?.total_folios },
+                { label: 'Desde', value: fmtFecha(fuidQuery.data?.stats?.fecha_inicial_min) },
+                { label: 'Hasta', value: fmtFecha(fuidQuery.data?.stats?.fecha_final_max) },
+              ].map(({ label, value }) => (
+                <div key={label} className="rounded-lg border border-silver-200 bg-white px-3 py-2">
+                  <p className="text-[10px] font-semibold uppercase tracking-wide text-silver-500">{label}</p>
+                  <p className="truncate text-sm font-semibold text-silver-800">{value ?? '—'}</p>
+                </div>
+              ))}
+            </div>
+
+            <div className="overflow-x-auto">
+              <Table
+                columns={fuidColumns}
+                data={fuidQuery.data?.filas ?? []}
+                rowKey={(row) => row.id}
+                loading={fuidQuery.isLoading}
+                emptyMessage={fuidQ ? 'No se encontraron registros con ese filtro' : 'El cliente no tiene datos FUID registrados'}
+              />
+            </div>
+
+            {fuidQuery.data && fuidTotal > 0 && (
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-silver-500">
+                  Página {fuidPage + 1} de {fuidTotalPages} ({fuidTotal} registros{fuidQ ? ' filtrados' : ''})
+                </span>
+                <div className="flex gap-2">
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    disabled={fuidPage === 0}
+                    onClick={() => setFuidPage((p) => Math.max(0, p - 1))}
+                  >
+                    Anterior
+                  </Button>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    disabled={fuidPage >= fuidTotalPages - 1}
+                    onClick={() => setFuidPage((p) => p + 1)}
+                  >
+                    Siguiente
+                  </Button>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </Modal>
+
       <ConfirmDialog
         open={deleting !== null}
-        title="Eliminar registro"
+        title="Eliminar inventario"
         description={
           deleting
-            ? `¿Está seguro de eliminar el registro de inventario #${deleting.ITEMS} (${deleting.CLIENTE ?? 'sin cliente'})? Esta acción no se puede deshacer.`
+            ? `¿Está seguro de eliminar el inventario #${deleting.ITEMS} (${deleting.CLIENTE ?? 'sin cliente'})? Esta acción no se puede deshacer.`
             : undefined
         }
         confirmLabel="Eliminar"

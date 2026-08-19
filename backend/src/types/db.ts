@@ -108,6 +108,8 @@ export interface Inventario {
   ESTADO_ENTREGA: string | null;
   MES_ENTREGA_PACA: string | null;
   FECHA_CREACION: string | Date | null;
+  FECHA_ACTUALIZACION: string | Date | null;
+  USUARIO_ACTUALIZACION: string | null;
   ZOHO_FILE_ID: string | null;
   ZOHO_SYNC_STATE: string | null;
   ZOHO_SYNC_AT: string | null;

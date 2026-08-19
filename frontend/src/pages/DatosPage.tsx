@@ -18,7 +18,7 @@ import {
 } from '@/components/ui';
 import { fuidApi, getApiErrorCode, modulosCajaApi, rangosUpdApi } from '@/lib/api';
 import { invalidateDomain } from '@/lib/queryInvalidation';
-import { required } from '@/lib/validation';
+import { onlyDigits, required, validCaja, validDate, validUpd } from '@/lib/validation';
 import { useAuthStore } from '@/stores/authStore';
 import {
   SUGGESTION_FIELDS,
@@ -404,9 +404,32 @@ function FuidFormModal({ open, cajaId, editing, defaultNOrden, caja, onClose }: 
     // TECNICA sin rango/agotado/caja sin sub-módulo: el UPD no se puede asignar, bloqueado.
     if (updBlockedSubmit) return;
     const nextErrors: Partial<Record<keyof FuidFormValues, string>> = {};
-    const updError = required(form.upd, 'El UPD');
-    if (updError) nextErrors.upd = updError;
-    if (!form.caja.trim()) nextErrors.caja = 'La caja es requerida';
+    const updRequired = required(form.upd, 'El UPD');
+    if (updRequired) nextErrors.upd = updRequired;
+    else {
+      const updFormat = validUpd(form.upd, 'El UPD');
+      if (updFormat) nextErrors.upd = updFormat;
+    }
+    const cajaRequired = required(form.caja, 'La caja');
+    if (cajaRequired) nextErrors.caja = cajaRequired;
+    else {
+      const cajaFormat = validCaja(form.caja);
+      if (cajaFormat) nextErrors.caja = cajaFormat;
+    }
+    // Las fechas son opcionales en el backend (optionalDate): solo validan formato
+    // si vienen llenas, nunca bloquean el guardado por estar vacías.
+    const fechaDelDatoFormat = validDate(form.fecha_del_dato, 'La fecha del dato');
+    if (fechaDelDatoFormat) nextErrors.fecha_del_dato = fechaDelDatoFormat;
+    const fechaInicialFormat = validDate(form.fecha_inicial, 'La fecha inicial');
+    if (fechaInicialFormat) nextErrors.fecha_inicial = fechaInicialFormat;
+    const fechaFinalFormat = validDate(form.fecha_final, 'La fecha final');
+    if (fechaFinalFormat) nextErrors.fecha_final = fechaFinalFormat;
+    const fechaTransferenciaFormat = validDate(form.fecha_transferencia, 'La fecha de transferencia');
+    if (fechaTransferenciaFormat) nextErrors.fecha_transferencia = fechaTransferenciaFormat;
+    const nOrdenFormat = onlyDigits(form.n_orden, 'El N° orden');
+    if (nOrdenFormat) nextErrors.n_orden = nOrdenFormat;
+    const foliosFormat = onlyDigits(form.folios, 'Los folios');
+    if (foliosFormat) nextErrors.folios = foliosFormat;
     setErrors(nextErrors);
     if (Object.keys(nextErrors).length > 0) return;
 
@@ -484,10 +507,12 @@ function FuidFormModal({ open, cajaId, editing, defaultNOrden, caja, onClose }: 
               value={form.codigo}
               onChange={updateField('codigo')}
             />
-            <Input
+            <SuggestionInput
+              caja={form.caja}
+              campo="entidad_remitente"
               label="Entidad Remitente"
               value={form.entidad_remitente}
-              onChange={setField('entidad_remitente')}
+              onChange={updateField('entidad_remitente')}
             />
             <SuggestionInput
               caja={form.caja}
@@ -563,7 +588,13 @@ function FuidFormModal({ open, cajaId, editing, defaultNOrden, caja, onClose }: 
         <div className="rounded-lg border border-silver-200 bg-silver-50 p-4">
           <h3 className="text-sm font-semibold text-silver-800">Documento</h3>
           <div className="mt-3 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            <Input label="Asunto" value={form.asunto} onChange={setField('asunto')} />
+            <SuggestionInput
+              caja={form.caja}
+              campo="asunto"
+              label="Asunto"
+              value={form.asunto}
+              onChange={updateField('asunto')}
+            />
             <SuggestionInput
               caja={form.caja}
               campo="radicado"
@@ -618,7 +649,13 @@ function FuidFormModal({ open, cajaId, editing, defaultNOrden, caja, onClose }: 
               hint={updHint}
               placeholder={updPlaceholder}
             />
-            <Input label="Tomo" value={form.tomo} onChange={setField('tomo')} />
+            <SuggestionInput
+              caja={form.caja}
+              campo="tomo"
+              label="Tomo"
+              value={form.tomo}
+              onChange={updateField('tomo')}
+            />
             <Input label="Otro" value={form.otro} onChange={setField('otro')} />
             <SuggestionInput
               caja={form.caja}
@@ -628,8 +665,20 @@ function FuidFormModal({ open, cajaId, editing, defaultNOrden, caja, onClose }: 
               onChange={updateField('caja_interna')}
             />
             <Input label="Folios" type="number" value={form.folios} onChange={setField('folios')} />
-            <Input label="Soporte" value={form.soporte} onChange={setField('soporte')} />
-            <Input label="Frecuencia" value={form.frecuencia} onChange={setField('frecuencia')} />
+            <SuggestionInput
+              caja={form.caja}
+              campo="soporte"
+              label="Soporte"
+              value={form.soporte}
+              onChange={updateField('soporte')}
+            />
+            <SuggestionInput
+              caja={form.caja}
+              campo="frecuencia"
+              label="Frecuencia"
+              value={form.frecuencia}
+              onChange={updateField('frecuencia')}
+            />
             <Input
               label="Elaborado Por"
               value={form.elaborado_por}
@@ -652,8 +701,20 @@ function FuidFormModal({ open, cajaId, editing, defaultNOrden, caja, onClose }: 
               value={form.notas}
               onChange={updateField('notas')}
             />
-            <Input label="Sede" value={form.sede} onChange={setField('sede')} />
-            <Input label="Tiempo" value={form.tiempo} onChange={setField('tiempo')} />
+            <SuggestionInput
+              caja={form.caja}
+              campo="sede"
+              label="Sede"
+              value={form.sede}
+              onChange={updateField('sede')}
+            />
+            <SuggestionInput
+              caja={form.caja}
+              campo="tiempo"
+              label="Tiempo"
+              value={form.tiempo}
+              onChange={updateField('tiempo')}
+            />
             <SuggestionInput
               caja={form.caja}
               campo="asunto_2"
@@ -661,7 +722,13 @@ function FuidFormModal({ open, cajaId, editing, defaultNOrden, caja, onClose }: 
               value={form.asunto_2}
               onChange={updateField('asunto_2')}
             />
-            <Input label="Asunto 3" value={form.asunto_3} onChange={setField('asunto_3')} />
+            <SuggestionInput
+              caja={form.caja}
+              campo="asunto_3"
+              label="Asunto 3"
+              value={form.asunto_3}
+              onChange={updateField('asunto_3')}
+            />
           </div>
         </div>
       </form>

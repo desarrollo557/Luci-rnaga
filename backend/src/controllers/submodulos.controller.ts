@@ -77,6 +77,20 @@ export async function updateSubModulo(req: Request, res: Response): Promise<void
 
 export async function deleteSubModulo(req: Request, res: Response): Promise<void> {
   const { id } = req.params;
+
+  // No se puede eliminar un sub-módulo con módulos cliente asociados: la FK
+  // fk_submodulo (moduloscliente.id_submodulo) lo impediría con un 500 genérico.
+  const dependientes = await query<{ total: number }>(
+    'SELECT COUNT(*) AS total FROM moduloscliente WHERE id_submodulo = ?',
+    [id],
+  );
+  if ((dependientes[0]?.total ?? 0) > 0) {
+    res.status(409).json({
+      error: `No se puede eliminar: el sub-módulo tiene ${dependientes[0].total} módulo(s) cliente asociado(s)`,
+    });
+    return;
+  }
+
   await query('DELETE FROM sub_modulos WHERE id = ?', [id]);
   res.send('Sub-módulo eliminado correctamente');
 }

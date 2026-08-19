@@ -9,6 +9,7 @@ import type {
   FuidDato,
   Historial,
   Inventario,
+  InventarioFuidResponse,
   ListarRangosResponse,
   LoginResponse,
   ModuloCaja,
@@ -333,6 +334,11 @@ export interface ClienteParaInventarioResponse {
 export const inventarioApi = {
   list: () => api.get<Inventario[]>('/inventario'),
   get: (id: string | number) => api.get<Inventario>(`/inventario/${id}`),
+  fuid: (id: string | number, params?: { limit?: number; offset?: number; q?: string }) => {
+    const query: Record<string, unknown> = { ...params };
+    if (!query.q) delete query.q;
+    return api.get<InventarioFuidResponse>(`/inventario/${id}/fuid`, { params: query });
+  },
   create: (data: DataRow) => api.post<InventarioSaveResponse>('/inventario', data),
   update: (id: string | number, data: DataRow) => api.put<InventarioSaveResponse>(`/inventario/${id}`, data),
   remove: (id: string | number) => api.delete(`/inventario/${id}`),

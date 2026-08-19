@@ -29,6 +29,15 @@ function isForeignKeyError(err: unknown): err is { code: string; sqlMessage?: st
   );
 }
 
+/** Detecta errores MySQL de registro padre referenciado (no se puede borrar un padre con hijos). */
+function isRowReferencedError(err: unknown): err is { code: string; sqlMessage?: string } {
+  return (
+    typeof err === 'object' &&
+    err !== null &&
+    (err as { code?: unknown }).code === 'ER_ROW_IS_REFERENCED_2'
+  );
+}
+
 /** Middleware de errores central. */
 export function errorHandler(err: unknown, _req: Request, res: Response, _next: NextFunction): void {
   if (err instanceof ApiError) {
@@ -52,6 +61,15 @@ export function errorHandler(err: unknown, _req: Request, res: Response, _next: 
     res.status(409).json({
       error:
         'La referencia no existe. Verifica que el módulo cliente o el usuario seleccionado sea válido.',
+    });
+    return;
+  }
+
+  if (isRowReferencedError(err)) {
+    console.error('Registro referenciado:', err.sqlMessage ?? err);
+    res.status(409).json({
+      error:
+        'No se puede eliminar: el registro tiene elementos asociados. Elimina primero sus dependencias.',
     });
     return;
   }

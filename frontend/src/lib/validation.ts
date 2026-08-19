@@ -28,6 +28,13 @@ export function validCaja(value: string): string | null {
     : 'El número de caja debe tener el formato 000C000000';
 }
 
+export function validUpd(value: string, label: string): string | null {
+  if (value.trim() === '') return null;
+  return /^UPD\d{7}$/.test(value.trim())
+    ? null
+    : `${label} debe tener el formato UPD + 7 dígitos (ej. UPD0000001)`;
+}
+
 export function createValidator(...checks: FieldValidator[]): FieldValidator {
   return (value, label) => {
     for (const check of checks) {

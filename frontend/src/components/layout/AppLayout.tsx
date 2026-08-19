@@ -33,7 +33,7 @@ const NAV_ITEMS: NavItem[] = [
   { label: 'Producción', to: '/produccion', icon: Factory, roles: ['LIDER', 'CALIDAD'] },
   { label: 'Inventario', to: '/inventario', icon: Package, roles: ['LIDER'] },
   { label: 'Historial', to: '/historial', icon: History, roles: ['LIDER'] },
-  { label: 'Rangos UPD', to: '/rangos-upd', icon: Hash, roles: ['LIDER', 'ADMIN'] },
+  { label: 'Rangos UPD', to: '/rangos-upd', icon: Hash, roles: ['LIDER'] },
   { label: 'Mi Avance', to: '/mi-avance', icon: LineChart, roles: ['TECNICA'] },
 ];
 

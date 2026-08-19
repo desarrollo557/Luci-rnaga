@@ -96,7 +96,7 @@ export const validators = {
 
 /** Mapeo de campos ActasPage a validaciones */
 export const actasFormValidations = {
-  caja_modulo: [validators.required, ((_v: string) => validators.minLength(3, 'Caja') || null) as (value: string) => string | null],
+  caja_modulo: [validators.required, (value: string) => validators.minLength(3)(value, 'Caja') || null],
   entidad_remitente_caja: [validators.required],
   entidad_productora_caja: [validators.required],
   unidad_administrativa_caja: [validators.required],

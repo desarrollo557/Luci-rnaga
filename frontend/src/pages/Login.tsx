@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import { IdCard, LockKeyhole, MapPin, ShieldCheck, Sparkles } from 'lucide-react';
+import { IdCard, LockKeyhole, MapPin, ShieldCheck, Sparkles, Eye, EyeOff } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button, Input, Select, type SelectOption } from '@/components/ui';
 import { authApi } from '@/lib/api';
@@ -32,6 +32,7 @@ export default function Login() {
   const [rol, setRol] = useState('');
   const [sede, setSede] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
 
   // App ya consulta /currentUser al montar; aquí solo se redirige si ya hay
   // sesión activa. NO se vuelve a llamar a fetchCurrentUser (era la fuente
@@ -154,14 +155,22 @@ export default function Login() {
                 <LockKeyhole className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-silver-400" />
                 <Input
                   id="login-contrasena"
-                  type="password"
+                  type={showPassword ? 'text' : 'password'}
                   value={contrasena}
                   onChange={(event) => setContrasena(event.target.value)}
                   placeholder="••••••••"
                   autoComplete="current-password"
                   required
-                  className="pl-10"
+                  className="pl-10 pr-10"
                 />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword((prev) => !prev)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-silver-400 hover:text-silver-600 transition-colors"
+                  aria-label={showPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'}
+                >
+                  {showPassword ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+                </button>
               </div>
             </div>
             <div>

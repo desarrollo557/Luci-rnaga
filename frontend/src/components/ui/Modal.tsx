@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
 import { cn } from '@/lib/cn';
 
-type ModalSize = 'sm' | 'md' | 'lg';
+type ModalSize = 'sm' | 'md' | 'lg' | 'xl';
 
 export interface ModalProps {
   open: boolean;
@@ -18,6 +18,7 @@ const sizeClasses: Record<ModalSize, string> = {
   sm: 'max-w-sm',
   md: 'max-w-lg',
   lg: 'max-w-3xl',
+  xl: 'max-w-6xl',
 };
 
 export function Modal({ open, onClose, title, children, footer, size = 'md' }: ModalProps) {
