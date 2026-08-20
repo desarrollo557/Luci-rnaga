@@ -1,9 +1,9 @@
 schema: spec-driven
 
 context: |
-  Tech stack: Monorepo "luciernaga-host" v2 — backend (Express 4 + TypeScript 5.7 ESM, tsx, mysql2, zod, express-session) + frontend (React 19 + Vite 6 + TypeScript 5.7, TanStack Query v5, Tailwind 4, zustand, react-router 7).
+  Tech stack: Monorepo "luci-host" v2 — backend (Express 4 + TypeScript 5.7 ESM, tsx, mysql2, zod, express-session) + frontend (React 19 + Vite 6 + TypeScript 5.7, TanStack Query v5, Tailwind 4, zustand, react-router 7).
   Architecture: backend/src layered (controllers, services, middlewares, routes, validators, config, types, utils); frontend/src by feature area (pages, components, lib, stores). API under /api prefix, axios withCredentials, Vite proxy /api -> :3000.
-  Database: MySQL 8 (DB fuiddatosluciernaga). Session auth (connect.sid cookie).
+  Database: MySQL 8 (DB fuiddatosluci). Session auth (connect.sid cookie).
   Testing: No test runner installed (no vitest/jest/playwright). Typecheck only.
   Style: Conventional commits; git flow develop -> production -> main with PR gates (docs/GIT_WORKFLOW.md). CI in .github/workflows/ci.yml (typecheck + build, Node 22).
 

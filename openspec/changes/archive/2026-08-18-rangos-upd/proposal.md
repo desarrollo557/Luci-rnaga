@@ -55,7 +55,7 @@ Persist ranges as rows (unlike `assignCajaCalidadRango`, which expands to indivi
 | `frontend/src/pages/CajasPage.tsx` | Modified | leader assignment UI |
 | `frontend/src/pages/ProduccionPage.tsx` | Modified | "por finalizar" KPI |
 | `frontend/src/lib/api` | Modified | rangosUpd API client |
-| DB `fuiddatosluciernaga` | New | `rangos_upd` table + indexes |
+| DB `fuiddatosluci` | New | `rangos_upd` table + indexes |
 
 ## Risks
 

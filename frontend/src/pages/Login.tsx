@@ -97,7 +97,7 @@ export default function Login() {
             <div className="flex size-12 items-center justify-center overflow-hidden rounded-full bg-white p-1 shadow-lg shadow-primary-950/30">
               <img src="/images/siar.png" alt="Logo SIAR" className="size-10 rounded-full object-cover" />
             </div>
-            <span className="text-xl font-bold tracking-tight">Luciérnaga</span>
+            <span className="text-xl font-bold tracking-tight">Luci</span>
           </div>
           <div className="relative">
             <p className="mb-4 inline-flex items-center gap-2 rounded-full bg-white/10 px-3 py-1 text-xs font-medium text-white/90 backdrop-blur-sm">
@@ -218,7 +218,7 @@ export default function Login() {
             </Button>
           </form>
           <p className="mt-8 text-center text-xs text-silver-400">
-            © {new Date().getFullYear()} Luciérnaga · Acceso autorizado
+            © {new Date().getFullYear()} Luci · Acceso autorizado
           </p>
         </div>
       </div>
