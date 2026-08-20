@@ -3,7 +3,7 @@
   "version": "2.0.0",
   "private": true,
   "type": "module",
-  "description": "Frontend React + Tailwind para el sistema FUID Luciérnaga",
+  "description": "Frontend React + Tailwind para el sistema FUID Luci",
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",

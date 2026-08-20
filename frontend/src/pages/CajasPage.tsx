@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ClipboardList, Eye, FileText, PencilLine } from 'lucide-react';
+import { ClipboardList, Eye, FileText, PencilLine, Users, Wrench, ShieldCheck, User } from 'lucide-react';
 import { toast } from 'sonner';
 import { Badge, Button, Card, Input, LoadingState, Modal, PageHeader } from '@/components/ui';
 import {
@@ -550,88 +550,125 @@ export default function CajasPage() {
         title={`Detalles de Caja ${caja?.caja_modulo ?? ''}`}
         size="lg"
       >
-        <div className="space-y-4">
-          <div className="grid gap-4 md:grid-cols-2">
-            <div>
-              <dt className="font-medium text-silver-500">Caja</dt>
-              <dd className="mt-0.5 text-silver-800 font-mono">{caja?.caja_modulo}</dd>
-            </div>
-            <div>
-              <dt className="font-medium text-silver-500">Estado</dt>
-              <dd className="mt-0.5">
-                <Badge color={estadoColor}>{estado || '—'}</Badge>
-              </dd>
-            </div>
-            <div>
-              <dt className="font-medium text-silver-500">Entidad Remitente</dt>
-              <dd className="mt-0.5 text-silver-800">{caja?.entidad_remitente_caja}</dd>
-            </div>
-            <div>
-              <dt className="font-medium text-silver-500">Entidad Productora</dt>
-              <dd className="mt-0.5 text-silver-800">{caja?.entidad_productora_caja}</dd>
-            </div>
-            <div>
-              <dt className="font-medium text-silver-500">Unidad Administrativa</dt>
-              <dd className="mt-0.5 text-silver-800">{caja?.unidad_administrativa_caja}</dd>
-            </div>
-            <div>
-              <dt className="font-medium text-silver-500">Oficina Productora</dt>
-              <dd className="mt-0.5 text-silver-800">{caja?.oficina_productora_caja}</dd>
-            </div>
-            <div>
-              <dt className="font-medium text-silver-500">Fecha de Transferencia</dt>
-              <dd className="mt-0.5 text-silver-800">
-                {caja?.fecha_trans_caja ? caja.fecha_trans_caja.slice(0, 10) : '—'}
-              </dd>
-            </div>
-            <div>
-              <dt className="font-medium text-silver-500">Acta de Transferencia</dt>
-              <dd className="mt-0.5 text-silver-800">{caja?.acta_trans_caja}</dd>
-            </div>
-            <div className="md:col-span-2">
-              <dt className="font-medium text-silver-500">Objeto</dt>
-              <dd className="mt-0.5 text-silver-800">{caja?.objeto_caja}</dd>
-            </div>
-            <div>
-              <dt className="font-medium text-silver-500">Creada</dt>
-              <dd className="mt-0.5 text-silver-800">{caja?.created_at ? caja.created_at.slice(0, 19).replace('T', ' ') : '—'}</dd>
-            </div>
-            <div>
-              <dt className="font-medium text-silver-500">Actualizada</dt>
-              <dd className="mt-0.5 text-silver-800">{caja?.updated_at ? caja.updated_at.slice(0, 19).replace('T', ' ') : '—'}</dd>
+        <div className="space-y-6 p-2">
+          {/* Encabezado resumen */}
+          <div className="bg-gradient-to-r from-primary-50 to-primary-100 rounded-xl p-4 border border-primary-200">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-xs font-medium text-primary-700 uppercase tracking-wider">Caja</p>
+                <p className="text-2xl font-bold text-silver-900 font-mono">{caja?.caja_modulo ?? '—'}</p>
+              </div>
+              <div className="text-right">
+                <p className="text-xs font-medium text-silver-500 uppercase tracking-wider">Estado</p>
+                <Badge color={estadoColor} className="text-sm px-3 py-1">{estado || '—'}</Badge>
+              </div>
             </div>
           </div>
 
+          {/* Información principal */}
+          <Card className="border-silver-200 shadow-sm">
+            <div className="px-4 py-3 border-b border-silver-100">
+              <h3 className="text-sm font-semibold text-silver-800 flex items-center gap-2">
+                <FileText className="size-4 text-primary-600" />
+                Información de la Caja
+              </h3>
+            </div>
+            <div className="p-4">
+              <dl className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
+                <div className="flex flex-col">
+                  <dt className="text-xs font-medium text-silver-500 uppercase tracking-wider">Entidad Remitente</dt>
+                  <dd className="mt-0.5 text-silver-800 font-medium">{caja?.entidad_remitente_caja ?? '—'}</dd>
+                </div>
+                <div className="flex flex-col">
+                  <dt className="text-xs font-medium text-silver-500 uppercase tracking-wider">Entidad Productora</dt>
+                  <dd className="mt-0.5 text-silver-800 font-medium">{caja?.entidad_productora_caja ?? '—'}</dd>
+                </div>
+                <div className="flex flex-col">
+                  <dt className="text-xs font-medium text-silver-500 uppercase tracking-wider">Unidad Administrativa</dt>
+                  <dd className="mt-0.5 text-silver-800 font-medium">{caja?.unidad_administrativa_caja ?? '—'}</dd>
+                </div>
+                <div className="flex flex-col">
+                  <dt className="text-xs font-medium text-silver-500 uppercase tracking-wider">Oficina Productora</dt>
+                  <dd className="mt-0.5 text-silver-800 font-medium">{caja?.oficina_productora_caja ?? '—'}</dd>
+                </div>
+                <div className="flex flex-col">
+                  <dt className="text-xs font-medium text-silver-500 uppercase tracking-wider">Fecha Transferencia</dt>
+                  <dd className="mt-0.5 text-silver-800 font-medium">{caja?.fecha_trans_caja ? caja.fecha_trans_caja.slice(0, 10) : '—'}</dd>
+                </div>
+                <div className="flex flex-col">
+                  <dt className="text-xs font-medium text-silver-500 uppercase tracking-wider">Acta de Transferencia</dt>
+                  <dd className="mt-0.5 text-silver-800 font-medium font-mono">{caja?.acta_trans_caja ?? '—'}</dd>
+                </div>
+                <div className="md:col-span-2 lg:col-span-3 flex flex-col">
+                  <dt className="text-xs font-medium text-silver-500 uppercase tracking-wider">Objeto</dt>
+                  <dd className="mt-0.5 text-silver-800">{caja?.objeto_caja ?? '—'}</dd>
+                </div>
+                <div className="flex flex-col">
+                  <dt className="text-xs font-medium text-silver-500 uppercase tracking-wider">Creada</dt>
+                  <dd className="mt-0.5 text-silver-800 font-mono text-sm">{caja?.created_at ? caja.created_at.slice(0, 19).replace('T', ' ') : '—'}</dd>
+                </div>
+                <div className="flex flex-col">
+                  <dt className="text-xs font-medium text-silver-500 uppercase tracking-wider">Actualizada</dt>
+                  <dd className="mt-0.5 text-silver-800 font-mono text-sm">{caja?.updated_at ? caja.updated_at.slice(0, 19).replace('T', ' ') : '—'}</dd>
+                </div>
+              </dl>
+            </div>
+          </Card>
+
           {/* Roles asignados */}
-          <div className="pt-4 border-t border-silver-200">
-            <h3 className="text-lg font-semibold text-silver-800 mb-3">Roles Asignados</h3>
-            <div className="grid gap-4 md:grid-cols-2">
-              <div>
-                <h4 className="font-medium text-silver-700 mb-2">Técnicos</h4>
-                {usuariosAsignadosQuery.data?.tecnica.length === 0 ? (
-                  <p className="text-sm text-silver-500">Sin técnicos asignados</p>
-                ) : (
-                  <ul className="space-y-1">
-                    {usuariosAsignadosQuery.data?.tecnica.map((u) => (
-                      <li key={u.id} className="text-sm text-silver-700">{u.nombre} ({u.sede})</li>
-                    ))}
-                  </ul>
-                )}
-              </div>
-              <div>
-                <h4 className="font-medium text-silver-700 mb-2">Calidad</h4>
-                {usuariosAsignadosQuery.data?.calidad.length === 0 ? (
-                  <p className="text-sm text-silver-500">Sin usuarios de calidad asignados</p>
-                ) : (
-                  <ul className="space-y-1">
-                    {usuariosAsignadosQuery.data?.calidad.map((u) => (
-                      <li key={u.id} className="text-sm text-silver-700">{u.nombre} ({u.sede})</li>
-                    ))}
-                  </ul>
-                )}
+          <Card className="border-silver-200 shadow-sm">
+            <div className="px-4 py-3 border-b border-silver-100">
+              <h3 className="text-sm font-semibold text-silver-800 flex items-center gap-2">
+                <Users className="size-4 text-primary-600" />
+                Roles Asignados
+              </h3>
+            </div>
+            <div className="p-4">
+              <div className="grid gap-4 md:grid-cols-2">
+                {/* Técnicos */}
+                <div className="bg-silver-50 rounded-lg p-4 border border-silver-100">
+                  <h4 className="font-medium text-silver-700 mb-3 flex items-center gap-2">
+                    <Wrench className="size-4 text-blue-600" />
+                    Técnicos
+                  </h4>
+                  {usuariosAsignadosQuery.data?.tecnica.length === 0 ? (
+                    <p className="text-sm text-silver-500">Sin técnicos asignados</p>
+                  ) : (
+                    <ul className="space-y-2">
+                      {usuariosAsignadosQuery.data?.tecnica.map((u) => (
+                        <li key={u.id} className="flex items-center gap-2 text-sm text-silver-700 bg-white px-3 py-2 rounded-lg border border-silver-200">
+                          <User className="size-4 text-silver-400" />
+                          <span>{u.nombre}</span>
+                          <span className="text-xs text-silver-400 px-2 py-0.5 rounded-full bg-silver-100">{u.sede}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+
+                {/* Calidad */}
+                <div className="bg-silver-50 rounded-lg p-4 border border-silver-100">
+                  <h4 className="font-medium text-silver-700 mb-3 flex items-center gap-2">
+                    <ShieldCheck className="size-4 text-green-600" />
+                    Calidad
+                  </h4>
+                  {usuariosAsignadosQuery.data?.calidad.length === 0 ? (
+                    <p className="text-sm text-silver-500">Sin usuarios de calidad asignados</p>
+                  ) : (
+                    <ul className="space-y-2">
+                      {usuariosAsignadosQuery.data?.calidad.map((u) => (
+                        <li key={u.id} className="flex items-center gap-2 text-sm text-silver-700 bg-white px-3 py-2 rounded-lg border border-silver-200">
+                          <User className="size-4 text-silver-400" />
+                          <span>{u.nombre}</span>
+                          <span className="text-xs text-silver-400 px-2 py-0.5 rounded-full bg-silver-100">{u.sede}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
               </div>
             </div>
-          </div>
+          </Card>
         </div>
       </Modal>
     </div>
