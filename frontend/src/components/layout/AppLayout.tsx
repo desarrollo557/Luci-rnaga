@@ -3,15 +3,14 @@ import { NavLink, Outlet } from 'react-router-dom';
 import {
   Building2,
   Factory,
-  Hash,
   History,
   LayoutDashboard,
-  LineChart,
   LogOut,
   Menu,
   Package,
   PanelLeftClose,
   PanelLeftOpen,
+  Users,
   X,
   type LucideIcon,
 } from 'lucide-react';
@@ -33,8 +32,7 @@ const NAV_ITEMS: NavItem[] = [
   { label: 'Producción', to: '/produccion', icon: Factory, roles: ['LIDER', 'CALIDAD'] },
   { label: 'Inventario', to: '/inventario', icon: Package, roles: ['LIDER'] },
   { label: 'Historial', to: '/historial', icon: History, roles: ['LIDER'] },
-  { label: 'Rangos UPD', to: '/rangos-upd', icon: Hash, roles: ['LIDER'] },
-  { label: 'Mi Avance', to: '/mi-avance', icon: LineChart, roles: ['TECNICA'] },
+  { label: 'Mi Panel', to: '/mi-panel', icon: Users, roles: ['TECNICA'] },
 ];
 
 const ROL_LABEL: Record<Role, string> = {
@@ -126,6 +124,21 @@ export default function AppLayout() {
             );
           })}
         </nav>
+
+        {/* Logout en la parte inferior del sidebar */}
+        <div className="shrink-0 p-3 border-t border-silver-800">
+          <button
+            type="button"
+            onClick={handleLogout}
+            className={cn(
+              'flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors',
+              'text-silver-300 hover:bg-silver-800 hover:text-white'
+            )}
+          >
+            <LogOut className="size-5 shrink-0" />
+            <span>Cerrar sesión</span>
+          </button>
+        </div>
       </aside>
 
       {sidebarOpen && (

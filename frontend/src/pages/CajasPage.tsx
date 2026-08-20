@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ClipboardList, Eye, PencilLine } from 'lucide-react';
@@ -7,6 +7,7 @@ import { Badge, Button, Card, Input, LoadingState, PageHeader } from '@/componen
 import {
   asignacionCajaCalidadApi,
   asignacionCajaTecnicaApi,
+  getApiErrorMessage,
   modulosCajaApi,
   usersApi,
   type AsignacionCajaInput,
@@ -43,7 +44,18 @@ function SeccionAsignacionCaja({ cajaId, rol, label }: SeccionAsignacionCajaProp
     enabled: cajaId > 0,
   });
 
+  // Para TÉCNICA: usuarios seleccionados para asignar + su UPD obligatorio
   const [selected, setSelected] = useState<Set<number>>(new Set());
+  const [updInputs, setUpdInputs] = useState<Record<number, string>>({});
+
+  // Para TÉCNICA ya asignados: editar su UPD
+  const rangoRefs = useRef<Record<number, HTMLInputElement | null>>({});
+
+  // Para CALIDAD: asignar por rango de cajas
+  const [rangoInicio, setRangoInicio] = useState('');
+  const [rangoFin, setRangoFin] = useState('');
+  const [rangoUsuarios, setRangoUsuarios] = useState<Set<number>>(new Set());
+  const [rangoError, setRangoError] = useState<string | null>(null);
 
   useEffect(() => {
     if (asignadosQuery.data) {
@@ -51,21 +63,29 @@ function SeccionAsignacionCaja({ cajaId, rol, label }: SeccionAsignacionCajaProp
     }
   }, [asignadosQuery.data]);
 
-  const [rangoInicio, setRangoInicio] = useState('');
-  const [rangoFin, setRangoFin] = useState('');
-  const [rangoUsuarios, setRangoUsuarios] = useState<Set<number>>(new Set());
-  const [rangoError, setRangoError] = useState<string | null>(null);
-
   const asignarMutation = useMutation({
-    mutationFn: (usuarios: number[]) => {
-      const data: AsignacionCajaInput = { modulo_id: cajaId, usuarios };
+    mutationFn: async (data: { modulo_id: number; usuarios: number[]; upd_inicio?: Record<number, string> }) => {
+      if (rol === 'TECNICA' && data.upd_inicio) {
+        return asignacionCajaTecnicaApi.asignarConRango({
+          modulo_id: data.modulo_id,
+          usuarios: data.usuarios,
+          upd_inicio: data.upd_inicio,
+        });
+      }
+      const payload: AsignacionCajaInput = { modulo_id: data.modulo_id, usuarios: data.usuarios };
       return rol === 'TECNICA'
-        ? asignacionCajaTecnicaApi.asignar(data)
-        : asignacionCajaCalidadApi.asignar(data);
+        ? asignacionCajaTecnicaApi.asignar(payload)
+        : asignacionCajaCalidadApi.asignar(payload);
     },
     onSuccess: () => {
       toast.success('Asignación guardada correctamente');
+      setSelected(new Set());
+      setUpdInputs({});
       void invalidateDomain(queryClient, 'users');
+      void invalidateDomain(queryClient, 'modulos-caja');
+    },
+    onError: (error) => {
+      toast.error(getApiErrorMessage(error));
     },
   });
 
@@ -92,17 +112,44 @@ function SeccionAsignacionCaja({ cajaId, rol, label }: SeccionAsignacionCajaProp
     },
   });
 
+  const rangoTecnicaMutation = useMutation({
+    mutationFn: (data: { modulo_id: number; usuario_id: number; upd_inicio: string }) =>
+      asignacionCajaTecnicaApi.asignarRango(data),
+    onSuccess: () => {
+      toast.success('Rango UPD actualizado correctamente');
+      void invalidateDomain(queryClient, 'users');
+      void invalidateDomain(queryClient, 'modulos-caja');
+    },
+    onError: (error) => {
+      toast.error(getApiErrorMessage(error));
+    },
+  });
+
   const asignadosIds = new Set((asignadosQuery.data ?? []).map((usuario) => usuario.id));
+  const asignadosMap = new Map((asignadosQuery.data ?? []).map((usuario) => [usuario.id, usuario]));
   const usuarios = disponiblesQuery.data ?? [];
   const loading = asignadosQuery.isPending || disponiblesQuery.isPending;
 
   const toggle = (id: number) => {
     setSelected((prev) => {
       const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
+      if (next.has(id)) {
+        next.delete(id);
+        // Limpiar UPD al deseleccionar
+        setUpdInputs((prevUpd) => {
+          const nextUpd = { ...prevUpd };
+          delete nextUpd[id];
+          return nextUpd;
+        });
+      } else {
+        next.add(id);
+      }
       return next;
     });
+  };
+
+  const handleUpdChange = (usuarioId: number, value: string) => {
+    setUpdInputs((prev) => ({ ...prev, [usuarioId]: value }));
   };
 
   const toggleRango = (id: number) => {
@@ -126,7 +173,25 @@ function SeccionAsignacionCaja({ cajaId, rol, label }: SeccionAsignacionCajaProp
       toast.info('No hay usuarios nuevos por asignar');
       return;
     }
-    asignarMutation.mutate(toAdd);
+    // Validación: para TÉCNICA, todos los nuevos deben tener UPD
+    if (!isCalidad) {
+      const sinUpd = toAdd.filter((id) => !updInputs[id]?.trim());
+      if (sinUpd.length > 0) {
+        const nombres = sinUpd.map((id) => usuarios.find((u) => u.id === id)?.nombre ?? id).join(', ');
+        toast.error(`Los siguientes técnicos requieren rango UPD: ${nombres}`);
+        return;
+      }
+      const updInvalido = toAdd.filter((id) => updInputs[id] && !/^UPD\d{7}$/.test(updInputs[id].trim()));
+      if (updInvalido.length > 0) {
+        const nombres = updInvalido.map((id) => usuarios.find((u) => u.id === id)?.nombre ?? id).join(', ');
+        toast.error(`Rango UPD inválido (formato UPD0000000) para: ${nombres}`);
+        return;
+      }
+    }
+    const updData = !isCalidad
+      ? Object.fromEntries(toAdd.map((id) => [id, updInputs[id]?.trim()]).filter(([, v]) => v))
+      : undefined;
+    asignarMutation.mutate({ modulo_id: cajaId, usuarios: toAdd, upd_inicio: updData });
   };
 
   const handleEliminar = () => {
@@ -138,6 +203,15 @@ function SeccionAsignacionCaja({ cajaId, rol, label }: SeccionAsignacionCajaProp
       return;
     }
     eliminarMutation.mutate(toRemove);
+  };
+
+  const handleGuardarRangoTecnica = (usuarioId: number) => {
+    const valor = rangoRefs.current[usuarioId]?.value.trim() ?? '';
+    if (!/^UPD\d{7}$/.test(valor)) {
+      toast.error('El rango UPD debe tener el formato UPD0000000 (7 dígitos)');
+      return;
+    }
+    rangoTecnicaMutation.mutate({ modulo_id: cajaId, usuario_id: usuarioId, upd_inicio: valor });
   };
 
   const handleAsignarRango = (event: FormEvent<HTMLFormElement>) => {
@@ -179,6 +253,7 @@ function SeccionAsignacionCaja({ cajaId, rol, label }: SeccionAsignacionCajaProp
           )}
           {usuarios.map((usuario) => {
             const isAssigned = asignadosIds.has(usuario.id);
+            const isSelected = selected.has(usuario.id);
             return (
               <li key={usuario.id}>
                 <label className="flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-sm hover:bg-silver-50">
@@ -190,6 +265,42 @@ function SeccionAsignacionCaja({ cajaId, rol, label }: SeccionAsignacionCajaProp
                   <span className="flex-1 text-silver-700">{usuario.nombre}</span>
                   {isAssigned && <Badge color="gray">Asignado</Badge>}
                 </label>
+                {!isCalidad && !isAssigned && isSelected && (
+                  <div className="ml-7 mt-1 flex items-center gap-2">
+                    <Input
+                      value={updInputs[usuario.id] ?? ''}
+                      onChange={(e) => handleUpdChange(usuario.id, e.target.value)}
+                      placeholder="UPD0000000 *requerido*"
+                      className="h-8 w-48"
+                    />
+                    <span className="text-xs text-silver-500">Rango UPD inicial</span>
+                  </div>
+                )}
+                {!isCalidad && isAssigned && (
+                  <div className="ml-7 mt-1 flex items-center gap-2">
+                    <Input
+                      ref={(el) => {
+                        rangoRefs.current[usuario.id] = el;
+                      }}
+                      defaultValue={asignadosMap.get(usuario.id)?.upd_inicio ?? ''}
+                      placeholder="UPD0000000"
+                      className="h-8"
+                    />
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      onClick={() => handleGuardarRangoTecnica(usuario.id)}
+                      loading={rangoTecnicaMutation.isPending}
+                    >
+                      Guardar
+                    </Button>
+                  </div>
+                )}
+                {!isCalidad && isAssigned && asignadosMap.get(usuario.id)?.ultimo_upd && (
+                  <p className="ml-7 mt-0.5 text-xs text-silver-500">
+                    Último: {asignadosMap.get(usuario.id)?.ultimo_upd}
+                  </p>
+                )}
               </li>
             );
           })}
@@ -389,6 +500,14 @@ export default function CajasPage() {
               <div className="md:col-span-2">
                 <dt className="font-medium text-silver-500">Objeto</dt>
                 <dd className="mt-0.5 text-silver-800">{caja.objeto_caja}</dd>
+              </div>
+              <div>
+                <dt className="font-medium text-silver-500">Creada</dt>
+                <dd className="mt-0.5 text-silver-800">{caja.created_at ? caja.created_at.slice(0, 19).replace('T', ' ') : '—'}</dd>
+              </div>
+              <div>
+                <dt className="font-medium text-silver-500">Actualizada</dt>
+                <dd className="mt-0.5 text-silver-800">{caja.updated_at ? caja.updated_at.slice(0, 19).replace('T', ' ') : '—'}</dd>
               </div>
             </dl>
           </Card>

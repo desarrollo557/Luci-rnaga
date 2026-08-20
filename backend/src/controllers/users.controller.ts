@@ -6,7 +6,7 @@ import type { CreateUserDto, UpdateUserDto } from '../types/index.js';
 
 const saltRounds = 10;
 
-const userSafeFields = 'id, cc, nombre, rol, sede, suspendido_hasta';
+const userSafeFields = 'id, cc, nombre, rol, sede, suspendido_hasta, created_at, updated_at';
 
 export async function listUsers(_req: Request, res: Response): Promise<void> {
   const users = await query<User>(`SELECT ${userSafeFields} FROM users`);

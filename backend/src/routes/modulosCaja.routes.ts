@@ -15,6 +15,7 @@ import {
   listModulosCaja,
   getModuloCajaById,
   getNextCajaNumero,
+  getNextUpdByCaja,
   createModuloCaja,
   updateModuloCaja,
   deleteModuloCaja,
@@ -22,13 +23,16 @@ import {
   countFuidByCaja,
   listTecnicaUsersOfCaja,
   listCalidadUsersOfCaja,
+  getTecnicaStats,
 } from '../controllers/modulosCaja.controller.js';
 import {
   assignCajaTecnica,
+  assignCajaTecnicaConRango,
   removeCajaTecnica,
   assignCajaCalidad,
   removeCajaCalidad,
   assignCajaCalidadRango,
+  updateRangoCajaTecnica,
 } from '../controllers/asignacionesCaja.controller.js';
 
 const router = Router();
@@ -54,6 +58,8 @@ router.patch('/modulos_caja/:id/cambiarEstado', isAuthenticated, isTecnicaOnly, 
 
 router.get('/modulos_caja/count_fuiddatosreal', isAuthenticated, asyncHandler(countFuidByCaja));
 router.get('/modulos_caja/next/:prefijo', isAuthenticated, isLiderOrAdmin, asyncHandler(getNextCajaNumero));
+router.get('/modulos_caja/next-upd/:cajaModulo', isAuthenticated, asyncHandler(getNextUpdByCaja));
+router.get('/modulos_caja/tecnica-stats', isAuthenticated, asyncHandler(getTecnicaStats));
 router.get('/modulos_caja/:id', isAuthenticated, asyncHandler(getModuloCajaById));
 router.get('/modulos_caja/:modulo_id/usuarios', isAuthenticated, asyncHandler(listTecnicaUsersOfCaja));
 router.get('/modulos_caja_calidad/:modulo_id/usuarios', isAuthenticated, asyncHandler(listCalidadUsersOfCaja));
@@ -67,11 +73,23 @@ router.post(
   asyncHandler(assignCajaTecnica),
 );
 router.post(
+  '/asignacion_caja_tecnica/con-rango',
+  isAuthenticated,
+  isLiderOrAdmin,
+  asyncHandler(assignCajaTecnicaConRango),
+);
+router.post(
   '/asignacion_caja_tecnica/:modulo_id/eliminar',
   isAuthenticated,
   isLiderOrAdmin,
   validate(usuariosOnlySchema),
   asyncHandler(removeCajaTecnica),
+);
+router.put(
+  '/asignacion_caja_tecnica/:modulo_id/rango',
+  isAuthenticated,
+  isLiderOrAdmin,
+  asyncHandler(updateRangoCajaTecnica),
 );
 router.post(
   '/asignacion_caja_calidad',

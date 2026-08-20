@@ -6,6 +6,8 @@ export interface User {
   rol: string;
   sede: string | null;
   suspendido_hasta: string | null;
+  created_at: string | null;
+  updated_at: string | null;
 }
 
 export interface SubModulo {
@@ -22,7 +24,10 @@ export interface ModuloCliente {
   acta_transferencia_modulo: string;
   fecha_trans_modulo: string | null;
   id_submodulo: number;
+  upd_siguiente: string | null;
   total_cajas?: number;
+  created_at: string | null;
+  updated_at: string | null;
 }
 
 export interface ModuloCaja {
@@ -37,7 +42,10 @@ export interface ModuloCaja {
   oficina_productora_caja: string;
   objeto_caja: string;
   estado_caja: string;
+  upd_inicio?: string | null;
   total_fuids?: number;
+  created_at: string | null;
+  updated_at: string | null;
 }
 
 export interface FuidDato {
@@ -81,6 +89,8 @@ export interface FuidDato {
   sede_calidad: string | null;
   asunto_2: string | null;
   asunto_3: string | null;
+  created_at: string | null;
+  updated_at: string | null;
 }
 
 export interface Inventario {
@@ -154,28 +164,6 @@ export interface Historial {
   historial_cambios: string | null;
   cambio_calidad: string | null;
   sede_calidad: string | null;
-}
-
-export type RangoUpdEstado = 'activo' | 'agotado' | 'revocado';
-
-export interface RangoUpd {
-  id: number;
-  usuario_id: number;
-  sub_modulo_id: number;
-  upd_inicio: string;
-  upd_fin: string;
-  estado: RangoUpdEstado;
-  asignado_por: number;
-  fecha_asignacion: string;
-  fecha_agotado: string | null;
-  fecha_revocacion: string | null;
-}
-
-/** Fila de listado de rangos: RangoUpd + JOIN con users (nombre del técnico) y sub_modulos (código/entidad). */
-export interface RangoUpdListRow extends RangoUpd {
-  tecnico_nombre: string;
-  sub_modulo_codigo: string;
-  sub_modulo_entidad: string;
 }
 
 export type Rol = 'ADMIN' | 'LIDER' | 'TECNICA' | 'CALIDAD';

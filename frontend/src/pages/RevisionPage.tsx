@@ -332,6 +332,16 @@ export default function RevisionPage() {
       },
     },
     { key: 'caja', header: 'Caja' },
+    {
+      key: 'created_at',
+      header: 'Creado',
+      render: (registro: FuidDato) => (registro.created_at ? registro.created_at.slice(0, 19).replace('T', ' ') : '—'),
+    },
+    {
+      key: 'updated_at',
+      header: 'Actualizado',
+      render: (registro: FuidDato) => (registro.updated_at ? registro.updated_at.slice(0, 19).replace('T', ' ') : '—'),
+    },
     { key: 'estado', header: 'Estado', render: renderEstado },
     {
       key: 'acciones',
