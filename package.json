@@ -1,5 +1,5 @@
 {
-  "name": "luciernaga-host",
+  "name": "luci-host",
   "version": "2.0.0",
   "private": true,
   "description": "Sistema FUID Luciérnaga - Monorepo (backend API + frontend React)",

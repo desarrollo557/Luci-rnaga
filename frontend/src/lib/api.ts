@@ -263,6 +263,8 @@ export const modulosCajaApi = {
       rango_ultimo: string | null;
     }>;
   }>('/modulos_caja/tecnica-stats'),
+  createSerie: (data: { id_modulo_caja: number; numero_inicial: string; numero_final: string; entidad_remitente_caja: string; acta_trans_caja: string; fecha_trans_caja: string | null; entidad_productora_caja: string; unidad_administrativa_caja: string; oficina_productora_caja: string; objeto_caja: string; estado_caja: string }) =>
+    api.post('/modulos_caja/serie', data),
 };
 
 export const asignacionCajaTecnicaApi = {
@@ -381,6 +383,14 @@ export interface EstadisticasProduccion {
 
 export const reportesApi = {
   fuidConEstadoCaja: () => api.get<FuidConEstado[]>('/fuid-con-estado-caja'),
+  resumenCajasAgrupado: () => api.get<Array<{
+    caja_inicial: string;
+    caja_fin: string;
+    upd_inicio: string | null;
+    upd_fin: string | null;
+    cajas_encontradas: number;
+    total_registros: number;
+  }>>('/resumen-cajas-agrupado'),
   estadisticas: () => api.get<EstadisticasProduccion>('/estadisticas'),
 };
 

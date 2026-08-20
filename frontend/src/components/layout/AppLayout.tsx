@@ -85,7 +85,7 @@ export default function AppLayout() {
           </div>
           <div className="min-w-0">
             <span className="block truncate text-base font-bold leading-tight tracking-tight text-white">
-              Luciérnaga
+              Luci
             </span>
             <span className="block truncate text-[10px] font-semibold uppercase tracking-widest text-primary-300">
               Gestión FUID

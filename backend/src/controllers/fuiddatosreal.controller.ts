@@ -191,20 +191,9 @@ export async function updateFuid(req: Request, res: Response): Promise<void> {
 
   const { cc, rol } = user;
 
-  if (rol === 'CALIDAD') {
-    const [cajaAsignada] = await query<{ id: number }>(
-      `SELECT mc.id FROM modulos_caja mc
-       JOIN asignacion_caja_calidad ac ON ac.modulo_id = mc.id
-       WHERE ac.usuario_id = ? AND mc.caja_modulo = ? LIMIT 1`,
-      [user.id, registro.caja],
-    );
-    if (!cajaAsignada) {
-      res.status(403).json({ error: 'No autorizado para actualizar este registro' });
-      return;
-    }
-  }
-
-  if (rol === 'TECNICA' && registro.fecha_del_dato !== fechaActual()) {
+  // RESTRICCIÓN DE SEGURIDAD: Los registros del día actual no se pueden modificar al día siguiente
+  // Esto aplica a TODOS los roles para garantizar integridad de datos
+  if (registro.fecha_del_dato !== fechaActual()) {
     res.status(403).json({ error: 'Los registros de días anteriores no pueden ser modificados' });
     return;
   }
@@ -251,15 +240,17 @@ export async function deleteFuid(req: Request, res: Response): Promise<void> {
   }
 
   const { cc, rol } = user;
+
+  // RESTRICCIÓN DE SEGURIDAD: Los registros del día actual no se pueden eliminar al día siguiente
+  if (registro.fecha_del_dato !== fechaActual()) {
+    res.status(403).json({ error: 'Los registros de días anteriores no pueden ser eliminados' });
+    return;
+  }
+
   const nombreCompletoMayus = `${user.nombre.toUpperCase()} (${cc})`;
   const isCreator =
     rol !== 'LIDER' && rol !== 'ADMIN' &&
     (registro.elaborado_por?.toUpperCase() !== nombreCompletoMayus);
-
-  if (rol === 'TECNICA' && registro.fecha_del_dato !== fechaActual()) {
-    res.status(403).json({ error: 'Los registros de días anteriores no pueden ser modificados' });
-    return;
-  }
 
   if (isCreator) {
     res.status(403).json({ error: 'No autorizado para eliminar este registro' });
