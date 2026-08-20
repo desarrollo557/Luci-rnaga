@@ -1,21 +1,14 @@
 import axios from 'axios';
 import type {
-  AssignRangePayload,
-  AssignRangeResponse,
-  AvanceResponse,
-  CheckRangoResponse,
   DataRow,
   FuidConEstado,
   FuidDato,
   Historial,
   Inventario,
   InventarioFuidResponse,
-  ListarRangosResponse,
   LoginResponse,
   ModuloCaja,
   ModuloCliente,
-  NextUpdResult,
-  RangoUpdEstado,
   Role,
   SessionUser,
   SubModulo,
@@ -129,6 +122,8 @@ export interface UsuarioAsignado {
   id: number;
   nombre: string;
   sede: string | null;
+  upd_inicio?: string | null;
+  ultimo_upd?: string | null;
 }
 
 export interface ModuloCajaInput {
@@ -147,6 +142,12 @@ export interface ModuloCajaInput {
 export interface AsignacionCajaInput {
   modulo_id: number;
   usuarios: number[];
+}
+
+export interface AsignacionCajaTecnicaRangoInput {
+  modulo_id: number;
+  usuarios: number[];
+  upd_inicio: Record<number, string>;
 }
 
 export interface AsignacionCajaRangoInput {
@@ -248,12 +249,30 @@ export const modulosCajaApi = {
     }),
   siguienteNumero: (prefijo: string) =>
     api.get<{ prefijo: string; siguiente: string }>(`/modulos_caja/next/${prefijo}`),
+  siguienteUpd: (cajaModulo: string) =>
+    api.get<{ upd: string | null }>(`/modulos_caja/next-upd/${encodeURIComponent(cajaModulo)}`),
+  getTecnicaStats: () => api.get<{
+    usuario: { id: number; nombre: string; cc: string };
+    resumen: { cajas_asignadas: number; fuid_creados: number; ultimo_upd_global: string | null };
+    detalle_cajas: Array<{
+      id: number;
+      caja_modulo: string;
+      fuid_creados: number;
+      ultimo_upd_caja: string | null;
+      rango_inicio: string | null;
+      rango_ultimo: string | null;
+    }>;
+  }>('/modulos_caja/tecnica-stats'),
 };
 
 export const asignacionCajaTecnicaApi = {
   asignar: (data: AsignacionCajaInput) => api.post('/asignacion_caja_tecnica', data),
+  asignarConRango: (data: AsignacionCajaTecnicaRangoInput) =>
+    api.post('/asignacion_caja_tecnica/con-rango', data),
   eliminar: (moduloId: string | number, usuarios: number[]) =>
     api.post(`/asignacion_caja_tecnica/${moduloId}/eliminar`, { usuarios }),
+  asignarRango: (data: { modulo_id: number; usuario_id: number; upd_inicio: string }) =>
+    api.put(`/asignacion_caja_tecnica/${data.modulo_id}/rango`, data),
 };
 
 export const asignacionCajaCalidadApi = {
@@ -284,24 +303,7 @@ export const fuidApi = {
     api.post(`/fuiddatosreal/${caja}/${campo}`, { valor }),
 };
 
-export const rangosUpdApi = {
-  listarRangos: (params?: { sub_modulo_id?: number; estado?: RangoUpdEstado | 'all' }) =>
-    api.get<ListarRangosResponse>('/rangos-upd', { params }),
-  asignarRango: (payload: AssignRangePayload) => api.post<AssignRangeResponse>('/rangos-upd', payload),
-  checkRango: (query: { usuario_id: number; sub_modulo_id: number; upd_inicio: string; upd_fin: string }) =>
-    api.get<CheckRangoResponse>('/rangos-upd/check', { params: query }),
-  revocarRango: (id: number) => api.post<{ message: string }>(`/rangos-upd/${id}/revocar`),
-  // Rechaza con 409 y code SIN_RANGO | AGOTADO | CAJA_SIN_SUBMODULO (leer via getApiErrorCode).
-  siguienteUpd: (caja: string) => api.get<NextUpdResult>('/rangos-upd/next', { params: { caja } }),
-  avanceRangosUpd: (subModuloId?: number) =>
-    api.get<AvanceResponse>('/rangos-upd/avance', {
-      params: subModuloId ? { sub_modulo_id: subModuloId } : undefined,
-    }),
-  miAvance: (subModuloId?: number) =>
-    api.get<AvanceResponse>('/rangos-upd/mi-avance', {
-      params: subModuloId ? { sub_modulo_id: subModuloId } : undefined,
-    }),
-};
+
 
 export interface InventarioSyncOutcome {
   state: 'SUBIDO' | 'ERROR' | 'PENDIENTE';

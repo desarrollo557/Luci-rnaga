@@ -21,6 +21,7 @@ import {
   Card,
   ConfirmDialog,
   DatePicker,
+  EditableInput,
   Input,
   LoadingState,
   Modal,
@@ -702,21 +703,21 @@ export default function ClientesPage() {
         }
       >
         <form id="modulo-form" onSubmit={handleModuloSubmit} className="space-y-4">
-          <Input
+          <EditableInput
             label="Código"
             value={moduloForm.codigo}
-            onChange={(event) => setModuloForm({ ...moduloForm, codigo: event.target.value })}
+            onChange={(value) => setModuloForm({ ...moduloForm, codigo: value })}
             error={moduloErrors.codigo}
             placeholder="Código del módulo cliente"
+            defaultUnlocked={false}
           />
-          <Input
+          <EditableInput
             label="Entidad Remitente"
             value={moduloForm.entidad_remitente}
-            onChange={(event) =>
-              setModuloForm({ ...moduloForm, entidad_remitente: event.target.value })
-            }
+            onChange={(value) => setModuloForm({ ...moduloForm, entidad_remitente: value })}
             error={moduloErrors.entidad_remitente}
             placeholder="Entidad remitente"
+            defaultUnlocked={false}
           />
           <Input
             label="Acta de Transferencia"

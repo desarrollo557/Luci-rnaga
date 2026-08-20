@@ -26,6 +26,8 @@ export interface User {
   rol: Role;
   sede: string | null;
   suspendido_hasta?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
 }
 
 export interface SubModulo {
@@ -43,6 +45,9 @@ export interface ModuloCliente {
   fecha_trans_modulo: string | null;
   id_submodulo: number;
   total_cajas?: number;
+  upd_siguiente?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
 }
 
 export interface ModuloCaja {
@@ -57,8 +62,11 @@ export interface ModuloCaja {
   oficina_productora_caja: string;
   objeto_caja: string;
   estado_caja: string;
+  upd_inicio?: string | null;
   total_fuids?: number;
   upd: UpdFormat | null;
+  created_at?: string | null;
+  updated_at?: string | null;
 }
 
 export interface FuidDato {
@@ -102,6 +110,8 @@ export interface FuidDato {
   sede_calidad: string | null;
   asunto_2: string | null;
   asunto_3: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
 }
 
 export interface FuidConEstado extends FuidDato {
@@ -196,77 +206,6 @@ export interface Historial {
   historial_cambios: string | null;
   cambio_calidad: string | null;
   sede_calidad: string | null;
-}
-
-/* ── Rangos UPD (rangos-upd) ─────────────────────────────────────────────── */
-
-export type RangoUpdEstado = 'activo' | 'agotado' | 'revocado';
-
-export interface RangoUpd {
-  id: number;
-  usuario_id: number;
-  sub_modulo_id: number;
-  upd_inicio: string;
-  upd_fin: string;
-  estado: RangoUpdEstado;
-  asignado_por: number;
-  fecha_asignacion: string;
-  fecha_agotado: string | null;
-  fecha_revocacion: string | null;
-}
-
-export interface AssignRangePayload {
-  usuario_id: number;
-  sub_modulo_id: number;
-  upd_inicio: string;
-  upd_fin: string;
-}
-
-export interface AssignRangeResponse {
-  message: string;
-  rango: RangoUpd;
-}
-
-/** Fila de listado de rangos: RangoUpd + JOIN con users (técnico) y sub_modulos (código/entidad). */
-export interface RangoUpdListRow extends RangoUpd {
-  tecnico_nombre: string;
-  sub_modulo_codigo: string;
-  sub_modulo_entidad: string;
-}
-
-export interface ListarRangosResponse {
-  rangos: RangoUpdListRow[];
-}
-
-export interface CheckRangoResponse {
-  ok: boolean;
-  used: string[];
-  overlap: string[];
-  errors: string[];
-}
-
-export interface NextUpdResult {
-  upd: string;
-  sub_modulo_id: number;
-}
-
-export type NextUpdErrorCode = 'SIN_RANGO' | 'AGOTADO' | 'CAJA_SIN_SUBMODULO';
-
-export interface AvanceRow {
-  usuario_id: number;
-  nombre: string;
-  total_asignadas: number;
-  finalizadas: number;
-  pendientes: number;
-  porcentaje: number;
-}
-
-export interface AvanceResponse {
-  por_tecnico: AvanceRow[];
-  filtro: {
-    asignado_por: number | null;
-    sub_modulo_id: number | null;
-  };
 }
 
 export const ROLES: Role[] = ['ADMIN', 'LIDER', 'TECNICA', 'CALIDAD'];

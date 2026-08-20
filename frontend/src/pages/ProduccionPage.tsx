@@ -1,11 +1,9 @@
 import { useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Link } from 'react-router-dom';
-import { BarChart3, Boxes, CheckCircle2, Clock, FileText, FolderOpen, Hash, MapPin, Percent, Users } from 'lucide-react';
+import { BarChart3, Boxes, CheckCircle2, Clock, FileText, FolderOpen, MapPin, Percent, Users } from 'lucide-react';
 import { Badge, Card, LoadingState, PageHeader, Table, type Column } from '@/components/ui';
-import { rangosUpdApi, reportesApi } from '@/lib/api';
+import { reportesApi } from '@/lib/api';
 import { cn } from '@/lib/cn';
-import { useAuthStore } from '@/stores/authStore';
 
 const ROL_COLORS: Record<string, 'blue' | 'green' | 'amber' | 'red'> = {
   TECNICA: 'blue',
@@ -29,20 +27,13 @@ function Barra({ valor, max, color = 'bg-primary-600' }: { valor: number; max: n
 }
 
 export default function ProduccionPage() {
-  const user = useAuthStore((state) => state.user);
   const { data: stats, isLoading } = useQuery({
     queryKey: ['produccion', 'estadisticas'],
     queryFn: async () => (await reportesApi.estadisticas()).data,
     staleTime: 60_000,
   });
 
-  // Avance de rangos UPD: solo el LIDER asigna rangos y lo ve resumido aquí
-  // (el endpoint /avance exige LIDER/ADMIN y está acotado a sus asignaciones).
-  const avanceRangosQuery = useQuery({
-    queryKey: ['rangos-upd', 'avance'],
-    queryFn: async () => (await rangosUpdApi.avanceRangosUpd()).data,
-    enabled: user?.rol === 'LIDER',
-  });
+  
 
   const pct = useMemo(() => {
     if (!stats || stats.total_fuids === 0) return 0;
@@ -99,43 +90,7 @@ export default function ProduccionPage() {
         ))}
       </div>
 
-      {user?.rol === 'LIDER' && (
-        <Card>
-          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-            <h3 className="flex items-center gap-2 text-base font-semibold text-silver-800">
-              <Hash className="size-4 text-primary-600" /> Avance de rangos UPD
-            </h3>
-            <Link
-              to="/rangos-upd"
-              className="text-sm font-medium text-primary-600 transition-colors hover:text-primary-700 hover:underline"
-            >
-              Ver detalle
-            </Link>
-          </div>
-          {avanceRangosQuery.isPending ? (
-            <LoadingState message="Estamos consultando la información…" className="py-6" />
-          ) : (avanceRangosQuery.data?.por_tecnico.length ?? 0) === 0 ? (
-            <p className="text-sm text-silver-500">Aún no hay rangos UPD asignados.</p>
-          ) : (
-            <div className="space-y-3">
-              {(avanceRangosQuery.data?.por_tecnico ?? []).map((row) => (
-                <div key={row.usuario_id} className="flex items-center gap-3 text-sm">
-                  <span className="w-44 shrink-0 truncate font-medium text-silver-600">{row.nombre}</span>
-                  <div className="flex-1">
-                    <Barra valor={row.finalizadas} max={row.total_asignadas} color="bg-primary-600" />
-                  </div>
-                  <span className="w-10 shrink-0 text-right font-semibold text-silver-800">
-                    {row.porcentaje}%
-                  </span>
-                  <Badge color={row.pendientes > 0 ? 'amber' : 'green'} className="w-32 justify-center">
-                    {row.pendientes.toLocaleString('es-CO')} por finalizar
-                  </Badge>
-                </div>
-              ))}
-            </div>
-          )}
-        </Card>
-      )}
+      
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         <Card>

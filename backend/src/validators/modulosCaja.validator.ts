@@ -6,6 +6,8 @@ const optionalDate = z
   .nullable()
   .optional();
 
+const updRegex = /^UPD\d{7}$/i;
+
 export const createModuloCajaSchema = z.object({
   caja_modulo: z
     .string({ message: 'El número de caja es requerido' })
@@ -32,6 +34,7 @@ export const createModuloCajaSchema = z.object({
     .min(1, 'La oficina productora es requerida'),
   objeto_caja: z.string({ message: 'El objeto es requerido' }).min(1, 'El objeto es requerido'),
   estado_caja: z.enum(['EN PROCESO', 'FINALIZADO'], { message: 'Estado de caja inválido' }),
+  upd_inicio: z.string().regex(updRegex, 'El UPD debe tener formato UPDXXXXXXX').optional(),
 });
 
 export const updateModuloCajaSchema = createModuloCajaSchema.omit({ id_modulo_caja: true });

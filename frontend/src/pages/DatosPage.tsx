@@ -9,6 +9,9 @@ import {
   Card,
   ConfirmDialog,
   DatePicker,
+  EditableInput,
+  EditableDatePicker,
+  EditableSuggestionInput,
   Input,
   LoadingState,
   Modal,
@@ -16,7 +19,7 @@ import {
   Table,
   type Column,
 } from '@/components/ui';
-import { fuidApi, getApiErrorCode, modulosCajaApi, rangosUpdApi } from '@/lib/api';
+import { fuidApi, getApiErrorCode, modulosCajaApi } from '@/lib/api';
 import { invalidateDomain } from '@/lib/queryInvalidation';
 import { onlyDigits, required, validCaja, validDate, validUpd } from '@/lib/validation';
 import { useAuthStore } from '@/stores/authStore';
@@ -25,7 +28,6 @@ import {
   type DataRow,
   type FuidDato,
   type ModuloCaja,
-  type NextUpdErrorCode,
   type SessionUser,
 } from '@/types';
 
@@ -44,9 +46,6 @@ interface CajaDuplicateGroup {
 interface CajaDuplicatesResponse {
   duplicates: CajaDuplicateGroup[];
 }
-
-/** Estados del campo UPD autocompletado para TECNICA en registros nuevos. */
-type UpdState = 'cargando' | 'listo' | 'sin_rango' | 'agotado' | 'error';
 
 interface FuidFormValues {
   fecha_del_dato: string;
@@ -259,9 +258,11 @@ interface SuggestionInputProps {
   label: string;
   value: string;
   onChange: (value: string) => void;
+  disabled?: boolean;
+  readOnly?: boolean;
 }
 
-function SuggestionInput({ caja, campo, label, value, onChange }: SuggestionInputProps) {
+function SuggestionInput({ caja, campo, label, value, onChange, disabled, readOnly }: SuggestionInputProps) {
   const debouncedQuery = useDebouncedValue(value, 300);
   const suggestionsQuery = useQuery({
     queryKey: ['fuiddatosreal', 'suggestions', caja, campo, debouncedQuery],
@@ -277,6 +278,8 @@ function SuggestionInput({ caja, campo, label, value, onChange }: SuggestionInpu
         value={value}
         onChange={(event) => onChange(event.target.value)}
         list={`sug-${campo}`}
+        disabled={disabled}
+        readOnly={readOnly}
       />
       <datalist id={`sug-${campo}`}>
         {(suggestionsQuery.data ?? []).map((suggestion) => (
@@ -312,53 +315,19 @@ function FuidFormModal({ open, cajaId, editing, defaultNOrden, caja, onClose }: 
       fuidApi.checkDuplicateUpd(debouncedUpd).then((res) => (res.data as unknown as CheckUpdResponse).exists),
     enabled: Boolean(debouncedUpd) && !editing,
   });
-
-  // TECNICA en registros nuevos: el UPD es fijo y se autocompleta desde el rango
-  // activo del usuario para el sub-módulo de la caja (GET /rangos-upd/next).
-  const isTecnica = user?.rol === 'TECNICA';
-  const updAutocomplete = isTecnica && !editing;
-
-  const debouncedCaja = useDebouncedValue(form.caja.trim(), 500);
   const nextUpdQuery = useQuery({
-    queryKey: ['rangos-upd', 'next', debouncedCaja],
-    queryFn: () => rangosUpdApi.siguienteUpd(debouncedCaja).then((res) => res.data),
-    // Sin caja no hay consulta; el 409 (SIN_RANGO|AGOTADO|CAJA_SIN_SUBMODULO) es
-    // determinístico, no se reintenta para evitar toasts duplicados.
-    enabled: updAutocomplete && Boolean(debouncedCaja),
-    retry: false,
+    queryKey: ['modulos-caja', 'next-upd', cajaId],
+    queryFn: () => modulosCajaApi.siguienteUpd(cajaId).then((res) => res.data.upd),
+    enabled: open && !editing && Boolean(cajaId),
   });
-  const nextUpdCode = getApiErrorCode(nextUpdQuery.error) as NextUpdErrorCode | undefined;
 
-  const updState: UpdState = (() => {
-    if (!updAutocomplete || !debouncedCaja) return 'listo';
-    if (nextUpdQuery.isPending) return 'cargando';
-    if (nextUpdQuery.data) return 'listo';
-    if (nextUpdCode === 'SIN_RANGO') return 'sin_rango';
-    if (nextUpdCode === 'AGOTADO') return 'agotado';
-    return 'error';
-  })();
-
-  // Sin caja aún: el campo queda bloqueado hasta que haya una caja que derive sub-módulo.
-  const updSinCaja = updAutocomplete && !debouncedCaja;
-  // Bloqueo de envío: sin rango, agotado, caja sin sub-módulo, o mientras consulta.
-  const updBlockedSubmit =
-    updState === 'cargando' ||
-    updState === 'sin_rango' ||
-    updState === 'agotado' ||
-    (updState === 'error' && nextUpdCode === 'CAJA_SIN_SUBMODULO');
-
-  // Sincroniza el UPD sugerido al formulario; se limpia mientras consulta o ante
-  // error para no enviar un valor obsoleto de otra caja.
   useEffect(() => {
-    if (!updAutocomplete) return;
-    if (nextUpdQuery.status === 'success' && nextUpdQuery.data) {
-      setForm((prev) => ({ ...prev, upd: nextUpdQuery.data.upd }));
-    } else if (nextUpdQuery.status === 'pending' || nextUpdQuery.status === 'error') {
-      setForm((prev) => ({ ...prev, upd: '' }));
+    if (!editing && nextUpdQuery.data && !form.upd.trim()) {
+      setForm((prev) => (prev.upd ? prev : { ...prev, upd: nextUpdQuery.data ?? '' }));
     }
-  }, [updAutocomplete, nextUpdQuery.status, nextUpdQuery.data]);
-
-  const setField = (field: keyof FuidFormValues) => (event: ChangeEvent<HTMLInputElement>) =>
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [nextUpdQuery.data, editing, open]);
+    const setField = (field: keyof FuidFormValues) => (event: ChangeEvent<HTMLInputElement>) =>
     setForm((prev) => ({ ...prev, [field]: event.target.value }));
 
   const updateField = (field: keyof FuidFormValues) => (value: string) =>
@@ -366,13 +335,8 @@ function FuidFormModal({ open, cajaId, editing, defaultNOrden, caja, onClose }: 
 
   const createMutation = useMutation({
     mutationFn: (data: DataRow) => fuidApi.create(data),
-    onSuccess: (_data, variables) => {
+    onSuccess: () => {
       toast.success('Registro FUID creado correctamente');
-      // Invalidar también la query de "siguiente UPD" para esa caja,
-      // así la próxima apertura obtiene el consecutivo real (gap-walk).
-      if (variables.caja) {
-        queryClient.invalidateQueries({ queryKey: ['rangos-upd', 'next', variables.caja] });
-      }
       onClose();
       void invalidateDomain(queryClient, 'fuiddatosreal');
     },
@@ -380,10 +344,6 @@ function FuidFormModal({ open, cajaId, editing, defaultNOrden, caja, onClose }: 
       const code = getApiErrorCode(error);
       if (code === 'UPD_YA_USADO') {
         toast.error('El UPD ya fue usado por otro registro. Se asignará el siguiente disponible.');
-        // Forzar refetch del next UPD para la caja del formulario
-        if (form.caja) {
-          queryClient.invalidateQueries({ queryKey: ['rangos-upd', 'next', form.caja] });
-        }
       }
     },
   });
@@ -401,8 +361,6 @@ function FuidFormModal({ open, cajaId, editing, defaultNOrden, caja, onClose }: 
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    // TECNICA sin rango/agotado/caja sin sub-módulo: el UPD no se puede asignar, bloqueado.
-    if (updBlockedSubmit) return;
     const nextErrors: Partial<Record<keyof FuidFormValues, string>> = {};
     const updRequired = required(form.upd, 'El UPD');
     if (updRequired) nextErrors.upd = updRequired;
@@ -456,17 +414,7 @@ function FuidFormModal({ open, cajaId, editing, defaultNOrden, caja, onClose }: 
 
   const updError = errors.upd ?? (updExistsQuery.data ? 'Este UPD ya existe en la base de datos' : undefined);
 
-  const updFieldError = (() => {
-    if (updState === 'sin_rango') return 'No tienes un rango de UPD asignado para este sub-módulo';
-    if (updState === 'agotado') return 'Tu rango de UPD está agotado. Contacta a tu líder.';
-    if (updState === 'error') return 'No se pudo asignar el UPD automáticamente. Inténtalo de nuevo.';
-    return updError;
-  })();
-
-  const updReadOnly = updAutocomplete;
-  const updDisabled = updAutocomplete && (updSinCaja || updState !== 'listo');
-  const updHint = updSinCaja ? 'Selecciona la caja para autocompletar el UPD' : undefined;
-  const updPlaceholder = updState === 'cargando' ? 'Consultando UPD…' : undefined;
+  const updFieldError = updError;
 
   return (
     <Modal
@@ -479,7 +427,7 @@ function FuidFormModal({ open, cajaId, editing, defaultNOrden, caja, onClose }: 
           <Button variant="ghost" onClick={onClose} disabled={isSaving}>
             Cancelar
           </Button>
-          <Button type="submit" form="fuid-form" loading={isSaving} disabled={updBlockedSubmit}>
+          <Button type="submit" form="fuid-form" loading={isSaving} disabled={isSaving}>
             Guardar
           </Button>
         </>
@@ -500,26 +448,29 @@ function FuidFormModal({ open, cajaId, editing, defaultNOrden, caja, onClose }: 
               value={form.n_orden}
               onChange={setField('n_orden')}
             />
-            <SuggestionInput
+            <EditableSuggestionInput
               caja={form.caja}
               campo="codigo"
               label="Código"
               value={form.codigo}
               onChange={updateField('codigo')}
+              defaultUnlocked={false}
             />
-            <SuggestionInput
+            <EditableSuggestionInput
               caja={form.caja}
               campo="entidad_remitente"
               label="Entidad Remitente"
               value={form.entidad_remitente}
               onChange={updateField('entidad_remitente')}
+              defaultUnlocked={false}
             />
-            <SuggestionInput
+            <EditableSuggestionInput
               caja={form.caja}
               campo="entidad_productora"
               label="Entidad Productora"
               value={form.entidad_productora}
               onChange={updateField('entidad_productora')}
+              defaultUnlocked={false}
             />
           </div>
         </div>
@@ -527,26 +478,29 @@ function FuidFormModal({ open, cajaId, editing, defaultNOrden, caja, onClose }: 
         <div className="rounded-lg border border-silver-200 bg-silver-50 p-4">
           <h3 className="text-sm font-semibold text-silver-800">Procedencia</h3>
           <div className="mt-3 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            <SuggestionInput
+            <EditableSuggestionInput
               caja={form.caja}
               campo="unidad_administrativa"
               label="Unidad Administrativa"
               value={form.unidad_administrativa}
               onChange={updateField('unidad_administrativa')}
+              defaultUnlocked={false}
             />
-            <SuggestionInput
+            <EditableSuggestionInput
               caja={form.caja}
               campo="oficina_productora"
               label="Oficina Productora"
               value={form.oficina_productora}
               onChange={updateField('oficina_productora')}
+              defaultUnlocked={false}
             />
-            <SuggestionInput
+            <EditableSuggestionInput
               caja={form.caja}
               campo="objeto"
               label="Objeto"
               value={form.objeto}
               onChange={updateField('objeto')}
+              defaultUnlocked={false}
             />
             <SuggestionInput
               caja={form.caja}
@@ -632,22 +586,20 @@ function FuidFormModal({ open, cajaId, editing, defaultNOrden, caja, onClose }: 
         <div className="rounded-lg border border-silver-200 bg-silver-50 p-4">
           <h3 className="text-sm font-semibold text-silver-800">Caja</h3>
           <div className="mt-3 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            <Input
+            <EditableInput
               label="Caja"
               value={form.caja}
-              onChange={setField('caja')}
+              onChange={updateField('caja')}
               error={errors.caja}
               placeholder="000C000000"
+              defaultUnlocked={false}
             />
-            <Input
+            <EditableInput
               label="UPD"
               value={form.upd}
-              onChange={setField('upd')}
+              onChange={updateField('upd')}
               error={updFieldError}
-              readOnly={updReadOnly}
-              disabled={updDisabled}
-              hint={updHint}
-              placeholder={updPlaceholder}
+              defaultUnlocked={false}
             />
             <SuggestionInput
               caja={form.caja}
@@ -679,20 +631,23 @@ function FuidFormModal({ open, cajaId, editing, defaultNOrden, caja, onClose }: 
               value={form.frecuencia}
               onChange={updateField('frecuencia')}
             />
-            <Input
+            <EditableInput
               label="Elaborado Por"
               value={form.elaborado_por}
-              onChange={setField('elaborado_por')}
+              onChange={updateField('elaborado_por')}
+              defaultUnlocked={false}
             />
-            <Input
+            <EditableInput
               label="N° Acta Transferible"
               value={form.nro_acta_transferible}
-              onChange={setField('nro_acta_transferible')}
+              onChange={updateField('nro_acta_transferible')}
+              defaultUnlocked={false}
             />
-            <DatePicker
+            <EditableDatePicker
               label="Fecha Transferencia"
               value={form.fecha_transferencia}
               onChange={updateField('fecha_transferencia')}
+              defaultUnlocked={false}
             />
             <SuggestionInput
               caja={form.caja}
@@ -701,12 +656,13 @@ function FuidFormModal({ open, cajaId, editing, defaultNOrden, caja, onClose }: 
               value={form.notas}
               onChange={updateField('notas')}
             />
-            <SuggestionInput
+            <EditableSuggestionInput
               caja={form.caja}
               campo="sede"
               label="Sede"
               value={form.sede}
               onChange={updateField('sede')}
+              defaultUnlocked={false}
             />
             <SuggestionInput
               caja={form.caja}
@@ -857,6 +813,16 @@ export default function DatosPage() {
       },
     },
     { key: 'caja', header: 'Caja' },
+    {
+      key: 'created_at',
+      header: 'Creado',
+      render: (registro: FuidDato) => (registro.created_at ? registro.created_at.slice(0, 19).replace('T', ' ') : '—'),
+    },
+    {
+      key: 'updated_at',
+      header: 'Actualizado',
+      render: (registro: FuidDato) => (registro.updated_at ? registro.updated_at.slice(0, 19).replace('T', ' ') : '—'),
+    },
     {
       key: 'estado',
       header: 'Estado',

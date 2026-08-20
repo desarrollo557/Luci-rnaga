@@ -298,6 +298,16 @@ export default function AdminPage() {
       ),
     },
     {
+      key: 'created_at',
+      header: 'Creado',
+      render: (user) => (user.created_at ? user.created_at.slice(0, 19).replace('T', ' ') : '—'),
+    },
+    {
+      key: 'updated_at',
+      header: 'Actualizado',
+      render: (user) => (user.updated_at ? user.updated_at.slice(0, 19).replace('T', ' ') : '—'),
+    },
+    {
       key: 'acciones',
       header: 'Acciones',
       render: (user) => (

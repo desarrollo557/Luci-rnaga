@@ -9,7 +9,6 @@ import inventarioRoutes from './inventario.routes.js';
 import historialRoutes from './historial.routes.js';
 import plantillaRoutes from './plantilla.routes.js';
 import reportesRoutes from './reportes.routes.js';
-import rangosUpdRoutes from './rangosUpd.routes.js';
 
 const router = Router();
 
@@ -23,6 +22,5 @@ router.use(inventarioRoutes);
 router.use(historialRoutes);
 router.use(plantillaRoutes);
 router.use(reportesRoutes);
-router.use(rangosUpdRoutes);
 
 export default router;

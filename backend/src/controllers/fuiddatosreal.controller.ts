@@ -4,12 +4,8 @@ import { pool, query, queryOne } from '../config/db.js';
 import type { FuidDato } from '../types/db.js';
 import type { FuidCreateDto, FuidUpdateDto } from '../types/index.js';
 import { fuidValues, isSuggestionField } from '../services/fuid.service.js';
-import { membershipCheck, resolveSubModuloByCaja } from '../services/rangosUpd.service.js';
 
 const fechaActual = (): string => new Date().toISOString().slice(0, 10);
-
-/** True cuando el enforcement de rangos UPD está activo para el despliegue gradual. */
-const rangosUpdEnforce = (): boolean => process.env.RANGOS_UPD_ENFORCE === 'true';
 
 /** Error de MySQL por violación de la restricción UNIQUE (backstop de consumo). */
 function isErDupEntry(error: unknown): boolean {
@@ -130,26 +126,6 @@ export async function createFuid(req: Request, res: Response): Promise<void> {
   try {
     await conn.beginTransaction();
 
-    // Enforcement de consumo (solo TECNICA y con el flag activo): el UPD debe
-    // pertenecer a un rango activo del usuario para el sub-módulo de la caja.
-    if (user.rol === 'TECNICA' && rangosUpdEnforce()) {
-      const subModuloId = await resolveSubModuloByCaja(body.caja ?? '');
-      if (subModuloId === null) {
-        await conn.rollback();
-        res.status(409).json({ error: 'La caja no tiene sub-módulo asociado', code: 'CAJA_SIN_SUBMODULO' });
-        return;
-      }
-      const miembro = await membershipCheck(user.id, subModuloId, body.upd ?? '');
-      if (!miembro) {
-        await conn.rollback();
-        res.status(409).json({
-          error: 'El UPD no pertenece a un rango activo asignado para este sub-módulo',
-          code: 'UPD_FUERA_DE_RANGO',
-        });
-        return;
-      }
-    }
-
     const values = fuidValues(body);
     const placeholders = values.map(() => '?').join(', ');
     const columns = [
@@ -168,6 +144,19 @@ export async function createFuid(req: Request, res: Response): Promise<void> {
       VALUES (${placeholders})`;
 
     await conn.query(sql, values);
+
+    // El técnico avanza su consecutivo propio: actualiza ultimo_upd de su asignación
+    // solo cuando el registro insertado trae un UPD.
+    if (user.rol === 'TECNICA' && body.caja && body.upd) {
+      await conn.query(
+        `UPDATE asignacion_caja_tecnica act
+         JOIN modulos_caja mc ON mc.id = act.modulo_id
+         SET act.ultimo_upd = ?
+         WHERE act.usuario_id = ? AND mc.caja_modulo = ?`,
+        [body.upd, user.id, body.caja],
+      );
+    }
+
     await conn.commit();
     res.status(200).json({ message: 'Registro insertado correctamente' });
   } catch (error) {
@@ -228,31 +217,6 @@ export async function updateFuid(req: Request, res: Response): Promise<void> {
   if (isCreator) {
     res.status(403).json({ error: 'No autorizado para actualizar este registro' });
     return;
-  }
-
-  // Enforcement de consumo en edición (TECNICA + flag): solo valida membresía
-  // cuando cambian caja o upd; si no cambian, no se valida (no rompe la edición
-  // de registros legados ni de campos ajenos al rango).
-  const nuevaCaja = body.caja ?? registro.caja ?? '';
-  const nuevoUpd = body.upd ?? registro.upd ?? '';
-  const cambiaCajaOUpd =
-    (body.caja !== undefined && body.caja !== registro.caja) ||
-    (body.upd !== undefined && body.upd !== registro.upd);
-
-  if (rol === 'TECNICA' && rangosUpdEnforce() && cambiaCajaOUpd) {
-    const subModuloId = await resolveSubModuloByCaja(nuevaCaja);
-    if (subModuloId === null) {
-      res.status(409).json({ error: 'La caja no tiene sub-módulo asociado', code: 'CAJA_SIN_SUBMODULO' });
-      return;
-    }
-    const miembro = await membershipCheck(user.id, subModuloId, nuevoUpd);
-    if (!miembro) {
-      res.status(409).json({
-        error: 'El UPD no pertenece a un rango activo asignado para este sub-módulo',
-        code: 'UPD_FUERA_DE_RANGO',
-      });
-      return;
-    }
   }
 
   const values = [...fuidValues(body as FuidCreateDto), id];

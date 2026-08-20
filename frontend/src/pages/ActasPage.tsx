@@ -8,7 +8,8 @@ import {
   Badge,
   Button,
   ConfirmDialog,
-  DatePicker,
+  EditableInput,
+  EditableDatePicker,
   Input,
   Modal,
   PageHeader,
@@ -34,7 +35,6 @@ interface CajaForm {
   acta_trans_caja: string;
   fecha_trans_caja: string;
   estado_caja: string;
-  upd_caja?: string; // Nuevo: rango UPD opcional
 }
 
 const EMPTY_CAJA_FORM: CajaForm = {
@@ -47,7 +47,6 @@ const EMPTY_CAJA_FORM: CajaForm = {
   acta_trans_caja: '',
   fecha_trans_caja: '',
   estado_caja: 'EN PROCESO',
-  upd_caja: '',
 };
 
 function EstadoBadge({ estado }: { estado: string }) {
@@ -184,7 +183,6 @@ const cajasQuery = useQuery({
       acta_trans_caja: cajaForm.acta_trans_caja.trim(),
       fecha_trans_caja: cajaForm.fecha_trans_caja || null,
       estado_caja: cajaForm.estado_caja,
-      upd_caja: cajaForm.upd_caja || null, // Nuevo campo rango UPD
     };
 
     if (editingCaja) {
@@ -238,8 +236,6 @@ const cajasQuery = useQuery({
     const todasLasCajas: ModuloCaja[] = cajasData;
     const cajaReferencia =
       todasLasCajas.find((c) => c.entidad_remitente_caja?.trim() || c.entidad_productora_caja?.trim());
-    // Siguiente número de caja: máximo global del prefijo + 1 (ej. 051C000463 → 051C000464,
-    // sin duplicar secuencias usadas por otros módulos).
     setCajaForm({
       ...EMPTY_CAJA_FORM,
       caja_modulo: siguienteCaja,
@@ -292,6 +288,16 @@ const cajasQuery = useQuery({
       key: 'estado_caja',
       header: 'Estado',
       render: (caja: ModuloCaja) => <EstadoBadge estado={caja.estado_caja} />,
+    },
+    {
+      key: 'created_at',
+      header: 'Creada',
+      render: (caja: ModuloCaja) => (caja.created_at ? caja.created_at.slice(0, 19).replace('T', ' ') : '—'),
+    },
+    {
+      key: 'updated_at',
+      header: 'Actualizada',
+      render: (caja: ModuloCaja) => (caja.updated_at ? caja.updated_at.slice(0, 19).replace('T', ' ') : '—'),
     },
     {
       key: 'acciones',
@@ -372,12 +378,13 @@ const cajasQuery = useQuery({
         }
       >
         <form id="caja-form" onSubmit={handleSubmit} autoComplete="off" className="grid gap-4 md:grid-cols-2">
-          <Input
+          <EditableInput
             label="Caja (000C000000)"
             value={cajaForm.caja_modulo}
-            onChange={(event) => setCajaForm({ ...cajaForm, caja_modulo: event.target.value })}
+            onChange={(value) => setCajaForm({ ...cajaForm, caja_modulo: value })}
             error={cajaErrors.caja_modulo}
             placeholder={cajaPlaceholder}
+            defaultUnlocked={false}
           />
           <Input
             label="Entidad Remitente"
@@ -409,23 +416,19 @@ const cajasQuery = useQuery({
             onChange={(event) => setCajaForm({ ...cajaForm, objeto_caja: event.target.value })}
             error={cajaErrors.objeto_caja}
           />
-          <Input
+          <EditableInput
             label="Acta de Transferencia"
             value={cajaForm.acta_trans_caja}
-            onChange={(event) => setCajaForm({ ...cajaForm, acta_trans_caja: event.target.value })}
+            onChange={(value) => setCajaForm({ ...cajaForm, acta_trans_caja: value })}
             error={cajaErrors.acta_trans_caja}
             placeholder={actaModulo || 'Ingrese el número de acta'}
+            defaultUnlocked={false}
           />
-          <Input
-            label="Rango UPD"
-            value={cajaForm.upd_caja}
-            onChange={(event) => setCajaForm({ ...cajaForm, upd_caja: event.target.value })}
-            placeholder="Ej: UPD1234567"
-          />
-          <DatePicker
+          <EditableDatePicker
             label="Fecha de Transferencia"
             value={cajaForm.fecha_trans_caja}
             onChange={(value) => setCajaForm({ ...cajaForm, fecha_trans_caja: value })}
+            defaultUnlocked={false}
           />
           <Select
             label="Estado"
