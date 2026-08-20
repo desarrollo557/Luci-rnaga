@@ -17,7 +17,7 @@ import {
   Table,
   type Column,
 } from '@/components/ui';
-import { modulosCajaApi, modulosClienteApi, type ModuloCajaInput } from '@/lib/api';
+import { modulosCajaApi, modulosClienteApi } from '@/lib/api';
 import { getApiErrorMessage } from '@/lib/api';
 import { invalidateDomain } from '@/lib/queryInvalidation';
 import { useAuthStore } from '@/stores/authStore';
@@ -26,7 +26,8 @@ import type { ModuloCaja } from '@/types';
 const ESTADOS_CAJA = ['EN PROCESO', 'FINALIZADO'] as const;
 
 interface CajaForm {
-  caja_modulo: string;
+  numero_inicial: string;
+  numero_final: string;
   entidad_remitente_caja: string;
   entidad_productora_caja: string;
   unidad_administrativa_caja: string;
@@ -38,7 +39,8 @@ interface CajaForm {
 }
 
 const EMPTY_CAJA_FORM: CajaForm = {
-  caja_modulo: '',
+  numero_inicial: '',
+  numero_final: '',
   entidad_remitente_caja: '',
   entidad_productora_caja: '',
   unidad_administrativa_caja: '',
@@ -52,17 +54,6 @@ const EMPTY_CAJA_FORM: CajaForm = {
 function EstadoBadge({ estado }: { estado: string }) {
   const color = estado === 'FINALIZADO' ? 'green' : estado === 'EN PROCESO' ? 'amber' : 'gray';
   return <Badge color={color}>{estado || '—'}</Badge>;
-}
-
-/** Consulta el siguiente número de caja global del prefijo contra el backend.
- *  Solo se activa para LIDER/ADMIN: son quienes crean cajas (CALIDAD/TECNICA no,
- *  y el endpoint next/:prefijo está restringido a esos roles). */
-function useSiguienteCaja(prefijo: string, enabled: boolean) {
-  return useQuery({
-    queryKey: ['modulos-caja', 'next', prefijo],
-    queryFn: () => modulosCajaApi.siguienteNumero(prefijo).then((res) => res.data.siguiente),
-    enabled: Boolean(prefijo) && enabled,
-  });
 }
 
 export default function ActasPage() {
@@ -92,22 +83,13 @@ const cajasQuery = useQuery({
     enabled: Boolean(id),
   });
 
-  const codigoModulo = moduloQuery.data?.codigo ?? '';
   const actaModulo = moduloQuery.data?.acta_transferencia_modulo ?? '';
-  // Placeholder de caja: prefijo del código del módulo + "C" + 6 ceros (ej. 015C000000).
-  const cajaPlaceholder = /^\d{1,3}$/.test(codigoModulo)
-    ? `${codigoModulo.padStart(3, '0')}C000000`
-    : '000C000000';
 
-  // Siguiente número de caja global del prefijo (evita duplicados entre módulos).
-  const prefijoCaja = /^\d{1,3}$/.test(codigoModulo) ? `${codigoModulo.padStart(3, '0')}C` : '';
-  const siguienteCajaQuery = useSiguienteCaja(prefijoCaja, isManager);
-  const siguienteCaja = siguienteCajaQuery.data ?? null;
-
-  const createMutation = useMutation({
-    mutationFn: (data: ModuloCajaInput) => modulosCajaApi.create(data),
+  const updateMutation = useMutation({
+    mutationFn: ({ cajaId, data }: { cajaId: number; data: { caja_modulo: string; entidad_remitente_caja: string; entidad_productora_caja: string; unidad_administrativa_caja: string; oficina_productora_caja: string; objeto_caja: string; acta_trans_caja: string; fecha_trans_caja: string | null; estado_caja: string } }) =>
+      modulosCajaApi.update(cajaId, data),
     onSuccess: () => {
-      toast.success('Caja creada correctamente');
+      toast.success('Caja actualizada correctamente');
       setModalOpen(false);
       void invalidateDomain(queryClient, 'modulos-caja');
     },
@@ -116,11 +98,11 @@ const cajasQuery = useQuery({
     },
   });
 
-  const updateMutation = useMutation({
-    mutationFn: ({ cajaId, data }: { cajaId: number; data: Omit<ModuloCajaInput, 'id_modulo_caja'> }) =>
-      modulosCajaApi.update(cajaId, data),
-    onSuccess: () => {
-      toast.success('Caja actualizada correctamente');
+  const createSerieMutation = useMutation({
+    mutationFn: (data: { id_modulo_caja: number; numero_inicial: string; numero_final: string; entidad_remitente_caja: string; acta_trans_caja: string; fecha_trans_caja: string | null; entidad_productora_caja: string; unidad_administrativa_caja: string; oficina_productora_caja: string; objeto_caja: string; estado_caja: string }) =>
+      modulosCajaApi.createSerie(data),
+    onSuccess: (res) => {
+      toast.success(res.data?.message || 'Serie de cajas creada correctamente');
       setModalOpen(false);
       void invalidateDomain(queryClient, 'modulos-caja');
     },
@@ -145,12 +127,6 @@ const cajasQuery = useQuery({
     event.preventDefault();
     const nextErrors: Partial<Record<keyof CajaForm, string>> = {};
 
-    // Validación directa de campos requeridos y formato
-    if (!cajaForm.caja_modulo?.trim()) {
-      nextErrors.caja_modulo = 'El número de caja es requerido';
-    } else if (!/^\d{3}C\d{6}$/.test(cajaForm.caja_modulo.trim())) {
-      nextErrors.caja_modulo = 'El número de caja debe tener el formato 000C000000';
-    }
     if (!cajaForm.entidad_remitente_caja?.trim()) {
       nextErrors.entidad_remitente_caja = 'La entidad remitente es requerida';
     }
@@ -173,8 +149,26 @@ const cajasQuery = useQuery({
     setCajaErrors(nextErrors);
     if (Object.keys(nextErrors).length > 0) return;
 
+    // Validar formato 6 dígitos para número inicial y final
+    if (!/^\d{6}$/.test(cajaForm.numero_inicial)) {
+      setCajaErrors({ ...nextErrors, numero_inicial: 'Debe tener 6 dígitos numéricos' });
+      return;
+    }
+    if (!/^\d{6}$/.test(cajaForm.numero_final)) {
+      setCajaErrors({ ...nextErrors, numero_final: 'Debe tener 6 dígitos numéricos' });
+      return;
+    }
+    const ini = parseInt(cajaForm.numero_inicial, 10);
+    const fin = parseInt(cajaForm.numero_final, 10);
+    if (ini > fin) {
+      setCajaErrors({ ...nextErrors, numero_inicial: 'El inicial no puede ser mayor que el final' });
+      return;
+    }
+
     const baseData = {
-      caja_modulo: cajaForm.caja_modulo.trim(),
+      id_modulo_caja: Number(id),
+      numero_inicial: cajaForm.numero_inicial,
+      numero_final: cajaForm.numero_final,
       entidad_remitente_caja: cajaForm.entidad_remitente_caja.trim(),
       entidad_productora_caja: cajaForm.entidad_productora_caja.trim(),
       unidad_administrativa_caja: cajaForm.unidad_administrativa_caja.trim(),
@@ -186,7 +180,22 @@ const cajasQuery = useQuery({
     };
 
     if (editingCaja) {
-      updateMutation.mutate({ cajaId: editingCaja.id, data: baseData });
+      // Para edición, actualizar una sola caja (usar el número del inicial)
+      const prefijo = editingCaja.caja_modulo.slice(0, 4); // ej. "051C"
+      updateMutation.mutate({
+        cajaId: editingCaja.id,
+        data: {
+          caja_modulo: `${prefijo}${cajaForm.numero_inicial}`,
+          entidad_remitente_caja: cajaForm.entidad_remitente_caja.trim(),
+          entidad_productora_caja: cajaForm.entidad_productora_caja.trim(),
+          unidad_administrativa_caja: cajaForm.unidad_administrativa_caja.trim(),
+          oficina_productora_caja: cajaForm.oficina_productora_caja.trim(),
+          objeto_caja: cajaForm.objeto_caja.trim(),
+          acta_trans_caja: cajaForm.acta_trans_caja.trim(),
+          fecha_trans_caja: cajaForm.fecha_trans_caja || null,
+          estado_caja: cajaForm.estado_caja,
+        },
+      });
       return;
     }
 
@@ -195,7 +204,7 @@ const cajasQuery = useQuery({
       return;
     }
 
-    createMutation.mutate({ ...baseData, id_modulo_caja: Number(id) });
+    createSerieMutation.mutate(baseData);
   };
 
   const handleExportExcel = () => {
@@ -225,20 +234,25 @@ const cajasQuery = useQuery({
 
   const openNuevaCaja = () => {
     setEditingCaja(null);
-    // Si el siguiente número aún no está disponible, no abrir con un prefijo incompleto.
-    if (!siguienteCaja) {
-      toast.error('Espera a que cargue el siguiente número de caja');
-      return;
-    }
     const actaModulo = moduloQuery.data?.acta_transferencia_modulo ?? '';
     // Entidades de referencia: se toman de una caja existente del módulo, así la
     // nueva caja hereda los mismos valores que muestra la tabla de actas.
     const todasLasCajas: ModuloCaja[] = cajasData;
     const cajaReferencia =
       todasLasCajas.find((c) => c.entidad_remitente_caja?.trim() || c.entidad_productora_caja?.trim());
+    // Sugerir siguiente número inicial basado en la última caja creada
+    const ultimaCaja = [...cajasData].sort((a, b) => {
+      const na = parseInt(a.caja_modulo.slice(-6), 10);
+      const nb = parseInt(b.caja_modulo.slice(-6), 10);
+      return nb - na;
+    })[0];
+    const sugeridoInicial = ultimaCaja
+      ? String(parseInt(ultimaCaja.caja_modulo.slice(-6), 10) + 1).padStart(6, '0')
+      : '000001';
     setCajaForm({
       ...EMPTY_CAJA_FORM,
-      caja_modulo: siguienteCaja,
+      numero_inicial: sugeridoInicial,
+      numero_final: sugeridoInicial,
       acta_trans_caja: actaModulo,
       entidad_remitente_caja:
         cajaReferencia?.entidad_remitente_caja ?? moduloQuery.data?.entidad_remitente ?? '',
@@ -254,8 +268,11 @@ const cajasQuery = useQuery({
 
   const handleEditarCaja = (caja: ModuloCaja) => {
     setEditingCaja(caja);
+    // Para edición, extraer el número de 6 dígitos del final del caja_modulo
+    const numero = caja.caja_modulo.slice(-6);
     setCajaForm({
-      caja_modulo: caja.caja_modulo,
+      numero_inicial: numero,
+      numero_final: numero,
       entidad_remitente_caja: caja.entidad_remitente_caja,
       entidad_productora_caja: caja.entidad_productora_caja,
       unidad_administrativa_caja: caja.unidad_administrativa_caja,
@@ -334,7 +351,7 @@ const cajasQuery = useQuery({
         actions={
           isManager ? (
             <>
-              <Button onClick={openNuevaCaja} disabled={!id || siguienteCajaQuery.isPending} loading={createMutation.isPending}>
+              <Button onClick={openNuevaCaja} disabled={!id} loading={createSerieMutation.isPending}>
                 <Plus className="size-4" /> Nueva Caja
               </Button>
               <Button onClick={handleExportExcel} variant="ghost" loading={cajasQuery.isFetching}>
@@ -363,14 +380,14 @@ const cajasQuery = useQuery({
             <Button
               variant="ghost"
               onClick={() => setModalOpen(false)}
-              disabled={createMutation.isPending || updateMutation.isPending}
+              disabled={createSerieMutation.isPending || updateMutation.isPending}
             >
               Cancelar
             </Button>
             <Button
               type="submit"
               form="caja-form"
-              loading={createMutation.isPending || updateMutation.isPending}
+              loading={createSerieMutation.isPending || updateMutation.isPending}
             >
               Guardar
             </Button>
@@ -378,13 +395,21 @@ const cajasQuery = useQuery({
         }
       >
         <form id="caja-form" onSubmit={handleSubmit} autoComplete="off" className="grid gap-4 md:grid-cols-2">
-          <EditableInput
-            label="Caja (000C000000)"
-            value={cajaForm.caja_modulo}
-            onChange={(value) => setCajaForm({ ...cajaForm, caja_modulo: value })}
-            error={cajaErrors.caja_modulo}
-            placeholder={cajaPlaceholder}
-            defaultUnlocked={false}
+          <Input
+            label="Número Inicial (6 dígitos)"
+            value={cajaForm.numero_inicial}
+            onChange={(event) => setCajaForm({ ...cajaForm, numero_inicial: event.target.value })}
+            error={cajaErrors.numero_inicial}
+            placeholder="000001"
+            maxLength={6}
+          />
+          <Input
+            label="Número Final (6 dígitos)"
+            value={cajaForm.numero_final}
+            onChange={(event) => setCajaForm({ ...cajaForm, numero_final: event.target.value })}
+            error={cajaErrors.numero_final}
+            placeholder="000001"
+            maxLength={6}
           />
           <Input
             label="Entidad Remitente"

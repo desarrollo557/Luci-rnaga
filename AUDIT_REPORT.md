@@ -1,4 +1,4 @@
-# Auditoría de Código — Luciernaga Host
+# Auditoría de Código — luci Host
 
 **Fecha:** 2025-08-19  
 **Alcance:** `backend/src/**/*.ts` + `frontend/src/**/*.tsx`
@@ -17,9 +17,9 @@
 | `app.ts` | 27 | `60 * 1000` (1 min) | `RATE_LIMIT_LOGIN_WINDOW_MS` |
 | `app.ts` | 28 | `30` | `RATE_LIMIT_LOGIN_DEFAULT` |
 | `app.ts` | 37 | `'http://localhost:5173'` | `DEFAULT_CORS_ORIGIN` |
-| `app.ts` | 47 | `'luciernaga-dev-secret'` | **Eliminar fallback**; exigir `SESSION_SECRET` en `.env` |
+| `app.ts` | 47 | `'luci-dev-secret'` | **Eliminar fallback**; exigir `SESSION_SECRET` en `.env` |
 | `app.ts` | 54 | `1000 * 60 * 60 * 8` (8 h) | `SESSION_MAX_AGE_MS` |
-| `app.ts` | 61 | `'ok'`, `'luciernaga-api'` | Constantes `HEALTH_STATUS_OK`, `SERVICE_NAME` |
+| `app.ts` | 61 | `'ok'`, `'luci-api'` | Constantes `HEALTH_STATUS_OK`, `SERVICE_NAME` |
 | `app.ts` | 73 | `'../frontend/dist'` | `DEFAULT_FRONTEND_DIST_PATH` |
 | `db.ts` | 9 | `10` | `DB_CONNECTION_LIMIT` |
 | `db.ts` | 10 | `0` | `DB_QUEUE_LIMIT` |

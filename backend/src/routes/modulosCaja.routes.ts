@@ -17,6 +17,7 @@ import {
   getNextCajaNumero,
   getNextUpdByCaja,
   createModuloCaja,
+  createCajasSerie,
   updateModuloCaja,
   deleteModuloCaja,
   changeEstadoCaja,
@@ -45,6 +46,13 @@ router.post(
   isLiderOrAdmin,
   validate(createModuloCajaSchema),
   asyncHandler(createModuloCaja),
+);
+// Crear serie de cajas (número inicial → final)
+router.post(
+  '/modulos_caja/serie',
+  isAuthenticated,
+  isLiderOrAdmin,
+  asyncHandler(createCajasSerie),
 );
 router.put(
   '/modulos_caja/:id',

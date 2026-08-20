@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useLocation, useParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import * as XLSX from 'xlsx';
 import axios from 'axios';
-import { CheckCircle2, ChevronLeft, ChevronRight, Eye, FileDown } from 'lucide-react';
+import { CheckCircle2, ChevronLeft, ChevronRight, Eye, FileDown, FileText } from 'lucide-react';
 import { toast } from 'sonner';
 import {
   Badge,
@@ -15,7 +16,7 @@ import {
   Table,
   type Column,
 } from '@/components/ui';
-import { fuidApi, modulosCajaApi, plantillaApi } from '@/lib/api';
+import { fuidApi, modulosCajaApi, plantillaApi, reportesApi } from '@/lib/api';
 import { invalidateDomain } from '@/lib/queryInvalidation';
 import { useAuthStore } from '@/stores/authStore';
 import type { FuidDato } from '@/types';
@@ -209,6 +210,13 @@ export default function RevisionPage() {
   const fuidQuery = useQuery({
     queryKey: ['fuiddatosreal', 'list', cajaCode],
     queryFn: () => fuidApi.list({ caja: cajaCode }).then((res) => res.data),
+    enabled: Boolean(cajaCode),
+  });
+
+  // Vista Tabla agrupada (resumen por rangos de cajas)
+  const resumenQuery = useQuery({
+    queryKey: ['reportes', 'resumen-cajas-agrupado'],
+    queryFn: () => reportesApi.resumenCajasAgrupado().then((res) => res.data),
     enabled: Boolean(cajaCode),
   });
 
@@ -457,9 +465,100 @@ export default function RevisionPage() {
             </div>
           </div>
         </>
-      )}
+)}
 
-      <RevisionModal
+  {/* Vista Tabla agrupada (Resumen por rangos de cajas) */}
+  <Card>
+    <div className="p-4 border-b border-silver-200">
+      <h3 className="text-lg font-semibold text-silver-800 flex items-center gap-2">
+        <FileText className="size-5" />
+        Vista Tabla — Resumen por Rangos de Cajas
+      </h3>
+    </div>
+    <div className="p-4">
+      {resumenQuery.isLoading ? (
+        <div className="flex justify-center py-6">
+          <LoadingState message="Cargando resumen de cajas…" />
+        </div>
+      ) : resumenQuery.error ? (
+        <div className="text-center text-red-600 py-4">
+          Error al cargar el resumen
+        </div>
+      ) : resumenQuery.data && resumenQuery.data.length > 0 ? (
+        <>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="bg-silver-50 text-left text-xs font-semibold text-silver-600 uppercase tracking-wider">
+                  <th className="px-4 py-3">Caja Inicial</th>
+                  <th className="px-4 py-3">Caja Fin</th>
+                  <th className="px-4 py-3">UPD Inicio</th>
+                  <th className="px-4 py-3">UPD Fin</th>
+                  <th className="px-4 py-3 text-right">Cajas Encontradas</th>
+                  <th className="px-4 py-3 text-right">Registro</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-silver-200">
+                {resumenQuery.data.map((row, idx) => (
+                  <tr key={idx} className={idx % 2 === 0 ? 'bg-white' : 'bg-silver-50'}>
+                    <td className="px-4 py-3 font-mono text-silver-800">{row.caja_inicial}</td>
+                    <td className="px-4 py-3 font-mono text-silver-800">{row.caja_fin}</td>
+                    <td className="px-4 py-3 font-mono text-silver-800">{row.upd_inicio ?? '—'}</td>
+                    <td className="px-4 py-3 font-mono text-silver-800">{row.upd_fin ?? '—'}</td>
+                    <td className="px-4 py-3 text-right text-silver-700">{row.cajas_encontradas}</td>
+                    <td className="px-4 py-3 text-right text-silver-700">{row.total_registros}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div className="mt-4 flex flex-wrap gap-2">
+            <Button
+              variant="secondary"
+              onClick={() => {
+                // Descargar Reporte - exportar a Excel
+                const data = resumenQuery.data!.map((r) => ({
+                  'Caja Inicial': r.caja_inicial,
+                  'Caja Fin': r.caja_fin,
+                  'UPD Inicio': r.upd_inicio ?? '',
+                  'UPD Fin': r.upd_fin ?? '',
+                  'Cajas Encontradas': r.cajas_encontradas,
+                  Registro: r.total_registros,
+                }));
+                const ws = XLSX.utils.json_to_sheet(data);
+                const wb = XLSX.utils.book_new();
+                XLSX.utils.book_append_sheet(wb, ws, 'Resumen Cajas');
+                XLSX.writeFile(wb, `resumen_cajas_${new Date().toISOString().slice(0, 10)}.xlsx`);
+              }}
+            >
+              <FileDown className="size-4" /> Descargar Reporte
+            </Button>
+            <Button
+              variant="secondary"
+              onClick={() => {
+                // Plantilla General - descargar formato FUID vacío
+                plantillaApi.generar('plantilla_fuid', {}).then((response) => {
+                  const blob = response.data;
+                  const url = window.URL.createObjectURL(blob);
+                  const a = document.createElement('a');
+                  a.href = url;
+                  a.download = `plantilla_fuid_${new Date().toISOString().slice(0, 10)}.xlsx`;
+                  a.click();
+                  window.URL.revokeObjectURL(url);
+                });
+              }}
+            >
+              <FileText className="size-4" /> Plantilla General
+            </Button>
+          </div>
+        </>
+      ) : (
+        <p className="text-silver-500 text-center py-8">No hay datos para mostrar en el resumen</p>
+      )}
+    </div>
+  </Card>
+
+  <RevisionModal
         open={revisionTarget !== null}
         registro={revisionTarget}
         onClose={() => setRevisionTarget(null)}

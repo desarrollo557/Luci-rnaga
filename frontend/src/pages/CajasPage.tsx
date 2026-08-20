@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ClipboardList, Eye, PencilLine } from 'lucide-react';
+import { ClipboardList, Eye, FileText, PencilLine } from 'lucide-react';
 import { toast } from 'sonner';
-import { Badge, Button, Card, Input, LoadingState, PageHeader } from '@/components/ui';
+import { Badge, Button, Card, Input, LoadingState, Modal, PageHeader } from '@/components/ui';
 import {
   asignacionCajaCalidadApi,
   asignacionCajaTecnicaApi,
@@ -378,6 +378,22 @@ export default function CajasPage() {
     enabled: Boolean(mid),
   });
 
+  // Usuarios asignados a la caja (para Mostrar Detalles)
+  const usuariosAsignadosQuery = useQuery({
+    queryKey: ['modulos-caja', 'usuarios', cajaId, 'all'],
+    queryFn: async () => {
+      if (!cajaId) return { tecnica: [], calidad: [] };
+      const [tecnica, calidad] = await Promise.all([
+        modulosCajaApi.usuariosTecnica(cajaId).then((r) => r.data),
+        modulosCajaApi.usuariosCalidad(cajaId).then((r) => r.data),
+      ]);
+      return { tecnica, calidad };
+    },
+    enabled: Boolean(cajaId),
+  });
+
+  const [detallesOpen, setDetallesOpen] = useState(false);
+
   const cambiarEstadoMutation = useMutation({
     mutationFn: (estado: string) => modulosCajaApi.cambiarEstado(mid as string, estado),
     onSuccess: () => {
@@ -440,6 +456,12 @@ export default function CajasPage() {
                       <Eye className="size-4" /> Ver Revisión
                     </Button>
                   </Link>
+                  <Button
+                    variant="secondary"
+                    onClick={() => setDetallesOpen(true)}
+                  >
+                    <FileText className="size-4" /> Mostrar Detalles
+                  </Button>
                 </>
               )}
               {rol === 'CALIDAD' && (
@@ -520,6 +542,98 @@ export default function CajasPage() {
           <SeccionAsignacionCaja cajaId={cajaId} rol="CALIDAD" label="Calidad" />
         </div>
       )}
+
+      {/* Modal Mostrar Detalles */}
+      <Modal
+        open={detallesOpen}
+        onClose={() => setDetallesOpen(false)}
+        title={`Detalles de Caja ${caja?.caja_modulo ?? ''}`}
+        size="lg"
+      >
+        <div className="space-y-4">
+          <div className="grid gap-4 md:grid-cols-2">
+            <div>
+              <dt className="font-medium text-silver-500">Caja</dt>
+              <dd className="mt-0.5 text-silver-800 font-mono">{caja?.caja_modulo}</dd>
+            </div>
+            <div>
+              <dt className="font-medium text-silver-500">Estado</dt>
+              <dd className="mt-0.5">
+                <Badge color={estadoColor}>{estado || '—'}</Badge>
+              </dd>
+            </div>
+            <div>
+              <dt className="font-medium text-silver-500">Entidad Remitente</dt>
+              <dd className="mt-0.5 text-silver-800">{caja?.entidad_remitente_caja}</dd>
+            </div>
+            <div>
+              <dt className="font-medium text-silver-500">Entidad Productora</dt>
+              <dd className="mt-0.5 text-silver-800">{caja?.entidad_productora_caja}</dd>
+            </div>
+            <div>
+              <dt className="font-medium text-silver-500">Unidad Administrativa</dt>
+              <dd className="mt-0.5 text-silver-800">{caja?.unidad_administrativa_caja}</dd>
+            </div>
+            <div>
+              <dt className="font-medium text-silver-500">Oficina Productora</dt>
+              <dd className="mt-0.5 text-silver-800">{caja?.oficina_productora_caja}</dd>
+            </div>
+            <div>
+              <dt className="font-medium text-silver-500">Fecha de Transferencia</dt>
+              <dd className="mt-0.5 text-silver-800">
+                {caja?.fecha_trans_caja ? caja.fecha_trans_caja.slice(0, 10) : '—'}
+              </dd>
+            </div>
+            <div>
+              <dt className="font-medium text-silver-500">Acta de Transferencia</dt>
+              <dd className="mt-0.5 text-silver-800">{caja?.acta_trans_caja}</dd>
+            </div>
+            <div className="md:col-span-2">
+              <dt className="font-medium text-silver-500">Objeto</dt>
+              <dd className="mt-0.5 text-silver-800">{caja?.objeto_caja}</dd>
+            </div>
+            <div>
+              <dt className="font-medium text-silver-500">Creada</dt>
+              <dd className="mt-0.5 text-silver-800">{caja?.created_at ? caja.created_at.slice(0, 19).replace('T', ' ') : '—'}</dd>
+            </div>
+            <div>
+              <dt className="font-medium text-silver-500">Actualizada</dt>
+              <dd className="mt-0.5 text-silver-800">{caja?.updated_at ? caja.updated_at.slice(0, 19).replace('T', ' ') : '—'}</dd>
+            </div>
+          </div>
+
+          {/* Roles asignados */}
+          <div className="pt-4 border-t border-silver-200">
+            <h3 className="text-lg font-semibold text-silver-800 mb-3">Roles Asignados</h3>
+            <div className="grid gap-4 md:grid-cols-2">
+              <div>
+                <h4 className="font-medium text-silver-700 mb-2">Técnicos</h4>
+                {usuariosAsignadosQuery.data?.tecnica.length === 0 ? (
+                  <p className="text-sm text-silver-500">Sin técnicos asignados</p>
+                ) : (
+                  <ul className="space-y-1">
+                    {usuariosAsignadosQuery.data?.tecnica.map((u) => (
+                      <li key={u.id} className="text-sm text-silver-700">{u.nombre} ({u.sede})</li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+              <div>
+                <h4 className="font-medium text-silver-700 mb-2">Calidad</h4>
+                {usuariosAsignadosQuery.data?.calidad.length === 0 ? (
+                  <p className="text-sm text-silver-500">Sin usuarios de calidad asignados</p>
+                ) : (
+                  <ul className="space-y-1">
+                    {usuariosAsignadosQuery.data?.calidad.map((u) => (
+                      <li key={u.id} className="text-sm text-silver-700">{u.nombre} ({u.sede})</li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 }
