@@ -60,9 +60,13 @@ export default function Login() {
       toast.error('Seleccione su rol');
       return;
     }
+    if (sede === '') {
+      toast.error('Seleccione su sede');
+      return;
+    }
     setSubmitting(true);
     try {
-      const { data } = await authApi.login(cctrim, contrasena, rol);
+      const { data } = await authApi.login(cctrim, contrasena, rol, sede);
       if (data.success && data.redirect) {
         localStorage.setItem('redirect', data.redirect);
         window.location.href = data.redirect;
@@ -75,32 +79,6 @@ export default function Login() {
       setSubmitting(false);
     }
   };
-
-  // Quick login for development (pre‑filled users)
-  const quickLogin = async (c: string, pwd: string, r: Role) => {
-    setSubmitting(true);
-    try {
-      const { data } = await authApi.login(c, pwd, r);
-      if (data.success && data.redirect) {
-        localStorage.setItem('redirect', data.redirect);
-        window.location.href = data.redirect;
-        return;
-      }
-      toast.error(data.message ?? 'Credenciales inválidas');
-    } catch (error) {
-      toastApiError(error);
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  // Preset development users (password is 'test1234' for all)
-  const devUsers: Array<{ label: string; cc: string; password: string; role: Role }> = [
-    { label: 'Administrador', cc: '1085040904', password: 'test1234', role: 'ADMIN' as Role },
-    { label: 'Líder', cc: '12345678910', password: '12345', role: 'LIDER' as Role },
-    { label: 'Técnica', cc: '123456789', password: 'test1234', role: 'TECNICA' as Role },
-    { label: 'Calidad', cc: '12345678901112', password: 'test1234', role: 'CALIDAD' as Role },
-  ];
 
   return (
     <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-gradient-to-br from-primary-800 via-primary-600 to-silver-900 p-4">
@@ -228,6 +206,7 @@ export default function Login() {
                   value={sede}
                   onChange={setSede}
                   placeholder="Seleccione su sede"
+                  required
                   className="[&_button]:pl-10"
                 />
               </div>
@@ -243,28 +222,6 @@ export default function Login() {
               Iniciar sesión
             </Button>
           </form>
-
-          {/* Quick login for development */}
-          {import.meta.env.DEV && (
-            <div className="mt-6 pt-4 border-t border-silver-200">
-              <p className="mb-3 text-center text-xs font-medium text-silver-500 uppercase tracking-wider">
-                Acceso rápido (solo desarrollo)
-              </p>
-              <div className="grid gap-2 sm:grid-cols-2">
-                {devUsers.map((u) => (
-                  <Button
-                    key={u.label}
-                    variant="secondary"
-                    className="w-full py-2"
-                    onClick={() => quickLogin(u.cc, u.password, u.role)}
-                    disabled={submitting}
-                  >
-                    {u.label}
-                  </Button>
-                ))}
-              </div>
-            </div>
-          )}
 
           <p className="mt-8 text-center text-xs text-silver-400">
             © {new Date().getFullYear()} Luci · Acceso autorizado

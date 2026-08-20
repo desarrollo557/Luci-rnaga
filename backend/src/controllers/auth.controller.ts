@@ -24,7 +24,7 @@ export async function checkAuth(req: Request, res: Response): Promise<void> {
 }
 
 export async function login(req: Request, res: Response): Promise<void> {
-  const { cc, contrasena, rol } = req.body as LoginRequest;
+  const { cc, contrasena, rol, sede } = req.body as LoginRequest;
 
   try {
     const user = await queryOne<User>('SELECT * FROM users WHERE cc = ?', [cc]);
@@ -64,6 +64,11 @@ export async function login(req: Request, res: Response): Promise<void> {
 
     if (user.rol !== rol) {
       res.status(200).json({ success: false, message: 'El rol seleccionado no coincide con su cuenta. Verifique con el administrador.' } satisfies LoginResponse);
+      return;
+    }
+
+    if (user.sede !== sede) {
+      res.status(200).json({ success: false, message: 'La sede seleccionada no coincide con su cuenta. Verifique con el administrador.' } satisfies LoginResponse);
       return;
     }
 

@@ -16,6 +16,7 @@ export interface LoginRequest {
   cc: string;
   contrasena: string;
   rol: string;
+  sede: string;
 }
 
 export interface LoginResponse {
