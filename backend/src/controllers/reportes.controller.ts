@@ -57,6 +57,34 @@ export async function fuidConEstadoCaja(_req: Request, res: Response): Promise<v
   res.json(rows);
 }
 
+export interface ResumenCajasAgrupado {
+  caja_inicial: string;
+  caja_fin: string;
+  upd_inicio: string | null;
+  upd_fin: string | null;
+  cajas_encontradas: number;
+  total_registros: number;
+}
+
+/** Genera resumen agrupado por rangos de cajas (Vista Tabla del manual) */
+export async function resumenCajasAgrupado(_req: Request, res: Response): Promise<void> {
+  const rows = await query<ResumenCajasAgrupado>(`
+    SELECT
+      MIN(mc.caja_modulo) AS caja_inicial,
+      MAX(mc.caja_modulo) AS caja_fin,
+      MIN(f.upd) AS upd_inicio,
+      MAX(f.upd) AS upd_fin,
+      COUNT(DISTINCT f.caja) AS cajas_encontradas,
+      COUNT(*) AS total_registros
+    FROM fuiddatosreal f
+    LEFT JOIN modulos_caja mc ON f.caja = mc.caja_modulo
+    WHERE f.caja IS NOT NULL AND f.caja <> ''
+    GROUP BY mc.id_modulo_caja
+    ORDER BY caja_inicial
+  `);
+  res.json(rows);
+}
+
 export interface EstadisticasProduccion {
   total_fuids: number;
   total_cajas: number;

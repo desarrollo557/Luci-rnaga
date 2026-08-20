@@ -44,7 +44,7 @@ app.use(express.json());
 
 app.use(
   session({
-    secret: process.env.SESSION_SECRET || 'luciernaga-dev-secret',
+    secret: process.env.SESSION_SECRET || 'luci-dev-secret',
     resave: false,
     saveUninitialized: true,
     cookie: {
@@ -58,7 +58,7 @@ app.use(
 
 // Health check ANTES de los routers y limitadores (evita que /api/:id lo capture)
 app.get('/api/health', (_req, res) => {
-  res.json({ status: 'ok', service: 'luciernaga-api' });
+  res.json({ status: 'ok', service: 'luci-api' });
 });
 
 // Rate limit: general sobre toda la API y estricto sobre /api/login

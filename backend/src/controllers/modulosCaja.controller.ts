@@ -212,6 +212,128 @@ export async function createModuloCaja(req: Request, res: Response): Promise<voi
   });
 }
 
+/** Crea una serie de cajas desde numero_inicial hasta numero_final (6 dígitos cada uno).
+ *  El prefijo se toma del módulo cliente (código + "C"). */
+export async function createCajasSerie(req: Request, res: Response): Promise<void> {
+  const body = req.body as {
+    id_modulo_caja: number;
+    numero_inicial: string;
+    numero_final: string;
+    entidad_remitente_caja: string;
+    acta_trans_caja: string;
+    fecha_trans_caja: string | null;
+    entidad_productora_caja: string;
+    unidad_administrativa_caja: string;
+    oficina_productora_caja: string;
+    objeto_caja: string;
+    estado_caja: string;
+  };
+
+  const {
+    id_modulo_caja,
+    numero_inicial,
+    numero_final,
+    entidad_remitente_caja,
+    acta_trans_caja,
+    fecha_trans_caja,
+    entidad_productora_caja,
+    unidad_administrativa_caja,
+    oficina_productora_caja,
+    objeto_caja,
+    estado_caja,
+  } = body;
+
+  // Validaciones
+  if (
+    !id_modulo_caja ||
+    !numero_inicial ||
+    !numero_final ||
+    !entidad_remitente_caja ||
+    !acta_trans_caja ||
+    !entidad_productora_caja ||
+    !unidad_administrativa_caja ||
+    !oficina_productora_caja ||
+    !objeto_caja ||
+    !estado_caja
+  ) {
+    res.status(400).send('Faltan campos requeridos');
+    return;
+  }
+
+  if (!/^\d{6}$/.test(numero_inicial) || !/^\d{6}$/.test(numero_final)) {
+    res.status(400).json({ message: 'Número inicial y final deben tener 6 dígitos numéricos' });
+    return;
+  }
+
+  const ini = parseInt(numero_inicial, 10);
+  const fin = parseInt(numero_final, 10);
+  if (ini > fin) {
+    res.status(400).json({ message: 'El número inicial no puede ser mayor que el final' });
+    return;
+  }
+  if (fin - ini > 500) {
+    res.status(400).json({ message: 'El rango no puede exceder 500 cajas por operación' });
+    return;
+  }
+
+  // Obtener código del módulo cliente para el prefijo
+  const modulo = await queryOne<{ codigo: string }>(
+    'SELECT codigo FROM moduloscliente WHERE id = ?',
+    [id_modulo_caja],
+  );
+  if (!modulo) {
+    res.status(404).json({ message: 'Módulo cliente no encontrado' });
+    return;
+  }
+  const prefijo = `${modulo.codigo.padStart(3, '0')}C`;
+
+  // Verificar que no existan cajas en ese rango para este módulo
+  const existing = await query<{ caja_modulo: string }>(
+    `SELECT caja_modulo FROM modulos_caja 
+     WHERE id_modulo_caja = ? AND CAST(SUBSTRING(caja_modulo, 5) AS UNSIGNED) BETWEEN ? AND ?`,
+    [id_modulo_caja, ini, fin],
+  );
+  if (existing.length > 0) {
+    const existentes = existing.map((e) => e.caja_modulo).join(', ');
+    res.status(409).json({ message: `Ya existen cajas en ese rango: ${existentes}` });
+    return;
+  }
+
+  // Insertar en lote
+  const values = [];
+  for (let n = ini; n <= fin; n++) {
+    const cajaModulo = `${prefijo}${String(n).padStart(6, '0')}`;
+    values.push([
+      cajaModulo,
+      entidad_remitente_caja,
+      acta_trans_caja,
+      fecha_trans_caja,
+      id_modulo_caja,
+      entidad_productora_caja,
+      unidad_administrativa_caja,
+      oficina_productora_caja,
+      objeto_caja,
+      estado_caja,
+    ]);
+  }
+
+  await query(
+    `INSERT INTO modulos_caja (
+      caja_modulo, entidad_remitente_caja, acta_trans_caja,
+      fecha_trans_caja, id_modulo_caja, entidad_productora_caja,
+      unidad_administrativa_caja, oficina_productora_caja, objeto_caja, estado_caja
+    ) VALUES ?`,
+    [values],
+  );
+
+  res.status(201).json({
+    message: `Se crearon ${values.length} cajas correctamente (${prefijo}${String(ini).padStart(6, '0')} a ${prefijo}${String(fin).padStart(6, '0')})`,
+    cantidad: values.length,
+    primer_caja: `${prefijo}${String(ini).padStart(6, '0')}`,
+    ultima_caja: `${prefijo}${String(fin).padStart(6, '0')}`,
+  });
+}
+
 export async function updateModuloCaja(req: Request, res: Response): Promise<void> {
   const { id } = req.params;
   const {
