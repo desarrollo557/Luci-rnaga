@@ -220,7 +220,16 @@ export async function updateFuid(req: Request, res: Response): Promise<void> {
     cambio_calidad = ?, sede_calidad = ?, asunto_2 = ?, asunto_3 = ?
     WHERE id = ?`;
 
-  await query(sql, values);
+  try {
+    await query(sql, values);
+  } catch (error) {
+    if (isErDupEntry(error)) {
+      res.status(409).json({ error: 'El UPD ya fue usado', code: 'UPD_YA_USADO' });
+      return;
+    }
+    console.error('Error al actualizar el registro:', error);
+    res.status(500).json({ error: 'Error interno del servidor' });
+  }
   res.status(200).json({ message: 'Registro actualizado' });
 }
 

@@ -93,23 +93,23 @@ export async function getNextUpdByCaja(req: Request, res: Response): Promise<voi
 
   const user = req.session.user;
 
-  // Técnico con rango asignado: su consecutivo propio en esta caja.
+  // Técnico: su consecutivo propio en esta caja. Si aún no tiene historial
+  // (sin ultimo_upd) devuelve null: el técnico escribe su primer UPD manualmente.
+  // NO cae al fallback genérico/cliente para evitar conflictos entre técnicos.
   if (user?.rol === 'TECNICA') {
     const caja = await queryOne<{ id: number | null }>('SELECT id FROM modulos_caja WHERE caja_modulo = ?', [cajaModulo]);
     if (caja?.id) {
-      const asignacion = await queryOne<{ upd_inicio: string | null; ultimo_upd: string | null }>(
-        'SELECT upd_inicio, ultimo_upd FROM asignacion_caja_tecnica WHERE modulo_id = ? AND usuario_id = ?',
+      const asignacion = await queryOne<{ ultimo_upd: string | null }>(
+        'SELECT ultimo_upd FROM asignacion_caja_tecnica WHERE modulo_id = ? AND usuario_id = ?',
         [caja.id, user.id],
       );
       if (asignacion?.ultimo_upd) {
         res.json({ upd: incrementUPD(asignacion.ultimo_upd) });
         return;
       }
-      if (asignacion?.upd_inicio) {
-        res.json({ upd: asignacion.upd_inicio });
-        return;
-      }
     }
+    res.json({ upd: null });
+    return;
   }
 
   // Fallback genérico (sin técnico o técnica sin rango): último UPD usado en la caja

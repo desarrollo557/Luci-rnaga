@@ -344,6 +344,10 @@ function FuidFormModal({ open, cajaId, editing, defaultNOrden, caja, onClose }: 
       const code = getApiErrorCode(error);
       if (code === 'UPD_YA_USADO') {
         toast.error('El UPD ya fue usado por otro registro. Se asignará el siguiente disponible.');
+        void nextUpdQuery.refetch().then((result) => {
+          const next = result.data ?? null;
+          setForm((prev) => ({ ...prev, upd: next ?? '' }));
+        });
       }
     },
   });
