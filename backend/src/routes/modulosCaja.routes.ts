@@ -28,12 +28,10 @@ import {
 } from '../controllers/modulosCaja.controller.js';
 import {
   assignCajaTecnica,
-  assignCajaTecnicaConRango,
   removeCajaTecnica,
   assignCajaCalidad,
   removeCajaCalidad,
   assignCajaCalidadRango,
-  updateRangoCajaTecnica,
 } from '../controllers/asignacionesCaja.controller.js';
 
 const router = Router();
@@ -81,23 +79,11 @@ router.post(
   asyncHandler(assignCajaTecnica),
 );
 router.post(
-  '/asignacion_caja_tecnica/con-rango',
-  isAuthenticated,
-  isLiderOrAdmin,
-  asyncHandler(assignCajaTecnicaConRango),
-);
-router.post(
   '/asignacion_caja_tecnica/:modulo_id/eliminar',
   isAuthenticated,
   isLiderOrAdmin,
   validate(usuariosOnlySchema),
   asyncHandler(removeCajaTecnica),
-);
-router.put(
-  '/asignacion_caja_tecnica/:modulo_id/rango',
-  isAuthenticated,
-  isLiderOrAdmin,
-  asyncHandler(updateRangoCajaTecnica),
 );
 router.post(
   '/asignacion_caja_calidad',

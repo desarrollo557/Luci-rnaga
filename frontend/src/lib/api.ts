@@ -144,12 +144,6 @@ export interface AsignacionCajaInput {
   usuarios: number[];
 }
 
-export interface AsignacionCajaTecnicaRangoInput {
-  modulo_id: number;
-  usuarios: number[];
-  upd_inicio: Record<number, string>;
-}
-
 export interface AsignacionCajaRangoInput {
   modulo_id: number;
   usuarios: number[];
@@ -269,12 +263,8 @@ export const modulosCajaApi = {
 
 export const asignacionCajaTecnicaApi = {
   asignar: (data: AsignacionCajaInput) => api.post('/asignacion_caja_tecnica', data),
-  asignarConRango: (data: AsignacionCajaTecnicaRangoInput) =>
-    api.post('/asignacion_caja_tecnica/con-rango', data),
   eliminar: (moduloId: string | number, usuarios: number[]) =>
     api.post(`/asignacion_caja_tecnica/${moduloId}/eliminar`, { usuarios }),
-  asignarRango: (data: { modulo_id: number; usuario_id: number; upd_inicio: string }) =>
-    api.put(`/asignacion_caja_tecnica/${data.modulo_id}/rango`, data),
 };
 
 export const asignacionCajaCalidadApi = {
