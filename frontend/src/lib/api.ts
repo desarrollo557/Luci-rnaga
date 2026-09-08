@@ -344,7 +344,8 @@ export const inventarioApi = {
 };
 
 export const historialApi = {
-  list: () => api.get<Historial[]>('/historial'),
+  list: (filtros: HistorialFiltros = {}) =>
+    api.get<HistorialPage>('/historial', { params: filtros }),
 };
 
 export const plantillaApi = {
@@ -364,11 +365,34 @@ export interface EstadisticasProduccion {
   promedio_fuids_por_caja: number;
   total_modulos_cliente: number;
   total_usuarios: number;
+  total_actas: number;
   por_estado_caja: Array<{ estado: string; total: number }>;
-  fuids_por_mes: Array<{ mes: string; total: number }>;
+  fuids_por_mes: Array<{ mes: string; total: number; aprobados: number }>;
   fuids_por_sede: Array<{ sede: string; total: number }>;
-  top_digitadores: Array<{ nombre: string; total: number }>;
+  top_digitadores: Array<{ nombre: string; total: number; aprobados: number }>;
   usuarios_por_rol: Array<{ rol: string; total: number }>;
+  cajas_por_estado: Array<{ estado: string; total: number }>;
+  avance_por_submodulo: Array<{ submodulo: string; total: number; aprobados: number }>;
+  actividad_reciente: Array<{ dia: string; total: number }>;
+}
+
+export interface HistorialPage {
+  data: Historial[];
+  total: number;
+  page: number;
+  pageSize: number;
+  tipos: string[];
+  sedes: string[];
+}
+
+export interface HistorialFiltros {
+  page?: number;
+  pageSize?: number;
+  q?: string;
+  tipo?: string;
+  sede?: string;
+  desde?: string;
+  hasta?: string;
 }
 
 export const reportesApi = {

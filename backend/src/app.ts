@@ -8,6 +8,17 @@ import session from 'express-session';
 import rateLimit from 'express-rate-limit';
 import apiRoutes from './routes/index.js';
 import { notFoundHandler, errorHandler } from './middlewares/errorHandler.js';
+import {
+  DEFAULT_CORS_ORIGIN,
+  DEFAULT_FRONTEND_DIST,
+  RATE_LIMIT_GENERAL,
+  RATE_LIMIT_LOGIN,
+  RATE_LIMIT_LOGIN_WINDOW_MS,
+  RATE_LIMIT_WINDOW_MS,
+  SERVICE_NAME,
+  SESSION_MAX_AGE_MS,
+  resolveSessionSecret,
+} from './config/constants.js';
 
 export const app = express();
 
@@ -15,17 +26,16 @@ export const app = express();
 // Se elevó desde 300 porque cada recarga de página dispara muchas consultas y
 // recargar la app varias veces agotaba el cupo → 429 en toda la API.
 const generalLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  limit: Number(process.env.RATE_LIMIT_GENERAL) || 1000,
+  windowMs: RATE_LIMIT_WINDOW_MS,
+  limit: RATE_LIMIT_GENERAL,
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'Demasiadas peticiones. Inténtalo más tarde.' },
 });
 
-// Limitador estricto para login: 30 intentos por minuto (configurable por env).
 const loginLimiter = rateLimit({
-  windowMs: 60 * 1000,
-  limit: Number(process.env.RATE_LIMIT_LOGIN) || 30,
+  windowMs: RATE_LIMIT_LOGIN_WINDOW_MS,
+  limit: RATE_LIMIT_LOGIN,
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'Demasiados intentos de inicio de sesión. Espera un minuto.' },
@@ -34,7 +44,7 @@ const loginLimiter = rateLimit({
 app.use(helmet({ crossOriginResourcePolicy: false }));
 app.use(
   cors({
-    origin: (process.env.CORS_ORIGIN || 'http://localhost:5173')
+    origin: (process.env.CORS_ORIGIN || DEFAULT_CORS_ORIGIN)
       .split(',')
       .map((o) => o.trim()),
     credentials: true,
@@ -44,33 +54,31 @@ app.use(express.json());
 
 app.use(
   session({
-    secret: process.env.SESSION_SECRET || 'luci-dev-secret',
+    secret: resolveSessionSecret(),
     resave: false,
     saveUninitialized: true,
     cookie: {
       secure: process.env.NODE_ENV === 'production',
       httpOnly: true,
       sameSite: 'lax',
-      maxAge: 1000 * 60 * 60 * 8,
+      maxAge: SESSION_MAX_AGE_MS,
     },
   }),
 );
 
 // Health check ANTES de los routers y limitadores (evita que /api/:id lo capture)
 app.get('/api/health', (_req, res) => {
-  res.json({ status: 'ok', service: 'luci-api' });
+  res.json({ status: 'ok', service: SERVICE_NAME });
 });
 
-// Rate limit: general sobre toda la API y estricto sobre /api/login
 app.use(generalLimiter);
 app.use('/api/login', loginLimiter);
 
-// API
 app.use('/api', apiRoutes);
 
 // En producción servimos el build del frontend
 if (process.env.NODE_ENV === 'production') {
-  const distPath = path.resolve(process.cwd(), process.env.FRONTEND_DIST || '../frontend/dist');
+  const distPath = path.resolve(process.cwd(), process.env.FRONTEND_DIST || DEFAULT_FRONTEND_DIST);
   if (fs.existsSync(distPath)) {
     app.use(express.static(distPath));
     app.get('*', (_req, res) => {

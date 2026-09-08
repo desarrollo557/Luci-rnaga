@@ -20,12 +20,61 @@ Monorepo del sistema **FUID Luciérnaga**: gestión de módulos, cajas y digitac
 
 ### 1. Base de datos
 
-Crear la base de datos e importar el esquema:
+Crear la base de datos e importar el esquema **en este orden**:
 
 ```bash
 mysql -u root -p -e "CREATE DATABASE IF NOT EXISTS fuiddatosluciernaga CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci"
 mysql -u root -p fuiddatosluciernaga < database/schema.sql
+mysql -u root -p fuiddatosluciernaga < database/timestamps_auditoria.sql
+mysql -u root -p fuiddatosluciernaga < database/asignacion_upd.sql
+mysql -u root -p fuiddatosluciernaga < database/inventario_auditoria_zoho.sql
+mysql -u root -p fuiddatosluciernaga < database/triggers_y_auditoria.sql
+mysql -u root -p fuiddatosluciernaga < database/indices_velocidad.sql
+mysql -u root -p fuiddatosluciernaga < database/indices_dashboard.sql
+mysql -u root -p fuiddatosluciernaga < database/suspension_usuario.sql
+mysql -u root -p fuiddatosluciernaga < database/rangos_upd.sql
 ```
+
+> **Aviso sobre `schema.sql`.** El volcado se generó con phpMyAdmin y exportó los
+> **11 triggers truncados**: cortó cada cuerpo en su primer `;` y lo sustituyó por
+> el delimitador `$$`, dejándolos sin cuerpo ni `END`. Importado tal cual, aborta
+> con `ERROR 1064 ... at line 88`. Para reimportarlo desde cero hay que filtrar
+> esos bloques:
+>
+> ```bash
+> awk '/^DELIMITER \$\$/{s=1;next} /^DELIMITER ;/{if(s){s=0;next}} !s' database/schema.sql > /tmp/schema_sin_triggers.sql
+> mysql -u root -p fuiddatosluciernaga < /tmp/schema_sin_triggers.sql
+> ```
+>
+> `database/triggers_y_auditoria.sql` restaura los 4 triggers cuyo cuerpo sobrevivió
+> íntegro. Los 7 restantes (`duplicidad_*` e `incrementar_orden`) se perdieron en el
+> volcado; recuperarlos exige un `mysqldump` correcto del servidor de origen.
+
+Todos los scripts de `database/` salvo `schema.sql` son **idempotentes**: pueden
+ejecutarse varias veces sin error.
+
+> **Por qué hacen falta estas migraciones.** `schema.sql` es un volcado antiguo: no
+> incluye varias columnas que el código ya usa. Sin ellas, estos endpoints devuelven
+> HTTP 500 aunque el backend arranque sin quejarse:
+>
+> | Columna ausente | Endpoint afectado |
+> | --- | --- |
+> | `users.created_at` / `updated_at` | `GET /api/users` (pantalla de Administración) |
+> | `asignacion_caja_tecnica.upd_inicio` / `ultimo_upd` | `GET /api/modulos_caja/:id/usuarios`, `/next-upd/:caja`, `/tecnica-stats` |
+> | `inventario.ZOHO_*`, `FECHA_ACTUALIZACION`, `USUARIO_ACTUALIZACION` | `POST`/`PUT /api/inventario`, `POST /api/inventario/:id/sync` |
+
+| Script | Qué aporta |
+| --- | --- |
+| `schema.sql` | Estructura y datos (volcado de phpMyAdmin; ver aviso) |
+| `timestamps_auditoria.sql` | Columnas `created_at` / `updated_at` que el código ya espera |
+| `asignacion_upd.sql` | `upd_inicio` / `ultimo_upd` en `asignacion_caja_tecnica` |
+| `inventario_auditoria_zoho.sql` | Auditoría y estado de sincronización Zoho en `inventario` |
+| `triggers_y_auditoria.sql` | Triggers recuperables + tabla `auditoria` |
+| `indices_velocidad.sql` | Índices de las consultas de listado |
+| `indices_dashboard.sql` | Índices del panel de estadísticas y del historial |
+| `suspension_usuario.sql` | Columna `suspendido_hasta` en `users` |
+| `rangos_upd.sql` | Tabla `rangos_upd` |
+| `seed_dev_users.sql` | Usuarios del acceso rápido de desarrollo — **nunca en producción** |
 
 ### 2. Backend
 
@@ -85,6 +134,7 @@ O por separado: `npm run dev:backend` / `npm run dev:frontend`.
 │       ├── app.ts           # Configuración de Express (CORS, sesión, estáticos)
 │       ├── server.ts        # Arranque del servidor
 │       ├── config/db.ts     # Pool de MySQL y helpers de consulta
+│       ├── config/constants.ts  # Configuración central (puertos, límites, sesión)
 │       ├── controllers/     # Lógica de cada endpoint
 │       ├── middlewares/     # auth (roles) y errorHandler
 │       ├── routes/          # Definición de rutas por recurso
@@ -93,7 +143,8 @@ O por separado: `npm run dev:backend` / `npm run dev:frontend`.
 │       └── utils/           # asyncHandler, formateadores
 ├── frontend/                # SPA React + Vite
 │   └── src/
-│       ├── components/      # layout/ (AppLayout) y ui/ (Button, Table, Modal...)
+│       ├── components/      # layout/ (AppLayout), ui/ (Button, Table, Modal...)
+│       │   └── charts/      # Gráficos SVG y tokens de visualización validados
 │       ├── lib/api.ts       # Cliente axios centralizado con todos los endpoints
 │       ├── pages/           # Una pantalla por ruta (Admin, Clientes, Datos...)
 │       ├── stores/          # Zustand (authStore)
@@ -136,9 +187,10 @@ Cada PR dispara un pipeline orquestador (`.github/workflows/ci.yml`) que corre t
 | GET/POST/PUT/DELETE | `/moduloscliente` | Módulos cliente |
 | GET/POST/PUT/DELETE | `/modulos_caja` | Cajas por módulo |
 | GET/POST/PUT/DELETE | `/fuiddatosreal` | Registros FUID |
+| GET | `/estadisticas` | Métricas agregadas del panel de Producción |
 | POST | `/fuiddatosreal/marcar-ok` | Aprueba FUID (calidad) |
 | GET | `/inventario` | Inventario |
-| GET | `/historial` | Historial |
+| GET | `/historial` | Historial paginado (`page`, `pageSize`, `q`, `tipo`, `sede`, `desde`, `hasta`) |
 | POST | `/generarPlantilla` | Exporta plantilla Excel |
 | GET | `/fuid-con-estado-caja` | Reporte de producción |
 

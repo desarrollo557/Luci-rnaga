@@ -97,11 +97,15 @@ export interface EstadisticasProduccion {
   promedio_fuids_por_caja: number;
   total_modulos_cliente: number;
   total_usuarios: number;
+  total_actas: number;
   por_estado_caja: Array<{ estado: string; total: number }>;
-  fuids_por_mes: Array<{ mes: string; total: number }>;
+  fuids_por_mes: Array<{ mes: string; total: number; aprobados: number }>;
   fuids_por_sede: Array<{ sede: string; total: number }>;
-  top_digitadores: Array<{ nombre: string; total: number }>;
+  top_digitadores: Array<{ nombre: string; total: number; aprobados: number }>;
   usuarios_por_rol: Array<{ rol: string; total: number }>;
+  cajas_por_estado: Array<{ estado: string; total: number }>;
+  avance_por_submodulo: Array<{ submodulo: string; total: number; aprobados: number }>;
+  actividad_reciente: Array<{ dia: string; total: number }>;
 }
 
 /** Resumen agregado del negocio: todos los conteos se calculan con SQL real. */
@@ -120,6 +124,10 @@ export async function estadisticasProduccion(_req: Request, res: Response): Prom
     fuidsPorSede,
     topDigitadores,
     usuariosPorRol,
+    cajasPorEstado,
+    avancePorSubmodulo,
+    actividadReciente,
+    totalActas,
   ] = await Promise.all([
     query<{ n: number }>('SELECT COUNT(*) AS n FROM fuiddatosreal'),
     query<{ n: number }>('SELECT COUNT(*) AS n FROM modulos_caja'),
@@ -138,14 +146,19 @@ export async function estadisticasProduccion(_req: Request, res: Response): Prom
        GROUP BY mc.estado_caja
        ORDER BY total DESC`,
     ),
-    query<{ mes: string; total: number }>(
-      `SELECT DATE_FORMAT(f.fecha_del_dato, '%Y-%m') AS mes, COUNT(*) AS total
-       FROM fuiddatosreal f
-       WHERE f.fecha_del_dato IS NOT NULL
-         AND CAST(f.fecha_del_dato AS CHAR) <> ''
-       GROUP BY mes
-       ORDER BY mes DESC
-       LIMIT 6`,
+    query<{ mes: string; total: number; aprobados: number }>(
+      `SELECT mes, total, aprobados FROM (
+         SELECT DATE_FORMAT(f.fecha_del_dato, '%Y-%m') AS mes,
+                COUNT(*) AS total,
+                SUM(CASE WHEN f.historial_y_cambios = 'OK' THEN 1 ELSE 0 END) AS aprobados
+         FROM fuiddatosreal f
+         WHERE f.fecha_del_dato IS NOT NULL
+           AND CAST(f.fecha_del_dato AS CHAR) <> ''
+         GROUP BY mes
+         ORDER BY mes DESC
+         LIMIT 12
+       ) AS ultimos
+       ORDER BY mes ASC`,
     ),
     query<{ sede: string; total: number }>(
       `SELECT sede, COUNT(*) AS total
@@ -154,18 +167,54 @@ export async function estadisticasProduccion(_req: Request, res: Response): Prom
        GROUP BY sede
        ORDER BY total DESC`,
     ),
-    query<{ nombre: string; total: number }>(
-      `SELECT elaborado_por AS nombre, COUNT(*) AS total
+    query<{ nombre: string; total: number; aprobados: number }>(
+      `SELECT elaborado_por AS nombre,
+              COUNT(*) AS total,
+              SUM(CASE WHEN historial_y_cambios = 'OK' THEN 1 ELSE 0 END) AS aprobados
        FROM fuiddatosreal
        WHERE elaborado_por IS NOT NULL AND elaborado_por <> ''
        GROUP BY elaborado_por
        ORDER BY total DESC
-       LIMIT 5`,
+       LIMIT 8`,
     ),
     query<{ rol: string; total: number }>(
       `SELECT rol, COUNT(*) AS total FROM users GROUP BY rol ORDER BY total DESC`,
     ),
+    query<{ estado: string; total: number }>(
+      `SELECT COALESCE(NULLIF(estado_caja, ''), 'SIN ESTADO') AS estado, COUNT(*) AS total
+       FROM modulos_caja
+       GROUP BY estado
+       ORDER BY total DESC`,
+    ),
+    query<{ submodulo: string; total: number; aprobados: number }>(
+      `SELECT sm.codigo AS submodulo,
+              COUNT(f.id) AS total,
+              SUM(CASE WHEN f.historial_y_cambios = 'OK' THEN 1 ELSE 0 END) AS aprobados
+       FROM sub_modulos sm
+       JOIN moduloscliente mcl ON mcl.id_submodulo = sm.id
+       JOIN modulos_caja mc ON mc.id_modulo_caja = mcl.id
+       JOIN fuiddatosreal f ON f.caja = mc.caja_modulo
+       GROUP BY sm.id, sm.codigo
+       ORDER BY total DESC
+       LIMIT 8`,
+    ),
+    query<{ dia: string; total: number }>(
+      `SELECT dia, total FROM (
+         SELECT DATE_FORMAT(fecha_cambio, '%Y-%m-%d') AS dia, COUNT(*) AS total
+         FROM historial
+         WHERE fecha_cambio IS NOT NULL
+         GROUP BY dia
+         ORDER BY dia DESC
+         LIMIT 30
+       ) AS ultimos
+       ORDER BY dia ASC`,
+    ),
+    query<{ n: number }>(
+      "SELECT COUNT(DISTINCT nro_acta_transferible) AS n FROM fuiddatosreal WHERE nro_acta_transferible IS NOT NULL AND nro_acta_transferible <> ''",
+    ),
   ]);
+
+  const num = (v: unknown): number => Number(v ?? 0);
 
   const totalFuidsN = totalFuids[0]?.n ?? 0;
   const totalCajasN = totalCajas[0]?.n ?? 0;
@@ -183,10 +232,26 @@ export async function estadisticasProduccion(_req: Request, res: Response): Prom
     promedio_fuids_por_caja: cajasConFuidsN > 0 ? Math.round((totalFuidsN / cajasConFuidsN) * 10) / 10 : 0,
     total_modulos_cliente: totalModulos[0]?.n ?? 0,
     total_usuarios: totalUsuarios[0]?.n ?? 0,
-    por_estado_caja: porEstadoCaja,
-    fuids_por_mes: fuidsPorMes,
-    fuids_por_sede: fuidsPorSede,
-    top_digitadores: topDigitadores,
-    usuarios_por_rol: usuariosPorRol,
+    por_estado_caja: porEstadoCaja.map((r) => ({ estado: r.estado, total: num(r.total) })),
+    fuids_por_mes: fuidsPorMes.map((r) => ({
+      mes: r.mes,
+      total: num(r.total),
+      aprobados: num(r.aprobados),
+    })),
+    fuids_por_sede: fuidsPorSede.map((r) => ({ sede: r.sede, total: num(r.total) })),
+    top_digitadores: topDigitadores.map((r) => ({
+      nombre: r.nombre,
+      total: num(r.total),
+      aprobados: num(r.aprobados),
+    })),
+    usuarios_por_rol: usuariosPorRol.map((r) => ({ rol: r.rol, total: num(r.total) })),
+    total_actas: Number(totalActas[0]?.n ?? 0),
+    cajas_por_estado: cajasPorEstado.map((r) => ({ estado: r.estado, total: num(r.total) })),
+    avance_por_submodulo: avancePorSubmodulo.map((r) => ({
+      submodulo: r.submodulo,
+      total: num(r.total),
+      aprobados: num(r.aprobados),
+    })),
+    actividad_reciente: actividadReciente.map((r) => ({ dia: r.dia, total: num(r.total) })),
   } satisfies EstadisticasProduccion);
 }
