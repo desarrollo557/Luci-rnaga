@@ -1,5 +1,6 @@
 import type { FuidCreateDto } from '../types/index.js';
-import { CAMPOS_NO_DILIGENCIADOS, VALOR_NO_DILIGENCIADO } from '../config/constants.js';
+import { CAMPOS_NO_DILIGENCIADOS } from '../config/constants.js';
+import { valorParaGuardar } from '../utils/noDiligenciado.js';
 
 export const FUID_COLUMNS = [
   'fecha_del_dato',
@@ -56,16 +57,14 @@ const CON_NO_DILIGENCIADO: ReadonlySet<string> = new Set(CAMPOS_NO_DILIGENCIADOS
  * porque su columna es `date`, `int` o `time`, o porque lo llena el sistema.
  */
 function texto(campo: string, valor: unknown): unknown {
-  const vacio = valor == null || (typeof valor === 'string' && valor.trim() === '');
-  if (!vacio) return valor;
-  return CON_NO_DILIGENCIADO.has(campo) ? VALOR_NO_DILIGENCIADO : null;
+  return valorParaGuardar(valor, CON_NO_DILIGENCIADO.has(campo));
 }
 
 /** Valores en el mismo orden que FUID_COLUMNS para INSERT/UPDATE. */
 export function fuidValues(dto: FuidCreateDto): unknown[] {
   // Columnas que no son de texto (`date`, `int`, `time`): una cadena vacía no es
   // un valor válido para ellas y tiene que llegar como NULL.
-  const nullable = (v: unknown): unknown => (v == null || v === '' ? null : v);
+  const nullable = (v: unknown): unknown => valorParaGuardar(v, false);
   return [
     nullable(dto.fecha_del_dato),
     nullable(dto.n_orden),

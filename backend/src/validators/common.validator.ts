@@ -1,5 +1,6 @@
 import { z } from 'zod';
-import { FECHA_MINIMA_DOCUMENTAL } from '../config/constants.js';
+import { FECHA_MINIMA_DOCUMENTAL, VALOR_NO_DILIGENCIADO } from '../config/constants.js';
+import { sinDiligenciar } from '../utils/noDiligenciado.js';
 import { fechaHoyLocal } from '../utils/format.js';
 
 const FORMATO_FECHA = /^\d{4}-\d{2}-\d{2}$/;
@@ -60,4 +61,35 @@ export function fechaDocumental(etiqueta: string) {
       const motivo = motivoFechaInvalida(valor.trim(), etiqueta);
       if (motivo) ctx.addIssue({ code: 'custom', message: motivo });
     });
+}
+
+
+/** Tamaño de las columnas `varchar` de `modulos_caja`, `moduloscliente` y `sub_modulos`. */
+const LONGITUD_MAXIMA_TEXTO = 255;
+
+/**
+ * Campo de texto que se puede dejar en blanco y se guarda como `N/A`.
+ *
+ * Regla de digitación: quien llena el formulario escribe lo que el documento o
+ * la caja tienen y deja vacío lo que no conoce; enviar no se bloquea por eso.
+ * La ausencia se registra con el marcador `N/A`, igual que en los registros
+ * históricos, en lugar de quedar como NULL o como cadena vacía, que son dos
+ * formas distintas de decir lo mismo.
+ *
+ * Solo vale para columnas de texto: una columna `date`, `int` o `time` no
+ * admite el literal y debe seguir viajando como NULL.
+ *
+ * La transformación deja el valor listo para el controlador, porque `validate`
+ * reemplaza `req.body` por lo que devuelve el schema.
+ */
+export function textoNoDiligenciado(etiqueta: string, maximo = LONGITUD_MAXIMA_TEXTO) {
+  return z
+    .string()
+    .nullable()
+    .optional()
+    .transform((valor) => (sinDiligenciar(valor) ? VALOR_NO_DILIGENCIADO : (valor as string).trim()))
+    .refine(
+      (valor) => valor.length <= maximo,
+      `${etiqueta} no puede superar los ${maximo} caracteres`,
+    );
 }

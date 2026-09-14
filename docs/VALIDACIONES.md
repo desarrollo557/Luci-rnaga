@@ -50,31 +50,6 @@ El formato de error es siempre el mismo:
 | Quién puede borrar un FUID | `deleteFuid`: ADMIN cualquiera, LIDER los de su sede, TECNICA solo los suyos del día, CALIDAD ninguno | La interfaz oculta el botón según el rol |
 | Marcar OK solo en cajas asignadas | `marcarOk` comprueba la tabla de asignación del rol | — |
 
-### Campos no diligenciados: se guardan como `N/A`
-
-`N/A` es el marcador de "campo no diligenciado", no un valor inválido: así están
-los registros históricos de `fuiddatosreal`.
-
-Quien digita llena lo que el documento tiene y deja en blanco lo que no. **Al
-guardar, las columnas de texto que quedaron vacías se registran como `N/A`
-automáticamente**, sin que haya que escribirlo campo por campo y sin que el
-marcador aparezca en el formulario: la conversión ocurre en el servidor, en
-`fuidValues()` (`services/fuid.service.ts`), que es por donde pasan tanto el
-INSERT como el UPDATE. El formulario sigue enviando NULL para lo vacío.
-
-Qué columnas lo reciben está declarado en `CAMPOS_NO_DILIGENCIADOS`
-(`config/constants.ts`). Quedan fuera:
-
-| Qué | Por qué |
-| --- | --- |
-| `fecha_del_dato`, `fecha_inicial`, `fecha_final`, `fecha_transferencia`, `n_orden`, `tiempo` | Las columnas son `date`, `int` y `time`: no admiten el literal. Siguen viajando como NULL |
-| `caja`, `upd`, `asunto_2`, `asunto_3` | Son obligatorios; nunca pueden quedar vacíos |
-| `elaborado_por`, `sede` | Los pone el sistema. `elaborado_por` guarda "NOMBRE (CC)" y los reportes lo cruzan con `users` por la cédula |
-| `historial_y_cambios`, `cambio_calidad`, `sede_calidad` | Los escribe el flujo de calidad, no el formulario de digitación |
-
-Los validadores que comprueban formato tratan `N/A` como ausencia de valor y no
-lo rechazan: `esValorVacio()` (frontend) y `sinDato()` (backend).
-
 ---
 
 ## Cliente (`sub_modulos`)
@@ -92,7 +67,8 @@ lo rechazan: `esValorVacio()` (frontend) y `sinDato()` (backend).
 
 | Regla de negocio | Dónde se valida en backend | Dónde se valida en frontend |
 | --- | --- | --- |
-| Código, entidad remitente y número de acta obligatorios | `moduloscliente.validator.ts` | `ActasPage.tsx` |
+| El número de acta es obligatorio | `moduloscliente.validator.ts` | `ClientesPage.tsx` |
+| El código y la entidad remitente se pueden dejar en blanco y se guardan como `N/A` | `moduloscliente.validator.ts` → `textoNoDiligenciado` | `ClientesPage.tsx` ya no los exige |
 | `id_submodulo` es un entero positivo | `moduloscliente.validator.ts` | — |
 | La fecha de transferencia cumple los límites documentales | `fechaDocumental()` | — |
 | Un líder solo administra actas de su sede | `jerarquia.service.ts` | La lista solo muestra las de su sede |
@@ -106,6 +82,7 @@ lo rechazan: `esValorVacio()` (frontend) y `sinDato()` (backend).
 | --- | --- | --- |
 | El número de caja tiene formato `000C000000` | `modulosCaja.validator.ts` | `validCaja()` en `lib/validation.ts` |
 | El número de caja es único en toda la base | Índice `uq_modulos_caja_caja_modulo` (`database/caja_modulo_unica.sql`) → 409 | — |
+| Entidad productora, unidad administrativa, oficina productora y objeto se pueden dejar en blanco y se guardan como `N/A` | `modulosCaja.validator.ts` → `textoNoDiligenciado` | `ActasPage.tsx` ya no los exige |
 | Estado solo `EN PROCESO` o `FINALIZADO` | `modulosCaja.validator.ts` → `z.enum` | `Select` con las dos opciones |
 | Una serie no puede crear más de 500 cajas de una vez | `createCajasSerie` en `modulosCaja.controller.ts` | — |
 | El rango de una serie no puede estar invertido | `createCajasSerie` | — |
@@ -144,6 +121,48 @@ lo rechazan: `esValorVacio()` (frontend) y `sinDato()` (backend).
 
 ---
 
+## Campos sin diligenciar: se guardan como `N/A`
+
+Regla de todos los formularios del software, en todos los perfiles: **quien
+digita llena lo que el documento, la caja o el inventario tienen y deja en
+blanco lo que no conoce. Enviar no se bloquea por eso, y lo que quedó vacío se
+registra como `N/A`.** El marcador no se escribe ni se muestra en el formulario;
+es la forma en que se guarda.
+
+`N/A` no es un valor inválido: es el marcador que ya traen los registros
+históricos de `fuiddatosreal`. Antes esa misma ausencia se guardaba como NULL o
+como cadena vacía según el formulario, así que la base decía lo mismo de tres
+maneras y cada consulta tenía que contemplarlas todas.
+
+La regla vive en `utils/noDiligenciado.ts` (`valorParaGuardar`), y cada sitio
+declara qué columnas pueden recibir el marcador:
+
+| Formulario | Dónde se aplica | Qué columnas |
+| --- | --- | --- |
+| Registro FUID | `services/fuid.service.ts` → `fuidValues()`, por donde pasan el INSERT y el UPDATE | `CAMPOS_NO_DILIGENCIADOS` en `config/constants.ts` |
+| Caja | `modulosCaja.validator.ts` → `textoNoDiligenciado()` | Entidad productora, unidad administrativa, oficina productora y objeto |
+| Acta | `moduloscliente.validator.ts` → `textoNoDiligenciado()` | Código y entidad remitente |
+| Inventario | `inventario.controller.ts` → `pickValues()` | `TEXTO_NO_DILIGENCIADO`, declarado en el propio controlador |
+
+El marcador solo cabe en columnas de texto. Lo que **nunca** lo recibe:
+
+| Qué | Por qué |
+| --- | --- |
+| Toda columna `date`, `int` o `time` | No admiten el literal. Siguen guardando NULL: una fecha o una cantidad sin dato es NULL, no `N/A` |
+| Lo que identifica un registro | Número de caja, código del cliente, número de acta, UPD y cédula: sin ellos no hay forma de distinguir un registro de otro |
+| Lo que relaciona registros | El cliente de un acta, el acta de una caja, la caja de un FUID |
+| Los selectores de catálogo | Rol, sede y estado de la caja. Los tres del FUID —soporte, frecuencia y otro— sí lo reciben, porque `N/A` es parte de su catálogo |
+| Asunto automático y asunto manual | Obligatorios por decisión de negocio: son lo que permite saber qué contiene el documento sin abrir la caja |
+| Credenciales y datos de la cuenta | Cédula, nombre, contraseña, rol y sede: sin ellos no hay cuenta ni acceso |
+| `elaborado_por` y `sede` del FUID | Los pone el sistema. `elaborado_por` guarda "NOMBRE (CC)" y los reportes lo cruzan con `users` por la cédula |
+| `historial_y_cambios`, `cambio_calidad`, `sede_calidad` | Los escribe el flujo de calidad, no el formulario de digitación |
+| `CODIGO_DEL_CLIENTE` del inventario | El controlador decide con él si el inventario ya existe; dos inventarios en `N/A` se tomarían por el mismo |
+
+Los validadores de formato tratan `N/A` como ausencia de valor y no lo rechazan:
+`esValorVacio()` (frontend) y `sinDato()` (backend).
+
+---
+
 ## Reglas transversales
 
 | Regla de negocio | Dónde se valida en backend | Dónde se valida en frontend |
@@ -164,6 +183,9 @@ de normalización y el manejador de errores.
 | --- | --- |
 | `validators/__tests__/fuiddatosreal.validator.test.ts` | Fechas, orden de fechas, números de documento, folios, tomo, catálogos, longitudes y versión |
 | `validators/__tests__/espejos-frontend.test.ts` | Que los catálogos y las longitudes del frontend sigan coincidiendo con los del backend |
+| `utils/__tests__/noDiligenciado.test.ts` | Qué cuenta como campo sin diligenciar y con qué valor se guarda |
+| `validators/__tests__/modulosCaja.validator.test.ts` | Que la caja se pueda crear sin sus cuatro campos descriptivos y que siga exigiendo lo que la identifica |
+| `validators/__tests__/moduloscliente.validator.test.ts` | Lo mismo para el acta |
 | `services/__tests__/fuid.service.test.ts` | Que lo vacío se guarde como `N/A` en las columnas de texto y como NULL en las demás |
 | `middlewares/__tests__/mayusculas.test.ts` | Recorte, colapso de espacios y exclusión de contraseñas |
 | `middlewares/__tests__/errorHandler.test.ts` | Traducción de los errores de MySQL |

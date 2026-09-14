@@ -1,11 +1,13 @@
 import { z } from 'zod';
-import { fechaDocumental } from './common.validator.js';
+import { fechaDocumental, textoNoDiligenciado } from './common.validator.js';
 
 export const createModuloClienteSchema = z.object({
-  codigo: z.string({ message: 'El código es requerido' }).min(1, 'El código es requerido'),
-  entidad_remitente: z
-    .string({ message: 'La entidad remitente es requerida' })
-    .min(1, 'La entidad remitente es requerida'),
+  // El código y la entidad remitente del acta son copias descriptivas de los del
+  // cliente: se pueden dejar en blanco y se guardan como N/A.
+  codigo: textoNoDiligenciado('El código'),
+  entidad_remitente: textoNoDiligenciado('La entidad remitente'),
+  // El número de acta sí se exige: es como se distingue un acta de otra dentro
+  // del mismo cliente, en la lista y al elegirla para crear cajas.
   acta_transferencia_modulo: z
     .string({ message: 'El acta de transferencia es requerida' })
     .min(1, 'El acta de transferencia es requerida'),
