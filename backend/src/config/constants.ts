@@ -46,6 +46,23 @@ export const BCRYPT_SALT_ROUNDS = 10;
  */
 export const FECHA_MINIMA_DOCUMENTAL = '1920-01-01';
 
+// ── Catálogos cerrados del FUID ───────────────────────────────────────────
+/**
+ * Valores admitidos en los tres campos de lista del formulario FUID.
+ *
+ * Son la fuente de verdad: `frontend/src/lib/catalogos.ts` los repite para
+ * poblar los selectores, y la prueba `catalogos.test.ts` compara ambas listas
+ * para que no puedan desincronizarse en silencio. No se comparten por import
+ * porque el backend compila con `rootDir: "src"` y sacar el archivo de ahí
+ * cambiaría la ruta de `dist/server.js`.
+ *
+ * `N/A` forma parte del catálogo: es el marcador de campo no diligenciado que
+ * usan los registros históricos, no un valor inválido.
+ */
+export const SOPORTES_VALIDOS = ['N/A', 'CD', 'PLANOS'] as const;
+export const FRECUENCIAS_VALIDAS = ['N/A', 'ALTA', 'MEDIA', 'BAJA'] as const;
+export const OTROS_VALIDOS = ['N/A', 'A-Z', 'LIBROS', 'BOLSA'] as const;
+
 // ── Paginación ────────────────────────────────────────────────────────────
 export const DEFAULT_PAGE_SIZE = 50;
 export const MAX_PAGE_SIZE = 500;

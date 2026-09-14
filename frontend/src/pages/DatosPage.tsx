@@ -23,6 +23,7 @@ import { fuidApi, getApiErrorCode, modulosCajaApi } from '@/lib/api';
 import { cn } from '@/lib/cn';
 import { toastApiError } from '@/lib/feedback';
 import { invalidateDomain } from '@/lib/queryInvalidation';
+import { OPCIONES_FRECUENCIA, OPCIONES_OTRO, OPCIONES_SOPORTE } from '@/lib/catalogos';
 import { fechaHoyISO } from '@/lib/utils';
 import { FECHA_MINIMA_DOCUMENTAL, dateInRange, dateOrderValid, fechaHoyLocal, onlyDigits } from '@/lib/validation';
 import { useAuthStore } from '@/stores/authStore';
@@ -353,12 +354,9 @@ function SuggestionInput({
   );
 }
 
-const OPCIONES_OTRO = ['N/A', 'A-Z', 'LIBROS', 'BOLSA'];
-const OPCIONES_SOPORTE = ['N/A', 'CD', 'PLANOS'];
-const OPCIONES_FRECUENCIA = ['N/A', 'ALTA', 'MEDIA', 'BAJA'];
 
 /** Opciones fijas de la lista más el valor guardado cuando quedó fuera de ella (registros antiguos). */
-function opcionesCon(lista: string[], actual: string) {
+function opcionesCon(lista: readonly string[], actual: string) {
   const valor = actual.trim().toUpperCase();
   const base = lista.map((v) => ({ value: v, label: v }));
   return valor && !lista.includes(valor) ? [...base, { value: valor, label: valor }] : base;

@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { isUpdValid, normalizeUpd } from '../utils/updFormat.js';
+import { FRECUENCIAS_VALIDAS, OTROS_VALIDOS, SOPORTES_VALIDOS } from '../config/constants.js';
 import { fechaDocumental } from './common.validator.js';
 
 const optionalText = z.string().nullable().optional();
@@ -69,6 +70,38 @@ function referenciaDeTomo(etiqueta: string) {
 }
 
 /**
+ * Campo de lista cerrada.
+ *
+ * Antes eran `optionalText`, así que por API entraba cualquier cadena aunque el
+ * formulario mostrara un desplegable: en producción quedaron un `soporte` con
+ * una frase de 59 caracteres y un `otro` con `LIBRO` en singular, fuera de la
+ * lista. Ninguno de esos registros se ve afectado por la regla, porque
+ * `updateFuid` ya impide modificar registros de días anteriores.
+ *
+ * El middleware `cuerpoEnMayusculas` normaliza el valor antes de llegar aquí, de
+ * modo que la comparación contra el catálogo es exacta. La cadena vacía se
+ * admite porque significa "sin elegir".
+ */
+function catalogoCerrado(valores: readonly string[], etiqueta: string) {
+  // Se comprueba con superRefine y no con `z.enum(...).or(z.literal(''))`:
+  // esa unión descarta el mensaje del enum y devuelve un "Invalid input" en
+  // inglés, que es justo lo que no debe llegarle al digitador.
+  return z
+    .string()
+    .nullable()
+    .optional()
+    .superRefine((valor, ctx) => {
+      if (valor == null || valor.trim() === '') return;
+      if (!valores.includes(valor.trim().toUpperCase())) {
+        ctx.addIssue({
+          code: 'custom',
+          message: `${etiqueta} debe ser uno de estos valores: ${valores.join(', ')}`,
+        });
+      }
+    });
+}
+
+/**
  * Normaliza (trim + mayúsculas) y valida un UPD: UPD + exactamente 7 dígitos.
  * El enforcement de membresía por rango es solo para rol TECNICA y se aplica en
  * el controller; aquí solo se garantiza el formato para todos los roles.
@@ -105,11 +138,11 @@ const fuidBaseSchema = z.object({
   caja: z.string({ message: 'La caja es requerida' }).min(1, 'La caja es requerida'),
   upd: updField,
   tomo: referenciaDeTomo('El tomo'),
-  otro: optionalText,
+  otro: catalogoCerrado(OTROS_VALIDOS, 'El campo Otro'),
   caja_interna: optionalText,
   folios: enteroNoNegativoOna('Los folios'),
-  soporte: optionalText,
-  frecuencia: optionalText,
+  soporte: catalogoCerrado(SOPORTES_VALIDOS, 'El soporte'),
+  frecuencia: catalogoCerrado(FRECUENCIAS_VALIDAS, 'La frecuencia'),
   elaborado_por: optionalText,
   nro_acta_transferible: optionalText,
   fecha_transferencia: fechaDocumental('La fecha de transferencia'),
