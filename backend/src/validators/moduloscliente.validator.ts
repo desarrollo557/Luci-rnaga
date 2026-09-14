@@ -1,10 +1,5 @@
 import { z } from 'zod';
-
-const optionalDate = z
-  .string()
-  .regex(/^\d{4}-\d{2}-\d{2}$/, 'Formato de fecha inválido (YYYY-MM-DD)')
-  .nullable()
-  .optional();
+import { fechaDocumental } from './common.validator.js';
 
 export const createModuloClienteSchema = z.object({
   codigo: z.string({ message: 'El código es requerido' }).min(1, 'El código es requerido'),
@@ -14,7 +9,7 @@ export const createModuloClienteSchema = z.object({
   acta_transferencia_modulo: z
     .string({ message: 'El acta de transferencia es requerida' })
     .min(1, 'El acta de transferencia es requerida'),
-  fecha_trans_modulo: optionalDate,
+  fecha_trans_modulo: fechaDocumental('La fecha de transferencia'),
   id_submodulo: z.coerce
     .number({ message: 'id_submodulo debe ser un número' })
     .int('id_submodulo debe ser un número entero')

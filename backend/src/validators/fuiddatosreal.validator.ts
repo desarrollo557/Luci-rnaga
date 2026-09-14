@@ -1,13 +1,9 @@
 import { z } from 'zod';
 import { isUpdValid, normalizeUpd } from '../utils/updFormat.js';
+import { fechaDocumental } from './common.validator.js';
 
 const optionalText = z.string().nullable().optional();
 const optionalNumber = z.union([z.number(), z.string()]).nullable().optional();
-const optionalDate = z
-  .string()
-  .regex(/^\d{4}-\d{2}-\d{2}$/, 'Formato de fecha inválido (YYYY-MM-DD)')
-  .nullable()
-  .optional();
 
 /**
  * Normaliza (trim + mayúsculas) y valida un UPD: UPD + exactamente 7 dígitos.
@@ -23,7 +19,7 @@ const updField = z
   });
 
 export const createFuidSchema = z.object({
-  fecha_del_dato: optionalDate,
+  fecha_del_dato: fechaDocumental('La fecha del dato'),
   n_orden: optionalNumber,
   codigo: optionalText,
   entidad_remitente: optionalText,
@@ -41,8 +37,8 @@ export const createFuidSchema = z.object({
   radicado: optionalText,
   numero_doc: optionalText,
   numero_doc_hasta: optionalText,
-  fecha_inicial: optionalDate,
-  fecha_final: optionalDate,
+  fecha_inicial: fechaDocumental('La fecha inicial'),
+  fecha_final: fechaDocumental('La fecha final'),
   caja: z.string({ message: 'La caja es requerida' }).min(1, 'La caja es requerida'),
   upd: updField,
   tomo: optionalText,
@@ -53,7 +49,7 @@ export const createFuidSchema = z.object({
   frecuencia: optionalText,
   elaborado_por: optionalText,
   nro_acta_transferible: optionalText,
-  fecha_transferencia: optionalDate,
+  fecha_transferencia: fechaDocumental('La fecha de transferencia'),
   notas: optionalText,
   sede: optionalText,
   tiempo: optionalText,

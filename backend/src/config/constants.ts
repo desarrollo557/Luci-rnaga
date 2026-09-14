@@ -36,6 +36,16 @@ export const DB_QUEUE_LIMIT = 0;
 // ── Seguridad ─────────────────────────────────────────────────────────────
 export const BCRYPT_SALT_ROUNDS = 10;
 
+// ── Fechas documentales ───────────────────────────────────────────────────
+/**
+ * Fecha más antigua que se acepta en cualquier campo de fecha del FUID.
+ *
+ * Es el límite archivístico del proyecto: por debajo de él, una fecha es un
+ * error de digitación, no un documento. El registro real más antiguo del fondo
+ * es de 1950, así que el margen hasta 1920 es holgado y no excluye nada vigente.
+ */
+export const FECHA_MINIMA_DOCUMENTAL = '1920-01-01';
+
 // ── Paginación ────────────────────────────────────────────────────────────
 export const DEFAULT_PAGE_SIZE = 50;
 export const MAX_PAGE_SIZE = 500;
