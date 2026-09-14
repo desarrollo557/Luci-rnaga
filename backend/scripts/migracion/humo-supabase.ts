@@ -125,7 +125,26 @@ async function main(): Promise<void> {
   comprobar('la creación de cajas en serie inserta el lote', creadas.length === 2, `${creadas.length} cajas`);
   await query('DELETE FROM modulos_caja WHERE entidad_remitente_caja = ?', [MARCA]);
 
-  // 9. Una fecha vuelve como texto, no como Date desplazado por la zona horaria.
+  // 9. El reporte de producción: la cédula se saca de "NOMBRE (CC)" con una
+  //    expresión regular, porque SUBSTRING_INDEX no existe en PostgreSQL.
+  const digitadores = await query<{ nombre: string; cc: string; rol: string | null }>(
+    `SELECT f.elaborado_por AS nombre,
+            substring(f.elaborado_por from '[(]([^)]*)[)]') AS cc,
+            MAX(u.rol) AS rol,
+            COUNT(*) AS total
+     FROM fuiddatosreal f
+     LEFT JOIN users u ON u.cc = substring(f.elaborado_por from '[(]([^)]*)[)]')
+     WHERE f.elaborado_por IS NOT NULL AND f.elaborado_por <> ''
+     GROUP BY f.elaborado_por`,
+  );
+  const conCedula = digitadores.filter((d) => d.cc && /^\d+$/.test(d.cc));
+  comprobar(
+    'el reporte de producción cruza al digitador con su usuario',
+    digitadores.length === 0 || conCedula.length > 0,
+    `${digitadores.length} digitadores`,
+  );
+
+  // 10. Una fecha vuelve como texto, no como Date desplazado por la zona horaria.
   const fecha = await queryOne<{ f: unknown }>('SELECT CAST(? AS date) AS f', ['2025-03-10']);
   comprobar('las fechas vuelven como texto', fecha?.f === '2025-03-10', String(fecha?.f));
 }
