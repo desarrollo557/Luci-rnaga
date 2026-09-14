@@ -12,7 +12,11 @@ const fs = require('fs');
 const path = require('path');
 const { Client } = require('pg');
 
-const ESQUEMA = path.join(__dirname, '../../../database/supabase/01-esquema.sql');
+// Sin argumento aplica el esquema; con uno, el archivo .sql que se le indique
+// (por ejemplo 02-triggers.sql).
+const ESQUEMA = process.argv[2]
+  ? path.resolve(process.cwd(), process.argv[2])
+  : path.join(__dirname, '../../../database/supabase/01-esquema.sql');
 
 (async () => {
   const sql = fs.readFileSync(ESQUEMA, 'utf8');

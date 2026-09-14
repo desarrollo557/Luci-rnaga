@@ -1,6 +1,6 @@
 import type { Request, Response } from 'express';
 import mysql from 'mysql2/promise';
-import { pool, query, queryOne, queryResult } from '../config/db.js';
+import { getConnection, query, queryOne, queryResult } from '../config/db.js';
 import type { ModuloCaja } from '../types/db.js';
 import { formatUpd, isUpdValid, nextUpd, normalizeUpd, toNumeric, UPD_MAX } from '../utils/updFormat.js';
 import { asignarUsuariosACajas, validarUsuariosDeRol } from './asignacionesCaja.controller.js';
@@ -27,10 +27,10 @@ export async function listModulosCaja(req: Request, res: Response): Promise<void
   if (user.rol === 'LIDER' || user.rol === 'ADMIN') {
     // Incluye los nombres de los usuarios asignados a cada caja para mostrarlos en la lista.
     sql = `SELECT mc.*, (SELECT COUNT(*) FROM fuiddatosreal f WHERE f.caja = mc.caja_modulo) AS total_fuids,
-      (SELECT GROUP_CONCAT(u.nombre ORDER BY u.nombre SEPARATOR ', ')
+      (SELECT string_agg(u.nombre, ', ' ORDER BY u.nombre)
          FROM asignacion_caja_tecnica a JOIN users u ON u.id = a.usuario_id
          WHERE a.modulo_id = mc.id) AS tecnicos_asignados,
-      (SELECT GROUP_CONCAT(u.nombre ORDER BY u.nombre SEPARATOR ', ')
+      (SELECT string_agg(u.nombre, ', ' ORDER BY u.nombre)
          FROM asignacion_caja_calidad a JOIN users u ON u.id = a.usuario_id
          WHERE a.modulo_id = mc.id) AS calidad_asignados
       FROM modulos_caja mc
@@ -79,7 +79,7 @@ export async function getNextCajaNumero(req: Request, res: Response): Promise<vo
   const prefijoNormalizado = `${base.padStart(3, '0')}C`;
 
   const row = await queryOne<{ max_num: number | null }>(
-    `SELECT MAX(CAST(SUBSTRING(caja_modulo, LENGTH(?) + 1) AS UNSIGNED)) AS max_num
+    `SELECT MAX(CAST(SUBSTRING(caja_modulo FROM LENGTH(?) + 1) AS INTEGER)) AS max_num
      FROM modulos_caja
      WHERE caja_modulo LIKE CONCAT(?, '%')`,
     [prefijoNormalizado, prefijoNormalizado],
@@ -147,7 +147,7 @@ export async function getNextUpdByCaja(req: Request, res: Response): Promise<voi
       const ultimoUsado = await queryOne<{ upd: string | null }>(
         `SELECT upd FROM fuiddatosreal
          WHERE caja = ? AND upd IS NOT NULL AND upd <> ''
-         ORDER BY CAST(SUBSTRING(upd, 4) AS UNSIGNED) DESC
+         ORDER BY CAST(SUBSTRING(upd FROM 4) AS INTEGER) DESC
          LIMIT 1`,
         [cajaModulo],
       );
@@ -185,7 +185,7 @@ export async function getNextUpdByCaja(req: Request, res: Response): Promise<voi
   const last = await queryOne<{ upd: string | null }>(
     `SELECT upd FROM fuiddatosreal
      WHERE caja = ? AND upd IS NOT NULL AND upd <> ''
-     ORDER BY CAST(SUBSTRING(upd, 4) AS UNSIGNED) DESC
+     ORDER BY CAST(SUBSTRING(upd FROM 4) AS INTEGER) DESC
      LIMIT 1`,
     [cajaModulo],
   );
@@ -464,7 +464,7 @@ export async function createCajasSerie(req: Request, res: Response): Promise<voi
   const existing = await query<{ caja_modulo: string; id_modulo_caja: number }>(
     `SELECT caja_modulo, id_modulo_caja FROM modulos_caja
      WHERE caja_modulo LIKE CONCAT(?, '%')
-       AND CAST(SUBSTRING(caja_modulo, LENGTH(?) + 1) AS UNSIGNED) BETWEEN ? AND ?`,
+       AND CAST(SUBSTRING(caja_modulo FROM LENGTH(?) + 1) AS INTEGER) BETWEEN ? AND ?`,
     [prefijo, prefijo, ini, fin],
   );
   if (existing.length > 0) {
@@ -509,7 +509,7 @@ export async function createCajasSerie(req: Request, res: Response): Promise<voi
   if (tecnica.ids.length > 0 || calidad.ids.length > 0) {
     const creadas = await query<{ id: number }>(
       `SELECT id FROM modulos_caja
-       WHERE id_modulo_caja = ? AND CAST(SUBSTRING(caja_modulo, 5) AS UNSIGNED) BETWEEN ? AND ?`,
+       WHERE id_modulo_caja = ? AND CAST(SUBSTRING(caja_modulo FROM 5) AS INTEGER) BETWEEN ? AND ?`,
       [id_modulo_caja, ini, fin],
     );
     const cajaIds = creadas.map((c) => c.id);
@@ -634,7 +634,7 @@ export async function deleteModuloCaja(req: Request, res: Response): Promise<voi
   );
   const numeroCompartido = (otras?.total ?? 0) > 0;
 
-  const conn = await pool.getConnection();
+  const conn = await getConnection();
   let fuidsEliminados = 0;
   try {
     await conn.beginTransaction();

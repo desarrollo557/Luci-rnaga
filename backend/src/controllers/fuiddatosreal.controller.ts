@@ -1,6 +1,6 @@
 import type { Request, Response } from 'express';
 import mysql from 'mysql2/promise';
-import { pool, query, queryOne, queryResult } from '../config/db.js';
+import { getConnection, query, queryOne, queryResult } from '../config/db.js';
 import type { FuidDato } from '../types/db.js';
 import type { FuidCreateDto, FuidUpdateDto } from '../types/index.js';
 import { fuidValues, isSuggestionField } from '../services/fuid.service.js';
@@ -14,8 +14,8 @@ const fechaActual = (): string => fechaHoyLocal();
 
 /** Error de MySQL por violación de la restricción UNIQUE (backstop de consumo). */
 function isErDupEntry(error: unknown): boolean {
-  const e = error as { errno?: number; code?: string };
-  return e.errno === 1062 || e.code === 'ER_DUP_ENTRY';
+  // 23505 es unique_violation en PostgreSQL, el equivalente del 1062 de MySQL.
+  return (error as { code?: string }).code === '23505';
 }
 
 export async function listFuid(req: Request, res: Response): Promise<void> {
@@ -93,7 +93,7 @@ export async function checkCajaDuplicates(req: Request, res: Response): Promise<
     total: number;
     ids: string;
   }>(
-    `SELECT caja, COUNT(*) AS total, GROUP_CONCAT(id) AS ids
+    `SELECT caja, COUNT(*) AS total, string_agg(id::text, ',') AS ids
      FROM fuiddatosreal
      WHERE caja = ?
      GROUP BY caja, n_orden, codigo, entidad_productora
@@ -143,7 +143,7 @@ export async function createFuid(req: Request, res: Response): Promise<void> {
     }
   }
 
-  const conn = await pool.getConnection();
+  const conn = await getConnection();
   try {
     await conn.beginTransaction();
 
@@ -172,13 +172,14 @@ export async function createFuid(req: Request, res: Response): Promise<void> {
     if (user.rol === 'TECNICA' && body.caja && body.upd) {
       await conn.query(
         `UPDATE asignacion_caja_tecnica act
-         JOIN modulos_caja mc ON mc.id = act.modulo_id
-         SET act.ultimo_upd = CASE
-           WHEN act.ultimo_upd IS NULL OR CAST(SUBSTRING(?, 4) AS UNSIGNED) >= CAST(SUBSTRING(act.ultimo_upd, 4) AS UNSIGNED)
+         SET ultimo_upd = CASE
+           WHEN act.ultimo_upd IS NULL
+             OR CAST(SUBSTRING(? FROM 4) AS INTEGER) >= CAST(SUBSTRING(act.ultimo_upd FROM 4) AS INTEGER)
              THEN ?
            ELSE act.ultimo_upd
          END
-         WHERE act.usuario_id = ? AND mc.caja_modulo = ?`,
+         FROM modulos_caja mc
+         WHERE mc.id = act.modulo_id AND act.usuario_id = ? AND mc.caja_modulo = ?`,
         [body.upd, body.upd, user.id, body.caja],
       );
     }
@@ -274,13 +275,14 @@ export async function updateFuid(req: Request, res: Response): Promise<void> {
     if (user.rol === 'TECNICA' && body.caja && body.upd) {
       await query(
         `UPDATE asignacion_caja_tecnica act
-         JOIN modulos_caja mc ON mc.id = act.modulo_id
-         SET act.ultimo_upd = CASE
-           WHEN act.ultimo_upd IS NULL OR CAST(SUBSTRING(?, 4) AS UNSIGNED) >= CAST(SUBSTRING(act.ultimo_upd, 4) AS UNSIGNED)
+         SET ultimo_upd = CASE
+           WHEN act.ultimo_upd IS NULL
+             OR CAST(SUBSTRING(? FROM 4) AS INTEGER) >= CAST(SUBSTRING(act.ultimo_upd FROM 4) AS INTEGER)
              THEN ?
            ELSE act.ultimo_upd
          END
-         WHERE act.usuario_id = ? AND mc.caja_modulo = ?`,
+         FROM modulos_caja mc
+         WHERE mc.id = act.modulo_id AND act.usuario_id = ? AND mc.caja_modulo = ?`,
         [body.upd, body.upd, user.id, body.caja],
       );
     }
@@ -387,7 +389,7 @@ export async function marcarOk(req: Request, res: Response): Promise<void> {
   const cambioCalidad = `${nombre} (${cc})`;
   const sedeCalidad = sede;
 
-  const conn = await pool.getConnection();
+  const conn = await getConnection();
   try {
     await conn.beginTransaction();
 

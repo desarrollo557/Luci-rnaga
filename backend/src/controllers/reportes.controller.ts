@@ -167,7 +167,7 @@ export async function estadisticasProduccion(_req: Request, res: Response): Prom
     ),
     query<{ mes: string; total: number; aprobados: number }>(
       `SELECT mes, total, aprobados FROM (
-         SELECT DATE_FORMAT(f.fecha_del_dato, '%Y-%m') AS mes,
+         SELECT to_char(f.fecha_del_dato, 'YYYY-MM') AS mes,
                 COUNT(*) AS total,
                 SUM(CASE WHEN f.historial_y_cambios = 'OK' THEN 1 ELSE 0 END) AS aprobados
          FROM fuiddatosreal f
@@ -236,7 +236,7 @@ export async function estadisticasProduccion(_req: Request, res: Response): Prom
     ),
     query<{ dia: string; total: number }>(
       `SELECT dia, total FROM (
-         SELECT DATE_FORMAT(fecha_cambio, '%Y-%m-%d') AS dia, COUNT(*) AS total
+         SELECT to_char(fecha_cambio, 'YYYY-MM-DD') AS dia, COUNT(*) AS total
          FROM historial
          WHERE fecha_cambio IS NOT NULL
          GROUP BY dia
