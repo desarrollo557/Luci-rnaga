@@ -79,9 +79,9 @@ export async function getNextCajaNumero(req: Request, res: Response): Promise<vo
   const prefijoNormalizado = `${base.padStart(3, '0')}C`;
 
   const row = await queryOne<{ max_num: number | null }>(
-    `SELECT MAX(CAST(SUBSTRING(caja_modulo FROM LENGTH(?) + 1) AS INTEGER)) AS max_num
+    `SELECT MAX(CAST(SUBSTRING(caja_modulo FROM LENGTH(CAST(? AS text)) + 1) AS INTEGER)) AS max_num
      FROM modulos_caja
-     WHERE caja_modulo LIKE CONCAT(?, '%')`,
+     WHERE caja_modulo LIKE CAST(? AS text) || '%'`,
     [prefijoNormalizado, prefijoNormalizado],
   );
 
@@ -463,8 +463,8 @@ export async function createCajasSerie(req: Request, res: Response): Promise<voi
   // por ese código), así que no puede repetirse.
   const existing = await query<{ caja_modulo: string; id_modulo_caja: number }>(
     `SELECT caja_modulo, id_modulo_caja FROM modulos_caja
-     WHERE caja_modulo LIKE CONCAT(?, '%')
-       AND CAST(SUBSTRING(caja_modulo FROM LENGTH(?) + 1) AS INTEGER) BETWEEN ? AND ?`,
+     WHERE caja_modulo LIKE CAST(? AS text) || '%'
+       AND CAST(SUBSTRING(caja_modulo FROM LENGTH(CAST(? AS text)) + 1) AS INTEGER) BETWEEN ? AND ?`,
     [prefijo, prefijo, ini, fin],
   );
   if (existing.length > 0) {
