@@ -25,7 +25,12 @@ services:
     # palabra y volver a desplegar.
     plan: free
     branch: production
-    buildCommand: npm --prefix frontend install && npm --prefix frontend run build && npm --prefix backend install && npm --prefix backend run build
+    # `--include=dev` es imprescindible: NODE_ENV=production hace que npm omita
+    # las devDependencies, y ahí viven Vite, TypeScript y los tipos de React.
+    # Sin ellas el build falla con "Cannot find type definition file for
+    # 'vite/client'", y `tsc` acaba resolviéndose desde el paquete raíz, que
+    # trae otra versión del compilador.
+    buildCommand: npm --prefix frontend install --include=dev && npm --prefix frontend run build && npm --prefix backend install --include=dev && npm --prefix backend run build
     startCommand: node backend/dist/server.js
     healthCheckPath: /api/health
     envVars:
