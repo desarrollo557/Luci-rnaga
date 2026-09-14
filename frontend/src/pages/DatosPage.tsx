@@ -24,6 +24,7 @@ import { cn } from '@/lib/cn';
 import { toastApiError } from '@/lib/feedback';
 import { invalidateDomain } from '@/lib/queryInvalidation';
 import { fechaHoyISO } from '@/lib/utils';
+import { FECHA_MINIMA_DOCUMENTAL, dateInRange, dateOrderValid, fechaHoyLocal } from '@/lib/validation';
 import { useAuthStore } from '@/stores/authStore';
 import {
   SUGGESTION_FIELDS,
@@ -478,11 +479,29 @@ function FuidFormModal({ open, cajaId, editing, defaultNOrden, defaultTomo, caja
 
   const isSaving = createMutation.isPending || updateMutation.isPending;
 
-  // Sin validación en el cliente: se envía tal cual y el servidor responde si
-  // falta la caja o el UPD. Menos pasos entre un registro y el siguiente.
+  /**
+   * Las dos fechas son lo único que se valida en el cliente: el resto se envía
+   * tal cual y el servidor responde, para no meter pasos entre un registro y el
+   * siguiente. Se calcula al vuelo en lugar de al enviar, para que el aviso
+   * aparezca mientras se escribe y no después de intentar guardar.
+   */
+  const errorFechaInicial = dateInRange(form.fecha_inicial, 'La fecha inicial');
+  const errorFechaFinal =
+    dateInRange(form.fecha_final, 'La fecha final') ??
+    dateOrderValid(form.fecha_inicial, form.fecha_final);
+  const hayErrorDeFecha = Boolean(errorFechaInicial || errorFechaFinal);
+
+  const hoy = fechaHoyLocal();
+
+  // El submit se bloquea, pero el formulario no se toca: lo escrito sigue ahí
+  // para que la persona corrija solo la fecha.
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (isSaving) return;
+    if (hayErrorDeFecha) {
+      toast.error(errorFechaInicial ?? errorFechaFinal ?? 'Revise las fechas del registro');
+      return;
+    }
     const payload = buildPayload(form, editing);
     if (editing) updateMutation.mutate({ id: editing.id, data: payload });
     else createMutation.mutate(payload);
@@ -501,7 +520,7 @@ function FuidFormModal({ open, cajaId, editing, defaultNOrden, defaultTomo, caja
           <Button variant="ghost" onClick={onClose} disabled={isSaving}>
             Cancelar
           </Button>
-          <Button type="submit" form="fuid-form" loading={isSaving} disabled={isSaving}>
+          <Button type="submit" form="fuid-form" loading={isSaving} disabled={isSaving || hayErrorDeFecha}>
             Enviar
           </Button>
         </>
@@ -619,9 +638,25 @@ function FuidFormModal({ open, cajaId, editing, defaultNOrden, defaultTomo, caja
           value={form.numero_doc_hasta}
           onChange={updateField('numero_doc_hasta')}
         />
-        <Input label="Fecha Inicial" type="date" value={form.fecha_inicial} onChange={setField('fecha_inicial')} />
+        <Input
+          label="Fecha Inicial"
+          type="date"
+          value={form.fecha_inicial}
+          onChange={setField('fecha_inicial')}
+          min={FECHA_MINIMA_DOCUMENTAL}
+          max={hoy}
+          error={errorFechaInicial ?? undefined}
+        />
 
-        <Input label="Fecha Final" type="date" value={form.fecha_final} onChange={setField('fecha_final')} />
+        <Input
+          label="Fecha Final"
+          type="date"
+          value={form.fecha_final}
+          onChange={setField('fecha_final')}
+          min={form.fecha_inicial || FECHA_MINIMA_DOCUMENTAL}
+          max={hoy}
+          error={errorFechaFinal ?? undefined}
+        />
         <UpdInput
           label="UPD"
           value={updANumero(form.upd)}
