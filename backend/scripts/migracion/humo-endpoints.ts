@@ -58,7 +58,12 @@ async function main(): Promise<void> {
   // contra cualquier base sin tener que fijar identificadores a mano.
   const clientes = await pedir('/api/sub_modulos', lider);
   const actas = await pedir('/api/moduloscliente', lider);
-  const cajas = await pedir('/api/modulos_caja', lider);
+
+  // El listado de cajas exige el acta a la que pertenecen, así que se pide con
+  // la primera que haya: sin esto no habría forma de descubrir una caja y media
+  // docena de rutas se quedaban sin probar.
+  const idActaPrevio = primerId(actas.cuerpo);
+  const cajas = await pedir(`/api/modulos_caja?id_modulo_caja=${idActaPrevio}`, lider);
   const fuids = await pedir('/api/fuiddatosreal', lider);
   const inventarios = await pedir('/api/inventario', lider);
 
