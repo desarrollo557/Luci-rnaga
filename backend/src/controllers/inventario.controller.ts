@@ -109,11 +109,20 @@ const FUID_QUERY_FILTRADO = `${FUID_BASE_SELECT}${FUID_WHERE_FILTRO} ORDER BY f.
 
 const FUID_COUNT_QUERY_FILTRADO = `${FUID_COUNT_QUERY}${FUID_WHERE_FILTRO}`;
 
+/**
+ * Totales del inventario de un cliente.
+ *
+ * `folios` es una columna de texto porque admite el marcador N/A, así que solo
+ * se suman los valores que son un número. MySQL hacía esa conversión por su
+ * cuenta; PostgreSQL no suma texto y la consulta entera fallaba con
+ * "function sum(character varying) does not exist", que es lo que dejaba en 500
+ * la vista de un inventario con sus registros.
+ */
 const FUID_STATS_QUERY = `
   SELECT COUNT(*) AS total_filas,
          COUNT(DISTINCT caja) AS total_cajas,
          COUNT(DISTINCT upd) AS total_upds,
-         COALESCE(SUM(folios), 0) AS total_folios,
+         COALESCE(SUM(CASE WHEN folios ~ '^[0-9]+$' THEN folios::numeric ELSE 0 END), 0) AS total_folios,
          MIN(fecha_inicial) AS fecha_inicial_min,
          MAX(fecha_final) AS fecha_final_max
   FROM fuiddatosreal f
@@ -338,8 +347,10 @@ export async function createInventario(req: Request, res: Response): Promise<voi
   const placeholders = [...values.map(() => '?'), 'NOW()', '?'].join(', ');
 
   const result = await queryResult(
+    // La clave de esta tabla es "ITEMS", no `id`: hay que pedirla por su nombre
+    // o no habría forma de recuperar el registro recién insertado.
     `INSERT INTO inventario (${FIELDS.map(comillas).join(', ')}, "FECHA_ACTUALIZACION", "USUARIO_ACTUALIZACION")
-     VALUES (${placeholders})`,
+     VALUES (${placeholders}) RETURNING "ITEMS"`,
     valuesConAuditoria,
   );
   const row = await queryOne<Inventario>('SELECT * FROM inventario WHERE "ITEMS" = ?', [result.insertId]);
