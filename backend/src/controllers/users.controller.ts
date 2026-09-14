@@ -1,6 +1,7 @@
 import type { Request, Response } from 'express';
 import bcrypt from 'bcryptjs';
 import { query, queryOne, queryResult } from '../config/db.js';
+import { audit } from '../services/audit.service.js';
 import type { User } from '../types/db.js';
 import type { CreateUserDto, UpdateUserDto } from '../types/index.js';
 
@@ -70,11 +71,45 @@ export async function updateUser(req: Request, res: Response): Promise<void> {
 
 export async function deleteUser(req: Request, res: Response): Promise<void> {
   const { id } = req.params;
+  const actual = req.session.user;
+
+  if (actual && Number(id) === Number(actual.id)) {
+    res.status(409).json({ message: 'No puede eliminar su propio usuario' });
+    return;
+  }
+
+  const objetivo = await queryOne<Pick<User, 'id' | 'nombre' | 'rol'>>(
+    'SELECT id, nombre, rol FROM users WHERE id = ?',
+    [id],
+  );
+  if (!objetivo) {
+    res.status(404).json({ message: 'Usuario no encontrado' });
+    return;
+  }
+
+  // Siempre debe quedar al menos un administrador para gestionar el sistema.
+  if (objetivo.rol === 'ADMIN') {
+    const [admins] = await query<{ total: number }>("SELECT COUNT(*) AS total FROM users WHERE rol = 'ADMIN'");
+    if ((admins?.total ?? 0) <= 1) {
+      res.status(409).json({ message: 'No se puede eliminar el único administrador del sistema' });
+      return;
+    }
+  }
+
+  // Las asignaciones a cajas se eliminan en cascada (FK). Los FUID que digitó se
+  // conservan porque guardan al autor como texto.
   const result = await queryResult('DELETE FROM users WHERE id = ?', [id]);
   if (result.affectedRows === 0) {
     res.status(404).json({ message: 'Usuario no encontrado' });
     return;
   }
+  void audit({
+    entidad: 'users',
+    entidadId: id,
+    accion: 'ELIMINAR',
+    detalle: `Usuario ${objetivo.nombre} (${objetivo.rol})`,
+    usuario: actual,
+  });
   res.send('Usuario eliminado');
 }
 

@@ -5,6 +5,26 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <link rel="icon" type="image/png" href="/images/siar.png" />
     <title>Luci Hosting</title>
+    <meta name="color-scheme" content="light dark" />
+    <script>
+      /*
+        Aplica el tema guardado antes de que React monte. Sin esto, la primera
+        pintura sería siempre clara y el modo oscuro entraría con un destello
+        blanco. La clave debe coincidir con STORAGE_KEY de src/stores/themeStore.ts.
+      */
+      (function () {
+        try {
+          var modo = localStorage.getItem("luci-theme") || "system";
+          var oscuro =
+            modo === "dark" ||
+            (modo === "system" && window.matchMedia("(prefers-color-scheme: dark)").matches);
+          document.documentElement.classList.toggle("dark", oscuro);
+          document.documentElement.style.colorScheme = oscuro ? "dark" : "light";
+        } catch (e) {
+          /* almacenamiento bloqueado: se queda en tema claro */
+        }
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

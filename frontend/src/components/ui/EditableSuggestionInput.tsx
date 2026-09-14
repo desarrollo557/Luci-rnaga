@@ -45,7 +45,7 @@ function SimpleSuggestionInput({
         readOnly={readOnly}
         placeholder={placeholder}
         list={`sug-${campo}`}
-        className="w-full rounded border border-silver-300 bg-white px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500 disabled:bg-silver-50 disabled:cursor-not-allowed readOnly:bg-silver-50 readOnly:cursor-not-allowed"
+        className="w-full rounded border border-silver-300 bg-surface px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500 disabled:bg-surface-muted disabled:cursor-not-allowed read-only:bg-surface-muted read-only:cursor-not-allowed"
       />
       <datalist id={`sug-${campo}`}>
         {suggestions.map((suggestion) => (

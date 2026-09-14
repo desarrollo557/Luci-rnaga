@@ -74,7 +74,7 @@ export const EditableInput = forwardRef<HTMLInputElement, EditableInputProps>(
           hint={hint}
           className={cn(
             'transition-colors',
-            unlocked ? '' : 'bg-silver-50 cursor-not-allowed',
+            unlocked ? '' : 'bg-surface-muted cursor-not-allowed',
             className
           )}
           aria-describedby={`${hint ? hintId : ''} ${error ? errorId : ''}`.trim() || undefined}

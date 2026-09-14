@@ -29,7 +29,9 @@ import {
 } from '@/components/ui';
 import { cn } from '@/lib/cn';
 import { usersApi, type UserInput } from '@/lib/api';
+import { toastApiError } from '@/lib/feedback';
 import { invalidateDomain } from '@/lib/queryInvalidation';
+import { sedeOptionsCon } from '@/lib/sedes';
 import { createValidator, minLength, onlyDigits } from '@/lib/validation';
 import type { Role, User } from '@/types';
 import { ROLES } from '@/types';
@@ -49,13 +51,11 @@ const ROLE_LABEL: Record<Role, string> = {
 };
 
 const ROLE_AVATAR: Record<Role, string> = {
-  ADMIN: 'bg-red-600',
-  LIDER: 'bg-amber-500',
-  TECNICA: 'bg-silver-500',
-  CALIDAD: 'bg-emerald-600',
+  ADMIN: 'bg-solid-brand',
+  LIDER: 'bg-solid-amber',
+  TECNICA: 'bg-solid-slate',
+  CALIDAD: 'bg-solid-emerald',
 };
-
-const SEDES = ['Barranquilla', 'Bogotá', 'Medellín', 'Cali'];
 
 const EMPTY_FORM: UserInput = {
   cc: '',
@@ -131,6 +131,9 @@ export default function AdminPage() {
       toast.success('Usuario eliminado');
       setDeleteTarget(null);
       void invalidateDomain(queryClient, 'users');
+    },
+    onError: (error) => {
+      toastApiError(error, { context: 'No se pudo eliminar el usuario:' });
     },
   });
 
@@ -358,7 +361,7 @@ export default function AdminPage() {
         ))}
       </div>
 
-      <div className="flex flex-col gap-4 rounded-xl border border-silver-200 bg-white p-4 shadow-sm lg:flex-row lg:items-end">
+      <div className="flex flex-col gap-4 rounded-xl border border-silver-200 bg-surface p-4 shadow-sm lg:flex-row lg:items-end">
         <div className="relative flex-1">
           <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-silver-400" />
           <Input
@@ -449,7 +452,7 @@ export default function AdminPage() {
           />
           <Select
             label="Sede"
-            options={SEDES.map((sede) => ({ value: sede, label: sede }))}
+            options={sedeOptionsCon(form.sede)}
             value={form.sede}
             onChange={(value) => setForm({ ...form, sede: value })}
             placeholder="Seleccione una sede"

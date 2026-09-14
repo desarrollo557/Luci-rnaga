@@ -1,9 +1,10 @@
+import fs from 'node:fs';
 import type { Request, Response } from 'express';
-import { generarPlantilla } from '../services/plantilla.service.js';
+import { generarPlantilla, type PlantillaFiltros } from '../services/plantilla.service.js';
 
 export async function generatePlantilla(req: Request, res: Response): Promise<void> {
   try {
-    const { fileName, filtros } = req.body as { fileName: string; filtros: { caja?: string; entidad_remitente?: string } };
+    const { fileName, filtros } = req.body as { fileName: string; filtros: PlantillaFiltros };
     if (!fileName) {
       res.status(400).json({ error: 'El campo fileName es requerido' });
       return;
@@ -14,6 +15,11 @@ export async function generatePlantilla(req: Request, res: Response): Promise<vo
         console.error('Error al enviar el archivo:', err);
         res.status(500).json({ error: 'Error interno del servidor.' });
       }
+      // El archivo ya viajó al cliente: se retira para que /temp no crezca sin
+      // control con una copia por cada descarga.
+      fs.unlink(outputPath, (unlinkErr) => {
+        if (unlinkErr) console.error('No se pudo borrar el temporal:', unlinkErr.message);
+      });
     });
     console.log(`Plantilla generada: ${outputPath} (${count} filas)`);
   } catch (error) {

@@ -172,7 +172,7 @@ export const DatePicker = function DatePicker({
           aria-invalid={error ? true : undefined}
           aria-required={required || undefined}
           className={cn(
-            'flex h-10 w-full items-center justify-between gap-2 rounded-lg border border-silver-300 bg-white px-3 text-sm text-silver-800 shadow-sm transition-all duration-200 ease-in-out hover:border-silver-400 hover:shadow focus:border-primary-500 focus:outline-none focus:ring-4 focus:ring-primary-500/15 disabled:cursor-not-allowed disabled:bg-silver-50 disabled:hover:border-silver-300 disabled:hover:shadow-none',
+            'flex h-10 w-full items-center justify-between gap-2 rounded-lg border border-silver-300 bg-surface px-3 text-sm text-silver-800 shadow-sm transition-all duration-200 ease-in-out hover:border-silver-400 hover:shadow focus:border-primary-500 focus:outline-none focus:ring-4 focus:ring-primary-500/15 disabled:cursor-not-allowed disabled:bg-surface-muted disabled:hover:border-silver-300 disabled:hover:shadow-none',
             error && 'border-red-400 focus:border-red-500 focus:ring-red-500/15',
           )}
         >
@@ -188,7 +188,7 @@ export const DatePicker = function DatePicker({
             <div
               ref={popoverRef}
               style={{ position: 'fixed', top: position.top, left: position.left, zIndex: 60 }}
-              className="w-72 rounded-xl border border-silver-200 bg-white p-4 shadow-2xl ring-1 ring-silver-900/5 animate-[modal-panel-in_0.2s_ease-out]"
+              className="w-72 rounded-xl border border-silver-200 bg-surface p-4 shadow-2xl ring-1 ring-silver-900/5 animate-[modal-panel-in_0.2s_ease-out]"
             >
             <div className="mb-2 flex items-center justify-between">
               <button
@@ -236,9 +236,9 @@ export const DatePicker = function DatePicker({
                     className={cn(
                       'flex size-8 items-center justify-center rounded-lg text-sm transition-colors duration-150',
                       cell.iso === value
-                        ? 'bg-primary-600 text-white hover:bg-primary-600'
+                        ? 'bg-brand text-white hover:bg-brand'
                         : dayDisabled
-                          ? 'cursor-not-allowed text-silver-300'
+                          ? 'cursor-not-allowed text-silver-400'
                           : 'text-silver-800 hover:bg-primary-50 hover:text-primary-700',
                       cell.iso === todayISO && cell.iso !== value && !dayDisabled && 'ring-1 ring-primary-500',
                     )}

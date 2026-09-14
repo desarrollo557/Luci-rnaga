@@ -5,13 +5,17 @@
   "description": "Sistema FUID Luciérnaga - Monorepo (backend API + frontend React)",
   "scripts": {
     "dev": "concurrently -n backend,frontend -c blue,magenta \"npm:dev:backend\" \"npm:dev:frontend\"",
+    "dev:legacy": "concurrently -n backend,frontend -c blue,magenta \"npm:dev:backend\" \"npm:dev:frontend\"",
     "dev:backend": "npm --prefix backend run dev",
     "dev:frontend": "npm --prefix frontend run dev",
+    "ports:check": "tsx scripts/port-checker.ts",
     "build": "npm --prefix frontend run build",
     "start": "npm --prefix backend run start",
     "typecheck": "npm --prefix backend run typecheck && npm --prefix frontend run typecheck"
   },
   "devDependencies": {
-    "concurrently": "^9.1.0"
+    "@types/node": "^22.10.0",
+    "concurrently": "^9.1.0",
+    "tsx": "^4.19.2"
   }
 }
