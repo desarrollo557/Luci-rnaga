@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { ExternalLink, Eye, Pencil, Plus, RefreshCw, RotateCcw, Search, Trash2 } from 'lucide-react';
+import { Download, ExternalLink, Eye, Pencil, Plus, RefreshCw, RotateCcw, Search, Trash2 } from 'lucide-react';
 import { Badge, Button, ConfirmDialog, DatePicker, Input, Modal, PageHeader, Select, Table, type Column } from '@/components/ui';
 import { inventarioApi } from '@/lib/api';
 import { toastApiError } from '@/lib/feedback';
 import { cn } from '@/lib/cn';
+import { descargarBlob } from '@/lib/utils';
 import { invalidateDomain } from '@/lib/queryInvalidation';
 import type { DataRow, FuidConEstado, Inventario } from '@/types';
 import { useAuthStore } from '@/stores/authStore';
@@ -361,6 +362,41 @@ export default function InventarioPage() {
     },
   });
 
+  /**
+   * Descarga del inventario en Excel.
+   *
+   * El servidor responde con el archivo, pero también puede responder con un
+   * error en JSON —por ejemplo si el cliente todavía no tiene registros—; como
+   * la petición pide un blob, ese mensaje llega como blob y hay que leerlo para
+   * poder mostrarlo.
+   */
+  const [descargando, setDescargando] = useState<number | null>(null);
+
+  const descargarInventario = async (row: Inventario) => {
+    setDescargando(row.ITEMS);
+    try {
+      const respuesta = await inventarioApi.descargarExcel(row.ITEMS);
+      const nombre = `Inventario_${String(row.CLIENTE ?? row.CODIGO_DEL_CLIENTE ?? 'cliente')
+        .replace(/[^A-Za-z0-9]+/g, '_')}_${new Date().toISOString().slice(0, 10)}.xlsx`;
+      descargarBlob(respuesta.data as Blob, nombre);
+      toast.success('Inventario descargado');
+    } catch (error) {
+      const datos = (error as { response?: { data?: unknown } }).response?.data;
+      if (datos instanceof Blob) {
+        try {
+          const { error: mensaje } = JSON.parse(await datos.text()) as { error?: string };
+          toast.error(mensaje ?? 'No se pudo descargar el inventario');
+          return;
+        } catch {
+          // No era JSON: cae al aviso genérico de abajo.
+        }
+      }
+      toastApiError(error, { context: 'No se pudo descargar el inventario:' });
+    } finally {
+      setDescargando(null);
+    }
+  };
+
   const retryMutation = useMutation({
     mutationFn: (id: number) => inventarioApi.sync(id),
     onSuccess: async (resp) => {
@@ -506,6 +542,16 @@ export default function InventarioPage() {
             aria-label="Ver FUID"
           >
             <Eye className="size-4" />
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => void descargarInventario(row)}
+            loading={descargando === row.ITEMS}
+            aria-label="Descargar inventario en Excel"
+            title="Descargar en Excel"
+          >
+            <Download className="size-4" />
           </Button>
           {canEdit && (
             <>

@@ -12,6 +12,7 @@ import {
   syncInventarioController,
   listClientesParaInventario,
   getClienteParaInventario,
+  descargarInventarioExcel,
 } from '../controllers/inventario.controller.js';
 
 const router = Router();
@@ -22,6 +23,7 @@ router.get('/inventario/clientes', isAuthenticated, isLiderOrAdmin, asyncHandler
 router.get('/inventario/clientes/:codigo', isAuthenticated, isLiderOrAdmin, asyncHandler(getClienteParaInventario));
 router.get('/inventario/:id/fuid', isAuthenticated, isLiderOrAdmin, asyncHandler(getInventarioFuid));
 router.get('/inventario/:id', isAuthenticated, isLiderOrAdmin, asyncHandler(getInventario));
+router.get('/inventario/:id/excel', isAuthenticated, isLiderOrAdmin, asyncHandler(descargarInventarioExcel));
 router.post('/inventario', isAuthenticated, isLiderOrAdmin, asyncHandler(createInventario));
 router.put('/inventario/:id', isAuthenticated, isLiderOrAdmin, asyncHandler(updateInventario));
 router.delete('/inventario/:id', isAuthenticated, isLiderOrAdmin, asyncHandler(deleteInventario));
