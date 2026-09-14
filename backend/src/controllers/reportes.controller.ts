@@ -97,15 +97,30 @@ export interface EstadisticasProduccion {
   promedio_fuids_por_caja: number;
   total_modulos_cliente: number;
   total_usuarios: number;
+  /** Actas de transferencia registradas (filas de moduloscliente). */
   total_actas: number;
+  /** Clientes registrados (filas de sub_modulos). */
+  total_clientes: number;
   por_estado_caja: Array<{ estado: string; total: number }>;
   fuids_por_mes: Array<{ mes: string; total: number; aprobados: number }>;
   fuids_por_sede: Array<{ sede: string; total: number }>;
-  top_digitadores: Array<{ nombre: string; total: number; aprobados: number }>;
+  /** Todos los digitadores con registros, sin límite; rol y sede solo si existen como usuario. */
+  digitadores: Array<{
+    nombre: string;
+    cc: string | null;
+    rol: string | null;
+    sede: string | null;
+    total: number;
+    aprobados: number;
+    cajas: number;
+    ultimo_registro: string | null;
+  }>;
   usuarios_por_rol: Array<{ rol: string; total: number }>;
   cajas_por_estado: Array<{ estado: string; total: number }>;
-  avance_por_submodulo: Array<{ submodulo: string; total: number; aprobados: number }>;
+  avance_por_submodulo: Array<{ submodulo: string; entidad: string; total: number; aprobados: number }>;
   actividad_reciente: Array<{ dia: string; total: number }>;
+  /** Momento en que se calcularon las cifras (ISO). */
+  generado_en: string;
 }
 
 /** Resumen agregado del negocio: todos los conteos se calculan con SQL real. */
@@ -122,20 +137,24 @@ export async function estadisticasProduccion(_req: Request, res: Response): Prom
     porEstadoCaja,
     fuidsPorMes,
     fuidsPorSede,
-    topDigitadores,
+    digitadores,
     usuariosPorRol,
     cajasPorEstado,
     avancePorSubmodulo,
     actividadReciente,
     totalActas,
+    totalClientes,
   ] = await Promise.all([
     query<{ n: number }>('SELECT COUNT(*) AS n FROM fuiddatosreal'),
     query<{ n: number }>('SELECT COUNT(*) AS n FROM modulos_caja'),
     query<{ n: number }>("SELECT COUNT(*) AS n FROM modulos_caja WHERE estado_caja = 'EN PROCESO'"),
     query<{ n: number }>("SELECT COUNT(*) AS n FROM modulos_caja WHERE estado_caja = 'FINALIZADO'"),
     query<{ n: number }>("SELECT COUNT(*) AS n FROM fuiddatosreal WHERE historial_y_cambios = 'OK'"),
+    // Cajas registradas que tienen al menos un FUID (se cuenta sobre modulos_caja,
+    // no sobre los códigos distintos de fuiddatosreal, para que cuadre con total_cajas).
     query<{ n: number }>(
-      "SELECT COUNT(DISTINCT caja) AS n FROM fuiddatosreal WHERE caja IS NOT NULL AND caja <> ''",
+      `SELECT COUNT(*) AS n FROM modulos_caja mc
+       WHERE EXISTS (SELECT 1 FROM fuiddatosreal f WHERE f.caja = mc.caja_modulo)`,
     ),
     query<{ n: number }>('SELECT COUNT(*) AS n FROM moduloscliente'),
     query<{ n: number }>('SELECT COUNT(*) AS n FROM users'),
@@ -167,15 +186,31 @@ export async function estadisticasProduccion(_req: Request, res: Response): Prom
        GROUP BY sede
        ORDER BY total DESC`,
     ),
-    query<{ nombre: string; total: number; aprobados: number }>(
-      `SELECT elaborado_por AS nombre,
+    // Todos los digitadores (elaborado_por tiene el formato "NOMBRE (CC)"); se cruza
+    // con users por la cédula para traer rol y sede cuando la persona sigue registrada.
+    query<{
+      nombre: string;
+      cc: string | null;
+      rol: string | null;
+      sede: string | null;
+      total: number;
+      aprobados: number;
+      cajas: number;
+      ultimo_registro: string | null;
+    }>(
+      `SELECT f.elaborado_por AS nombre,
+              SUBSTRING_INDEX(SUBSTRING_INDEX(f.elaborado_por, '(', -1), ')', 1) AS cc,
+              MAX(u.rol) AS rol,
+              MAX(u.sede) AS sede,
               COUNT(*) AS total,
-              SUM(CASE WHEN historial_y_cambios = 'OK' THEN 1 ELSE 0 END) AS aprobados
-       FROM fuiddatosreal
-       WHERE elaborado_por IS NOT NULL AND elaborado_por <> ''
-       GROUP BY elaborado_por
-       ORDER BY total DESC
-       LIMIT 8`,
+              SUM(CASE WHEN f.historial_y_cambios = 'OK' THEN 1 ELSE 0 END) AS aprobados,
+              COUNT(DISTINCT f.caja) AS cajas,
+              MAX(f.fecha_del_dato) AS ultimo_registro
+       FROM fuiddatosreal f
+       LEFT JOIN users u ON u.cc = SUBSTRING_INDEX(SUBSTRING_INDEX(f.elaborado_por, '(', -1), ')', 1)
+       WHERE f.elaborado_por IS NOT NULL AND f.elaborado_por <> ''
+       GROUP BY f.elaborado_por
+       ORDER BY total DESC`,
     ),
     query<{ rol: string; total: number }>(
       `SELECT rol, COUNT(*) AS total FROM users GROUP BY rol ORDER BY total DESC`,
@@ -186,15 +221,16 @@ export async function estadisticasProduccion(_req: Request, res: Response): Prom
        GROUP BY estado
        ORDER BY total DESC`,
     ),
-    query<{ submodulo: string; total: number; aprobados: number }>(
+    query<{ submodulo: string; entidad: string; total: number; aprobados: number }>(
       `SELECT sm.codigo AS submodulo,
+              sm.entidad_remitente AS entidad,
               COUNT(f.id) AS total,
               SUM(CASE WHEN f.historial_y_cambios = 'OK' THEN 1 ELSE 0 END) AS aprobados
        FROM sub_modulos sm
        JOIN moduloscliente mcl ON mcl.id_submodulo = sm.id
        JOIN modulos_caja mc ON mc.id_modulo_caja = mcl.id
        JOIN fuiddatosreal f ON f.caja = mc.caja_modulo
-       GROUP BY sm.id, sm.codigo
+       GROUP BY sm.id, sm.codigo, sm.entidad_remitente
        ORDER BY total DESC
        LIMIT 8`,
     ),
@@ -209,9 +245,10 @@ export async function estadisticasProduccion(_req: Request, res: Response): Prom
        ) AS ultimos
        ORDER BY dia ASC`,
     ),
-    query<{ n: number }>(
-      "SELECT COUNT(DISTINCT nro_acta_transferible) AS n FROM fuiddatosreal WHERE nro_acta_transferible IS NOT NULL AND nro_acta_transferible <> ''",
-    ),
+    // Actas y clientes registrados de verdad (antes se contaban números de acta
+    // escritos a mano en los FUID, que no coinciden con las actas creadas).
+    query<{ n: number }>('SELECT COUNT(*) AS n FROM moduloscliente'),
+    query<{ n: number }>('SELECT COUNT(*) AS n FROM sub_modulos'),
   ]);
 
   const num = (v: unknown): number => Number(v ?? 0);
@@ -239,19 +276,27 @@ export async function estadisticasProduccion(_req: Request, res: Response): Prom
       aprobados: num(r.aprobados),
     })),
     fuids_por_sede: fuidsPorSede.map((r) => ({ sede: r.sede, total: num(r.total) })),
-    top_digitadores: topDigitadores.map((r) => ({
+    digitadores: digitadores.map((r) => ({
       nombre: r.nombre,
+      cc: r.cc && r.cc !== r.nombre ? r.cc : null,
+      rol: r.rol ?? null,
+      sede: r.sede ?? null,
       total: num(r.total),
       aprobados: num(r.aprobados),
+      cajas: num(r.cajas),
+      ultimo_registro: r.ultimo_registro ?? null,
     })),
     usuarios_por_rol: usuariosPorRol.map((r) => ({ rol: r.rol, total: num(r.total) })),
     total_actas: Number(totalActas[0]?.n ?? 0),
+    total_clientes: Number(totalClientes[0]?.n ?? 0),
     cajas_por_estado: cajasPorEstado.map((r) => ({ estado: r.estado, total: num(r.total) })),
     avance_por_submodulo: avancePorSubmodulo.map((r) => ({
       submodulo: r.submodulo,
+      entidad: (r.entidad ?? '').trim(),
       total: num(r.total),
       aprobados: num(r.aprobados),
     })),
     actividad_reciente: actividadReciente.map((r) => ({ dia: r.dia, total: num(r.total) })),
+    generado_en: new Date().toISOString(),
   } satisfies EstadisticasProduccion);
 }

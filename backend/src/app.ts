@@ -8,6 +8,7 @@ import session from 'express-session';
 import rateLimit from 'express-rate-limit';
 import apiRoutes from './routes/index.js';
 import { notFoundHandler, errorHandler } from './middlewares/errorHandler.js';
+import { cuerpoEnMayusculas } from './middlewares/mayusculas.js';
 import {
   DEFAULT_CORS_ORIGIN,
   DEFAULT_FRONTEND_DIST,
@@ -51,6 +52,8 @@ app.use(
   }),
 );
 app.use(express.json());
+// Todo lo que se guarda en el software va en MAYÚSCULAS (salvo contraseñas).
+app.use(cuerpoEnMayusculas);
 
 app.use(
   session({

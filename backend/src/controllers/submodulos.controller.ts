@@ -1,5 +1,7 @@
 import type { Request, Response } from 'express';
-import { query } from '../config/db.js';
+import { query, queryOne } from '../config/db.js';
+import { audit } from '../services/audit.service.js';
+import { fueraDeSuSede } from '../services/jerarquia.service.js';
 import type { SubModulo } from '../types/db.js';
 
 export async function listSubModulos(req: Request, res: Response): Promise<void> {
@@ -16,20 +18,18 @@ export async function listSubModulos(req: Request, res: Response): Promise<void>
   if (rol === 'LIDER' || rol === 'ADMIN') {
     sql = 'SELECT * FROM sub_modulos WHERE sede_submodulos = ?';
     params.push(sede);
-  } else if (rol === 'TECNICA') {
-    // Los submódulos visibles derivan de los módulos cliente asignados al usuario
-    // (modulo_tecnica -> moduloscliente.id_submodulo -> sub_modulos.id).
-    sql = `SELECT DISTINCT sm.* FROM sub_modulos sm
-      JOIN moduloscliente m ON m.id_submodulo = sm.id
-      JOIN modulo_tecnica mt ON mt.modulo_id = m.id
-      WHERE mt.usuario_id = ? AND sm.sede_submodulos = ?`;
-    params.push(id, sede);
-  } else if (rol === 'CALIDAD') {
-    sql = `SELECT DISTINCT sm.* FROM sub_modulos sm
-      JOIN moduloscliente m ON m.id_submodulo = sm.id
-      JOIN modulo_calidad mc ON mc.modulo_id = m.id
-      WHERE mc.usuario_id = ? AND sm.sede_submodulos = ?`;
-    params.push(id, sede);
+  } else if (rol === 'TECNICA' || rol === 'CALIDAD') {
+    // Los clientes visibles derivan de las cajas asignadas al usuario
+    // (asignacion_caja_* -> modulos_caja -> moduloscliente -> sub_modulos).
+    const tablaAsignacion = rol === 'CALIDAD' ? 'asignacion_caja_calidad' : 'asignacion_caja_tecnica';
+    sql = `SELECT sm.* FROM sub_modulos sm
+      WHERE sm.sede_submodulos = ? AND EXISTS (
+        SELECT 1 FROM moduloscliente m
+        JOIN modulos_caja mc ON mc.id_modulo_caja = m.id
+        JOIN ${tablaAsignacion} a ON a.modulo_id = mc.id
+        WHERE m.id_submodulo = sm.id AND a.usuario_id = ?
+      )`;
+    params.push(sede, id);
   } else {
     res.status(403).json({ message: 'Rol no autorizado' });
     return;
@@ -59,24 +59,44 @@ export async function createSubModulo(req: Request, res: Response): Promise<void
 export async function updateSubModulo(req: Request, res: Response): Promise<void> {
   const { id } = req.params;
   const { codigo, entidad_remitente } = req.body as { codigo: string; entidad_remitente: string };
-  const sede_submodulos = req.session.user?.sede;
+  const user = req.session.user;
 
   if (!codigo || !entidad_remitente) {
     res.status(400).send('Faltan campos requeridos');
     return;
   }
 
-  await query('UPDATE sub_modulos SET codigo = ?, entidad_remitente = ?, sede_submodulos = ? WHERE id = ?', [
-    codigo,
-    entidad_remitente,
-    sede_submodulos,
-    id,
-  ]);
-  res.send('Sub-módulo actualizado correctamente');
+  const cliente = await queryOne<SubModulo>('SELECT * FROM sub_modulos WHERE id = ?', [id]);
+  if (!cliente) {
+    res.status(404).json({ error: 'El cliente no existe' });
+    return;
+  }
+  // Un líder solo edita los clientes de su sede. La sede del cliente no cambia
+  // al editar: antes se sobrescribía con la de quien editaba, lo que permitía
+  // "traerse" un cliente de otra sede.
+  if (fueraDeSuSede(user, cliente.sede_submodulos)) {
+    res.status(403).json({ error: 'Solo puede editar clientes de su sede' });
+    return;
+  }
+
+  await query('UPDATE sub_modulos SET codigo = ?, entidad_remitente = ? WHERE id = ?', [codigo, entidad_remitente, id]);
+  res.send('Cliente actualizado correctamente');
 }
 
 export async function deleteSubModulo(req: Request, res: Response): Promise<void> {
   const { id } = req.params;
+  const user = req.session.user;
+
+  const cliente = await queryOne<SubModulo>('SELECT * FROM sub_modulos WHERE id = ?', [id]);
+  if (!cliente) {
+    res.status(404).json({ error: 'El cliente no existe o ya fue eliminado' });
+    return;
+  }
+  // Un líder solo administra los clientes de su sede; el administrador, todos.
+  if (user?.rol === 'LIDER' && cliente.sede_submodulos !== user.sede) {
+    res.status(403).json({ error: 'Solo puede eliminar clientes de su sede' });
+    return;
+  }
 
   // No se puede eliminar un sub-módulo con módulos cliente asociados: la FK
   // fk_submodulo (moduloscliente.id_submodulo) lo impediría con un 500 genérico.
@@ -86,11 +106,18 @@ export async function deleteSubModulo(req: Request, res: Response): Promise<void
   );
   if ((dependientes[0]?.total ?? 0) > 0) {
     res.status(409).json({
-      error: `No se puede eliminar: el sub-módulo tiene ${dependientes[0].total} módulo(s) cliente asociado(s)`,
+      error: `No se puede eliminar: el cliente tiene ${dependientes[0].total} acta(s) registrada(s)`,
     });
     return;
   }
 
   await query('DELETE FROM sub_modulos WHERE id = ?', [id]);
-  res.send('Sub-módulo eliminado correctamente');
+  void audit({
+    entidad: 'sub_modulos',
+    entidadId: id,
+    accion: 'ELIMINAR',
+    detalle: `Cliente ${cliente.codigo} — ${cliente.entidad_remitente}`,
+    usuario: user,
+  });
+  res.send('Cliente eliminado correctamente');
 }

@@ -22,3 +22,22 @@ export function toNumeric(upd: string): number {
 export function formatUpd(n: number): string {
   return UPD_PREFIX + String(n).padStart(UPD_DIGITS, '0');
 }
+
+/** Mayor número posible con 7 dígitos: UPD9999999. */
+export const UPD_MAX = 10 ** UPD_DIGITS - 1;
+
+/** True si el número cabe en los 7 dígitos del UPD (0..9999999). */
+export function isUpdNumberInRange(n: number): boolean {
+  return Number.isInteger(n) && n >= 0 && n <= UPD_MAX;
+}
+
+/**
+ * UPD siguiente al indicado, o null si el dado no tiene formato válido o ya es el
+ * último posible (UPD9999999): nunca se produce un UPD de 8 dígitos.
+ */
+export function nextUpd(upd: string): string | null {
+  const normalizado = normalizeUpd(upd);
+  if (!isUpdValid(normalizado)) return null;
+  const siguiente = toNumeric(normalizado) + 1;
+  return isUpdNumberInRange(siguiente) ? formatUpd(siguiente) : null;
+}
