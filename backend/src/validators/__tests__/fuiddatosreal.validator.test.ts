@@ -8,10 +8,16 @@ import { FECHA_MINIMA_DOCUMENTAL } from '../../config/constants.js';
 import { fechaHoyLocal } from '../../utils/format.js';
 
 /**
- * Los únicos dos campos que `createFuidSchema` exige. Todo lo demás es opcional,
- * así que cada prueba solo añade el campo que está comprobando.
+ * Los campos que `createFuidSchema` exige. Todo lo demás es opcional —lo que
+ * quede vacío se guarda como `N/A`—, así que cada prueba solo añade el campo
+ * que está comprobando.
  */
-const base = { caja: '051C000456', upd: 'UPD2950163' };
+const base = {
+  caja: '051C000456',
+  upd: 'UPD2950163',
+  asunto_2: 'TUTELA',
+  asunto_3: 'RESPUESTA A LA ACCION DE TUTELA',
+};
 
 /** Mensajes de error del schema, o `null` si el registro se aceptó. */
 function erroresDe(datos: Record<string, unknown>): string[] | null {
@@ -285,5 +291,52 @@ describe('punto 10 — la actualización exige la versión del registro', () => 
     expect(updateFuidSchema.safeParse({ version: 0 }).success).toBe(false);
     expect(updateFuidSchema.safeParse({ version: -1 }).success).toBe(false);
     expect(updateFuidSchema.safeParse({ version: 1.5 }).success).toBe(false);
+  });
+});
+
+
+describe('asuntos obligatorios', () => {
+  it('acepta un registro con los dos asuntos diligenciados', () => {
+    expect(erroresDe({})).toBeNull();
+  });
+
+  it('rechaza el registro si falta el asunto automático', () => {
+    for (const valor of [undefined, null, '']) {
+      const datos = { ...base, asunto_2: valor };
+      const resultado = createFuidSchema.safeParse(datos);
+      expect(resultado.success).toBe(false);
+      if (!resultado.success) {
+        expect(resultado.error.issues.map((i) => i.message)).toContain(
+          'El asunto automático es requerido',
+        );
+      }
+    }
+  });
+
+  it('rechaza el registro si falta el asunto manual', () => {
+    for (const valor of [undefined, null, '']) {
+      const datos = { ...base, asunto_3: valor };
+      const resultado = createFuidSchema.safeParse(datos);
+      expect(resultado.success).toBe(false);
+      if (!resultado.success) {
+        expect(resultado.error.issues.map((i) => i.message)).toContain(
+          'El asunto manual es requerido',
+        );
+      }
+    }
+  });
+
+  it('reporta el error sobre el campo que lo provoca', () => {
+    expect(camposConError({ asunto_2: '' })).toContain('asunto_2');
+    expect(camposConError({ asunto_3: '' })).toContain('asunto_3');
+  });
+
+  it('tampoco deja vaciarlos en una edición', () => {
+    expect(updateFuidSchema.safeParse({ version: 1, asunto_2: '' }).success).toBe(false);
+    expect(updateFuidSchema.safeParse({ version: 1, asunto_3: null }).success).toBe(false);
+  });
+
+  it('una edición que no toca los asuntos sigue siendo válida', () => {
+    expect(updateFuidSchema.safeParse({ version: 1, notas: 'ALGO' }).success).toBe(true);
   });
 });

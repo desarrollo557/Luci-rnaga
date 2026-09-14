@@ -1,4 +1,5 @@
 import type { FuidCreateDto } from '../types/index.js';
+import { CAMPOS_NO_DILIGENCIADOS, VALOR_NO_DILIGENCIADO } from '../config/constants.js';
 
 export const FUID_COLUMNS = [
   'fecha_del_dato',
@@ -42,47 +43,67 @@ export const FUID_COLUMNS = [
   'asunto_3',
 ] as const;
 
+const CON_NO_DILIGENCIADO: ReadonlySet<string> = new Set(CAMPOS_NO_DILIGENCIADOS);
+
+/**
+ * Valor con el que viaja a MySQL una columna de texto del FUID.
+ *
+ * Un campo que el digitador dejó en blanco se guarda como `N/A` en lugar de
+ * NULL: es el marcador que ya usan los registros históricos, así que la misma
+ * ausencia deja de estar representada de dos formas distintas según la época
+ * del registro. Qué columnas lo reciben está declarado en
+ * `CAMPOS_NO_DILIGENCIADOS`; lo que no está ahí sigue viajando como NULL,
+ * porque su columna es `date`, `int` o `time`, o porque lo llena el sistema.
+ */
+function texto(campo: string, valor: unknown): unknown {
+  const vacio = valor == null || (typeof valor === 'string' && valor.trim() === '');
+  if (!vacio) return valor;
+  return CON_NO_DILIGENCIADO.has(campo) ? VALOR_NO_DILIGENCIADO : null;
+}
+
 /** Valores en el mismo orden que FUID_COLUMNS para INSERT/UPDATE. */
 export function fuidValues(dto: FuidCreateDto): unknown[] {
+  // Columnas que no son de texto (`date`, `int`, `time`): una cadena vacía no es
+  // un valor válido para ellas y tiene que llegar como NULL.
   const nullable = (v: unknown): unknown => (v == null || v === '' ? null : v);
   return [
-    dto.fecha_del_dato ?? null,
-    dto.n_orden ?? null,
-    dto.codigo ?? null,
-    dto.entidad_remitente ?? null,
-    dto.entidad_productora ?? null,
-    dto.unidad_administrativa ?? null,
-    dto.oficina_productora ?? null,
-    dto.objeto ?? null,
-    dto.serie ?? null,
-    dto.subserie ?? null,
-    dto.numero_de_orden_interno ?? null,
-    dto.accionado_procesado ?? null,
-    dto.accionado_denunciante ?? null,
-    dto.identificacion ?? null,
-    dto.asunto ?? null,
-    dto.radicado ?? null,
-    dto.numero_doc ?? null,
-    dto.numero_doc_hasta ?? null,
+    nullable(dto.fecha_del_dato),
+    nullable(dto.n_orden),
+    texto('codigo', dto.codigo),
+    texto('entidad_remitente', dto.entidad_remitente),
+    texto('entidad_productora', dto.entidad_productora),
+    texto('unidad_administrativa', dto.unidad_administrativa),
+    texto('oficina_productora', dto.oficina_productora),
+    texto('objeto', dto.objeto),
+    texto('serie', dto.serie),
+    texto('subserie', dto.subserie),
+    texto('numero_de_orden_interno', dto.numero_de_orden_interno),
+    texto('accionado_procesado', dto.accionado_procesado),
+    texto('accionado_denunciante', dto.accionado_denunciante),
+    texto('identificacion', dto.identificacion),
+    texto('asunto', dto.asunto),
+    texto('radicado', dto.radicado),
+    texto('numero_doc', dto.numero_doc),
+    texto('numero_doc_hasta', dto.numero_doc_hasta),
     nullable(dto.fecha_inicial),
     nullable(dto.fecha_final),
     dto.caja ?? null,
     dto.upd ?? null,
-    dto.tomo ?? null,
-    dto.otro ?? null,
-    dto.caja_interna ?? null,
-    nullable(dto.folios),
-    dto.soporte ?? null,
-    dto.frecuencia ?? null,
-    dto.elaborado_por ?? null,
-    nullable(dto.nro_acta_transferible),
+    texto('tomo', dto.tomo),
+    texto('otro', dto.otro),
+    texto('caja_interna', dto.caja_interna),
+    texto('folios', dto.folios),
+    texto('soporte', dto.soporte),
+    texto('frecuencia', dto.frecuencia),
+    nullable(dto.elaborado_por),
+    texto('nro_acta_transferible', dto.nro_acta_transferible),
     nullable(dto.fecha_transferencia),
-    dto.notas ?? null,
-    dto.sede ?? null,
-    dto.tiempo ?? null,
-    dto.historial_y_cambios ?? null,
-    dto.cambio_calidad ?? null,
-    dto.sede_calidad ?? null,
+    texto('notas', dto.notas),
+    nullable(dto.sede),
+    nullable(dto.tiempo),
+    nullable(dto.historial_y_cambios),
+    nullable(dto.cambio_calidad),
+    nullable(dto.sede_calidad),
     dto.asunto_2 ?? null,
     dto.asunto_3 ?? null,
   ];

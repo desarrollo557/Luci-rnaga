@@ -31,6 +31,7 @@ El formato de error es siempre el mismo:
 | Regla de negocio | Dónde se valida en backend | Dónde se valida en frontend |
 | --- | --- | --- |
 | La caja es obligatoria | `fuiddatosreal.validator.ts` → `createFuidSchema.caja` | — (el formulario la hereda de la caja abierta) |
+| El asunto automático y el asunto manual son obligatorios | `fuiddatosreal.validator.ts` → `textoRequerido`, en `createFuidSchema` y también al editar | `DatosPage.tsx` marca ambos con `*`, avisa bajo el campo al intentar guardar y bloquea el envío |
 | El UPD es obligatorio y tiene formato `UPD` + 7 dígitos | `fuiddatosreal.validator.ts` → `updField`, que además normaliza el valor | `UpdInput.tsx`; `validUpd()` en `lib/validation.ts` |
 | El UPD no se puede repetir | Índice `unique_upd` en MySQL; `createFuid`/`updateFuid` traducen `ER_DUP_ENTRY` a 409 `UPD_YA_USADO` | `DatosPage.tsx` consulta `checkDuplicateUpd` mientras se escribe y avisa bajo el campo |
 | Un técnico solo digita en las cajas que tiene asignadas | `createFuid` comprueba `asignacion_caja_tecnica` | La interfaz solo muestra sus cajas asignadas |
@@ -49,13 +50,30 @@ El formato de error es siempre el mismo:
 | Quién puede borrar un FUID | `deleteFuid`: ADMIN cualquiera, LIDER los de su sede, TECNICA solo los suyos del día, CALIDAD ninguno | La interfaz oculta el botón según el rol |
 | Marcar OK solo en cajas asignadas | `marcarOk` comprueba la tabla de asignación del rol | — |
 
-### Campos que aceptan `N/A`
+### Campos no diligenciados: se guardan como `N/A`
 
 `N/A` es el marcador de "campo no diligenciado", no un valor inválido: así están
-los registros históricos y así los deja el diálogo de campos vacíos. Lo aceptan
-`folios`, `tomo`, `soporte`, `frecuencia`, `otro`, `numero_doc` y
-`numero_doc_hasta`. La lógica está en `esValorVacio()` (frontend) y `sinDato()`
-(backend).
+los registros históricos de `fuiddatosreal`.
+
+Quien digita llena lo que el documento tiene y deja en blanco lo que no. **Al
+guardar, las columnas de texto que quedaron vacías se registran como `N/A`
+automáticamente**, sin que haya que escribirlo campo por campo y sin que el
+marcador aparezca en el formulario: la conversión ocurre en el servidor, en
+`fuidValues()` (`services/fuid.service.ts`), que es por donde pasan tanto el
+INSERT como el UPDATE. El formulario sigue enviando NULL para lo vacío.
+
+Qué columnas lo reciben está declarado en `CAMPOS_NO_DILIGENCIADOS`
+(`config/constants.ts`). Quedan fuera:
+
+| Qué | Por qué |
+| --- | --- |
+| `fecha_del_dato`, `fecha_inicial`, `fecha_final`, `fecha_transferencia`, `n_orden`, `tiempo` | Las columnas son `date`, `int` y `time`: no admiten el literal. Siguen viajando como NULL |
+| `caja`, `upd`, `asunto_2`, `asunto_3` | Son obligatorios; nunca pueden quedar vacíos |
+| `elaborado_por`, `sede` | Los pone el sistema. `elaborado_por` guarda "NOMBRE (CC)" y los reportes lo cruzan con `users` por la cédula |
+| `historial_y_cambios`, `cambio_calidad`, `sede_calidad` | Los escribe el flujo de calidad, no el formulario de digitación |
+
+Los validadores que comprueban formato tratan `N/A` como ausencia de valor y no
+lo rechazan: `esValorVacio()` (frontend) y `sinDato()` (backend).
 
 ---
 
@@ -146,6 +164,7 @@ de normalización y el manejador de errores.
 | --- | --- |
 | `validators/__tests__/fuiddatosreal.validator.test.ts` | Fechas, orden de fechas, números de documento, folios, tomo, catálogos, longitudes y versión |
 | `validators/__tests__/espejos-frontend.test.ts` | Que los catálogos y las longitudes del frontend sigan coincidiendo con los del backend |
+| `services/__tests__/fuid.service.test.ts` | Que lo vacío se guarde como `N/A` en las columnas de texto y como NULL en las demás |
 | `middlewares/__tests__/mayusculas.test.ts` | Recorte, colapso de espacios y exclusión de contraseñas |
 | `middlewares/__tests__/errorHandler.test.ts` | Traducción de los errores de MySQL |
 

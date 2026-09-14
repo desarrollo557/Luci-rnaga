@@ -163,10 +163,69 @@ export const ETIQUETA_CAMPO_FUID: Record<keyof typeof LONGITUD_MAXIMA_FUID, stri
   sede: 'La sede',
   cambio_calidad: 'El cambio de calidad',
   sede_calidad: 'La sede de calidad',
-  asunto_2: 'El asunto 2',
-  asunto_3: 'El asunto 3',
+  asunto_2: 'El asunto automático',
+  asunto_3: 'El asunto manual',
   historial_y_cambios: 'El historial de cambios',
 };
+
+// ── Campos no diligenciados ───────────────────────────────────────────────
+/**
+ * Marcador de campo no diligenciado.
+ *
+ * No es un valor inválido: así están los registros históricos de
+ * `fuiddatosreal` (`codigo`, `serie`, `subserie`, `radicado`, `folios` y `notas`
+ * lo traen), y los catálogos cerrados lo incluyen como opción.
+ */
+export const VALOR_NO_DILIGENCIADO = 'N/A';
+
+/**
+ * Columnas de texto que se guardan como `N/A` cuando llegan vacías.
+ *
+ * Regla de digitación: la persona llena lo que el documento tiene y deja en
+ * blanco lo que no; al guardar, lo que quedó vacío se registra como `N/A` sin
+ * que tenga que escribirlo campo por campo. Antes esa misma ausencia se
+ * guardaba como NULL, así que la base representaba de dos formas distintas lo
+ * mismo según la época del registro y los reportes tenían que contemplar ambas.
+ *
+ * Quedan fuera a propósito:
+ *
+ * - `fecha_del_dato`, `fecha_inicial`, `fecha_final`, `fecha_transferencia`,
+ *   `n_orden` y `tiempo`: las columnas son `date`, `int` y `time`, y no admiten
+ *   el literal. Siguen viajando como NULL.
+ * - `caja`, `upd`, `asunto_2` y `asunto_3`: son obligatorios, nunca pueden
+ *   quedar vacíos.
+ * - `elaborado_por` y `sede`: los pone el sistema con los datos de quien digita.
+ *   `elaborado_por` guarda "NOMBRE (CC)" y los reportes lo cruzan con `users`
+ *   por la cédula: un `N/A` ahí rompería ese cruce.
+ * - `historial_y_cambios`, `cambio_calidad` y `sede_calidad`: los escribe el
+ *   flujo de calidad, no el formulario de digitación.
+ */
+export const CAMPOS_NO_DILIGENCIADOS = [
+  'codigo',
+  'entidad_remitente',
+  'entidad_productora',
+  'unidad_administrativa',
+  'oficina_productora',
+  'objeto',
+  'serie',
+  'subserie',
+  'numero_de_orden_interno',
+  'accionado_procesado',
+  'accionado_denunciante',
+  'identificacion',
+  'asunto',
+  'radicado',
+  'numero_doc',
+  'numero_doc_hasta',
+  'tomo',
+  'otro',
+  'caja_interna',
+  'folios',
+  'soporte',
+  'frecuencia',
+  'nro_acta_transferible',
+  'notas',
+] as const;
 
 // ── Paginación ────────────────────────────────────────────────────────────
 export const DEFAULT_PAGE_SIZE = 50;

@@ -29,6 +29,26 @@ function textoOpcional(campo: CampoFuid) {
     .optional();
 }
 
+/**
+ * Texto que no puede quedar en blanco, acotado al tamaño de su columna.
+ *
+ * Lo usan los dos campos de asunto. El resto del formulario admite quedar
+ * vacío —lo que se deje en blanco se guarda como `N/A`—, pero el asunto es lo
+ * que permite encontrar después el documento dentro de la caja: un FUID sin
+ * asunto obliga a abrir la caja físicamente para saber qué contiene.
+ *
+ * El cuerpo llega ya recortado por el middleware `cuerpoEnMayusculas`, así que
+ * un campo con solo espacios llega aquí como cadena vacía y `min(1)` lo
+ * rechaza.
+ */
+function textoRequerido(campo: CampoFuid, mensaje: string) {
+  const maximo = LONGITUD_MAXIMA_FUID[campo];
+  return z
+    .string({ message: mensaje })
+    .min(1, mensaje)
+    .max(maximo, `${ETIQUETA_CAMPO_FUID[campo]} no puede superar los ${maximo} caracteres`);
+}
+
 /** `N/A` es el marcador de campo no diligenciado; no es un valor inválido. */
 const NO_DILIGENCIADO = 'N/A';
 
@@ -177,8 +197,8 @@ const fuidBaseSchema = z.object({
   historial_y_cambios: textoOpcional('historial_y_cambios'),
   cambio_calidad: textoOpcional('cambio_calidad'),
   sede_calidad: textoOpcional('sede_calidad'),
-  asunto_2: textoOpcional('asunto_2'),
-  asunto_3: textoOpcional('asunto_3'),
+  asunto_2: textoRequerido('asunto_2', 'El asunto automático es requerido'),
+  asunto_3: textoRequerido('asunto_3', 'El asunto manual es requerido'),
 });
 
 /**

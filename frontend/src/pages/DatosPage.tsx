@@ -247,7 +247,13 @@ function emptyFormFor(
 
 function buildPayload(form: FuidFormValues, editing: FuidDato | null): DataRow {
   // Los textos se guardan en mayúsculas, como hacía la versión anterior y como
-  // están los registros históricos; lo vacío viaja como NULL (nunca "N/A").
+  // están los registros históricos.
+  //
+  // Lo vacío viaja como NULL y es el servidor quien decide con qué se guarda:
+  // las columnas de texto del FUID quedan en "N/A" y las de fecha, número y
+  // tiempo en NULL (`CAMPOS_NO_DILIGENCIADOS` en el backend). No se manda "N/A"
+  // desde aquí a propósito: el formulario debe verse vacío mientras se digita,
+  // el marcador es cosa de cómo se guarda.
   const text = (value: string): string | null => (value.trim() === '' ? null : value.trim().toUpperCase());
   const numero = (value: string): number | null => {
     const trimmed = value.trim();
@@ -317,6 +323,7 @@ interface SuggestionInputProps {
   readOnly?: boolean;
   autoFocus?: boolean;
   className?: string;
+  error?: string;
 }
 
 function SuggestionInput({
@@ -329,6 +336,7 @@ function SuggestionInput({
   readOnly,
   autoFocus,
   className,
+  error,
 }: SuggestionInputProps) {
   const debouncedQuery = useDebouncedValue(value, 300);
   const suggestionsQuery = useQuery({
@@ -348,6 +356,7 @@ function SuggestionInput({
         disabled={disabled}
         readOnly={readOnly}
         autoFocus={autoFocus}
+        error={error}
         // El componente ya recibe el nombre de la columna, así que el tope sale
         // del mapa sin tener que repetirlo en cada uno de los campos del FUID.
         maxLength={limiteDe(campo)}
@@ -396,6 +405,10 @@ function FuidFormModal({ open, cajaId, editing, defaultNOrden, defaultTomo, caja
   );
   /** Registros guardados sin cerrar el formulario; remonta el formulario para volver a enfocar Codigo. */
   const [racha, setRacha] = useState(0);
+  // Los campos obligatorios no se marcan en rojo hasta el primer intento de
+  // guardar: un formulario recién abierto está vacío por definición y teñirlo
+  // de avisos desde el principio solo estorba a quien digita de corrido.
+  const [faltantesALaVista, setFaltantesALaVista] = useState(false);
   /** Confirmación animada del último registro guardado; se apaga sola a los ~2,4 s. */
   const [confirmacion, setConfirmacion] = useState<{ id: number; upd: string; siguiente: string } | null>(null);
 
@@ -450,6 +463,7 @@ function FuidFormModal({ open, cajaId, editing, defaultNOrden, defaultTomo, caja
         upd: siguienteUpd,
       });
       setRacha((r) => r + 1);
+      setFaltantesALaVista(false);
       setConfirmacion({ id: Date.now(), upd: guardado, siguiente: siguienteUpd });
       // El servidor confirma el consecutivo libre (salta UPD ya usados); solo se
       // reemplaza si la persona todavía no lo cambió.
@@ -505,8 +519,23 @@ function FuidFormModal({ open, cajaId, editing, defaultNOrden, defaultTomo, caja
     dateInRange(form.fecha_final, 'La fecha final') ??
     dateOrderValid(form.fecha_inicial, form.fecha_final);
   const errorFolios = onlyDigits(form.folios, 'Los folios');
-  const primerError = errorFechaInicial ?? errorFechaFinal ?? errorFolios;
-  const hayErrorDeFormulario = Boolean(primerError);
+
+  /**
+   * Los dos asuntos son lo único obligatorio además de la caja y el UPD: son lo
+   * que permite saber qué contiene el documento sin abrir la caja. El resto
+   * puede quedar vacío y el servidor lo guarda como N/A.
+   *
+   * Van aparte de los errores de formato a propósito. Un formato inválido
+   * deshabilita el botón Enviar; un obligatorio vacío no, porque el formulario
+   * arranca vacío y el botón quedaría apagado desde el principio sin decir por
+   * qué. Estos se comprueban al enviar y ahí sí se marcan.
+   */
+  const faltaAsuntoAutomatico = form.asunto_2.trim() === '' ? 'El asunto automático es requerido' : null;
+  const faltaAsuntoManual = form.asunto_3.trim() === '' ? 'El asunto manual es requerido' : null;
+
+  const errorDeFormato = errorFechaInicial ?? errorFechaFinal ?? errorFolios;
+  const primerError = errorDeFormato ?? faltaAsuntoAutomatico ?? faltaAsuntoManual;
+  const hayErrorDeFormulario = Boolean(errorDeFormato);
 
   const hoy = fechaHoyLocal();
 
@@ -516,6 +545,7 @@ function FuidFormModal({ open, cajaId, editing, defaultNOrden, defaultTomo, caja
     event.preventDefault();
     if (isSaving) return;
     if (primerError) {
+      setFaltantesALaVista(true);
       toast.error(primerError);
       return;
     }
@@ -635,12 +665,19 @@ function FuidFormModal({ open, cajaId, editing, defaultNOrden, defaultTomo, caja
         <SuggestionInput
           caja={form.caja}
           campo="asunto_2"
-          label="Asunto Automático"
+          label="Asunto Automático *"
           value={form.asunto_2}
           onChange={updateField('asunto_2')}
+          error={(faltantesALaVista && faltaAsuntoAutomatico) || undefined}
         />
 
-        <Input label="Asunto Manual" value={form.asunto_3} onChange={setField('asunto_3')} />
+        <Input
+          label="Asunto Manual *"
+          value={form.asunto_3}
+          onChange={setField('asunto_3')}
+          maxLength={limiteDe('asunto_3')}
+          error={(faltantesALaVista && faltaAsuntoManual) || undefined}
+        />
         <SuggestionInput
           caja={form.caja}
           campo="numero_doc"
