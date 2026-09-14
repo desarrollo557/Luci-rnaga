@@ -15,7 +15,7 @@ export function ChartCard({ title, subtitle, icon, actions, children, className 
   return (
     <section
       className={cn(
-        'flex flex-col rounded-xl border border-silver-200 bg-white p-5 shadow-sm transition-shadow duration-300 hover:shadow-md',
+        'flex flex-col rounded-xl border border-silver-200 bg-surface p-5 shadow-sm transition-shadow duration-300 hover:shadow-md',
         className,
       )}
     >

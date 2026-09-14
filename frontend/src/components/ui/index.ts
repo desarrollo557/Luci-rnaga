@@ -1,6 +1,7 @@
 export * from './Badge';
 export * from './Button';
 export * from './Card';
+export * from './CamposVaciosDialog';
 export * from './ConfirmDialog';
 export * from './DatePicker';
 export * from './EditableInput';
@@ -13,3 +14,5 @@ export * from './PageHeader';
 export * from './Select';
 export * from './Spinner';
 export * from './Table';
+export * from './ThemeToggle';
+export * from './UpdInput';

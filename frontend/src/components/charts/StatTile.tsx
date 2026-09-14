@@ -62,7 +62,7 @@ export function StatTile({
     typeof value === 'number' ? (compactar ? compacto(value) : conSeparador(value)) : value;
 
   return (
-    <div className="flex flex-col gap-3 rounded-xl border border-silver-200 bg-white p-5 shadow-sm transition-shadow duration-300 hover:shadow-md">
+    <div className="flex flex-col gap-3 rounded-xl border border-silver-200 bg-surface p-5 shadow-sm transition-shadow duration-300 hover:shadow-md">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="truncate text-xs font-medium text-silver-500">{label}</p>

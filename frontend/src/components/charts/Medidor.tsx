@@ -15,7 +15,7 @@ export function Medidor({
   valor,
   total,
   color,
-  colorPista = '#edeef1',
+  colorPista = 'var(--chart-rejilla)',
   etiquetaValor = 'completado',
   etiquetaTotal = 'total',
 }: MedidorProps) {

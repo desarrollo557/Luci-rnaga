@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
   Activity,
@@ -8,10 +8,11 @@ import {
   FileText,
   Layers,
   MapPin,
+  Search,
   TrendingUp,
   Users,
 } from 'lucide-react';
-import { Badge, LoadingState, PageHeader, Table, type Column } from '@/components/ui';
+import { Badge, Input, LoadingState, PageHeader, Table, type Column } from '@/components/ui';
 import {
   BarrasHorizontales,
   ChartCard,
@@ -26,27 +27,27 @@ import {
   conSeparador,
   etiquetaMes,
 } from '@/components/charts';
-import { reportesApi } from '@/lib/api';
+import { reportesApi, type Digitador } from '@/lib/api';
 
 /** El estado de la caja es una escala reservada, no una serie más. */
 const COLOR_ESTADO_CAJA: Record<string, string> = {
   FINALIZADO: ESTADO.bueno,
   'EN PROCESO': ESTADO.advertencia,
-  'SIN ESTADO': '#b8bdc5',
+  'SIN ESTADO': 'var(--chart-atenuado)',
 };
 
-interface FilaDigitador {
-  nombre: string;
-  total: number;
-  aprobados: number;
+/** "SALLY PINEDA (1046812542)" → "SALLY PINEDA". */
+function nombreSinCedula(nombre: string): string {
+  return nombre.replace(/\s*\([^)]*\)\s*$/, '').trim() || nombre;
 }
 
 export default function ProduccionPage() {
-  const { data: stats, isLoading } = useQuery({
+  const { data: stats, isLoading, dataUpdatedAt } = useQuery({
     queryKey: ['produccion', 'estadisticas'],
     queryFn: async () => (await reportesApi.estadisticas()).data,
     staleTime: 60_000,
   });
+  const [filtroDigitador, setFiltroDigitador] = useState('');
 
   const serieMensual = useMemo(
     () =>
@@ -72,6 +73,16 @@ export default function ProduccionPage() {
     [stats],
   );
 
+  // Búsqueda por nombre, cédula, rol o sede sobre TODOS los digitadores.
+  const termino = filtroDigitador.trim().toLowerCase();
+  const digitadoresFiltrados = useMemo(() => {
+    const todos = stats?.digitadores ?? [];
+    if (!termino) return todos;
+    return todos.filter((d) =>
+      [d.nombre, d.cc ?? '', d.rol ?? '', d.sede ?? ''].some((campo) => campo.toLowerCase().includes(termino)),
+    );
+  }, [stats, termino]);
+
   if (isLoading || !stats) {
     return (
       <div className="flex min-h-[50vh] items-center justify-center">
@@ -83,8 +94,21 @@ export default function ProduccionPage() {
   const pctAvance =
     stats.total_fuids > 0 ? Math.round((stats.fuids_aprobados / stats.total_fuids) * 100) : 0;
 
-  const columnasDigitadores: Column<FilaDigitador>[] = [
-    { key: 'nombre', header: 'Digitador' },
+  const columnasDigitadores: Column<Digitador>[] = [
+    {
+      key: 'nombre',
+      header: 'Digitador',
+      render: (row) => (
+        <div>
+          <p className="font-medium text-silver-800">{nombreSinCedula(row.nombre)}</p>
+          <p className="text-xs text-silver-500">
+            {row.cc ? `CC ${row.cc}` : 'Sin cédula'}
+            {row.rol ? ` · ${row.rol}` : ' · Sin usuario activo'}
+            {row.sede ? ` · ${row.sede}` : ''}
+          </p>
+        </div>
+      ),
+    },
     {
       key: 'total',
       header: 'Registros',
@@ -109,12 +133,22 @@ export default function ProduccionPage() {
         return <Badge color={pct >= 50 ? 'green' : pct >= 20 ? 'amber' : 'gray'}>{pct}%</Badge>;
       },
     },
+    {
+      key: 'cajas',
+      header: 'Cajas',
+      render: (row) => <span style={{ fontVariantNumeric: 'tabular-nums' }}>{conSeparador(row.cajas)}</span>,
+    },
+    {
+      key: 'ultimo_registro',
+      header: 'Último registro',
+      render: (row) => <span className="text-silver-600">{row.ultimo_registro ?? '—'}</span>,
+    },
   ];
 
   const porcionesCajas = stats.cajas_por_estado.map((c) => ({
     etiqueta: c.estado,
     valor: c.total,
-    color: COLOR_ESTADO_CAJA[c.estado] ?? '#b8bdc5',
+    color: COLOR_ESTADO_CAJA[c.estado] ?? 'var(--chart-atenuado)',
   }));
 
   const sedePrincipal = stats.fuids_por_sede[0];
@@ -123,11 +157,13 @@ export default function ProduccionPage() {
     <div className="space-y-6">
       <PageHeader
         title="Producción"
-        description="Avance real del negocio: digitación, cajas, revisión y personal"
+        description={`Cifras calculadas directamente sobre la base de datos · actualizadas a las ${new Date(
+          dataUpdatedAt || Date.now(),
+        ).toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' })}`}
       />
 
       {/* Cifra guía del panel: una sola, y el resto la contextualiza. */}
-      <section className="rounded-xl border border-silver-200 bg-white p-6 shadow-sm">
+      <section className="rounded-xl border border-silver-200 bg-surface p-6 shadow-sm">
         <div className="flex flex-wrap items-end justify-between gap-6">
           <div>
             <p className="text-xs font-medium uppercase tracking-wide text-silver-500">
@@ -240,19 +276,19 @@ export default function ProduccionPage() {
         </ChartCard>
 
         <ChartCard
-          title="Avance por submódulo"
-          subtitle="Registros digitados y cuántos ya pasaron calidad"
+          title="Avance por cliente"
+          subtitle="Los 8 clientes con más registros digitados y cuántos ya pasaron calidad"
           icon={<Layers className="size-4 text-primary-600" />}
         >
           <BarrasHorizontales
             datos={stats.avance_por_submodulo.map((s) => ({
-              etiqueta: `Submódulo ${s.submodulo}`,
+              etiqueta: s.entidad ? `${s.submodulo} · ${s.entidad}` : `Cliente ${s.submodulo}`,
               valor: s.total,
               parcial: s.aprobados,
             }))}
             color={SERIES.uno}
             colorParcial={SERIES.tres}
-            anchoEtiqueta={110}
+            anchoEtiqueta={160}
             nombreParcial="aprobados"
             nombreResto="pendientes"
           />
@@ -266,8 +302,8 @@ export default function ProduccionPage() {
       </div>
 
       <ChartCard
-        title="Actividad de revisión"
-        subtitle="Cambios registrados en el historial durante los últimos 30 días con movimiento"
+        title="Cambios en los registros"
+        subtitle="Ediciones y eliminaciones de FUID guardadas en el historial, últimos 30 días con movimiento"
         icon={<Activity className="size-4 text-primary-600" />}
       >
         <SerieTemporal
@@ -279,16 +315,26 @@ export default function ProduccionPage() {
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
         <ChartCard
-          title="Top digitadores"
-          subtitle="Volumen y proporción aprobada por calidad"
+          title="Digitadores"
+          subtitle={`${stats.digitadores.length} personas con registros digitados · volumen, aprobación por calidad y cajas trabajadas`}
           icon={<Users className="size-4 text-primary-600" />}
           className="lg:col-span-2"
         >
+          <div className="relative mb-4">
+            <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-silver-400" />
+            <Input
+              value={filtroDigitador}
+              onChange={(event) => setFiltroDigitador(event.target.value)}
+              placeholder="Buscar digitador por nombre, cédula, rol o sede…"
+              className="pl-9"
+              aria-label="Buscar digitador"
+            />
+          </div>
           <Table
             columns={columnasDigitadores}
-            data={stats.top_digitadores}
+            data={digitadoresFiltrados}
             rowKey={(row) => row.nombre}
-            emptyMessage="Sin registros por usuario"
+            emptyMessage={termino ? 'Ningún digitador coincide con la búsqueda' : 'Sin registros por usuario'}
           />
         </ChartCard>
 
@@ -300,10 +346,8 @@ export default function ProduccionPage() {
           >
             <dl className="space-y-3 text-sm">
               <div className="flex items-center justify-between">
-                <dt className="text-silver-600">Módulos cliente</dt>
-                <dd className="font-semibold text-silver-900">
-                  {conSeparador(stats.total_modulos_cliente)}
-                </dd>
+                <dt className="text-silver-600">Clientes</dt>
+                <dd className="font-semibold text-silver-900">{conSeparador(stats.total_clientes)}</dd>
               </div>
               <div className="flex items-center justify-between">
                 <dt className="text-silver-600">Actas de transferencia</dt>

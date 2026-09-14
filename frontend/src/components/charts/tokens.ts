@@ -1,10 +1,16 @@
 /**
  * Tokens de visualización de datos.
  *
+ * Los valores son variables CSS (`--chart-*`, definidas en index.css) en lugar de
+ * hexadecimales fijos: así una misma serie cambia de tono al pasar a tema oscuro
+ * sin que ningún gráfico tenga que enterarse. Se pueden usar igual en atributos
+ * SVG (`fill`, `stroke`) y en `style`.
+ *
  * La paleta categórica está validada con el verificador de la guía de dataviz
- * contra la superficie real de los gráficos (tarjetas blancas, #ffffff):
- * banda de luminosidad, piso de croma, separación bajo protanopía/deuteranopía
- * (ΔE 9.1) y piso de visión normal (ΔE 22.9) — todos PASS.
+ * contra la superficie clara de los gráficos (#ffffff): banda de luminosidad,
+ * piso de croma, separación bajo protanopía/deuteranopía (ΔE 9.1) y piso de
+ * visión normal (ΔE 22.9) — todos PASS. La variante oscura aclara cada serie
+ * manteniendo el mismo tono y orden para no romper esa separación.
  *
  * Aviso del validador: sobre blanco, aqua (2.82:1) y ámbar (2.17:1) quedan por
  * debajo de 3:1. La regla de alivio obliga a etiquetas visibles, y por eso todos
@@ -16,13 +22,13 @@
 
 export const SERIES = {
   /** Slot 1 — azul. Serie principal (volumen digitado). */
-  uno: '#2a78d6',
+  uno: 'var(--chart-serie-1)',
   /** Slot 2 — naranja. */
-  dos: '#eb6834',
+  dos: 'var(--chart-serie-2)',
   /** Slot 3 — aqua. Revisión aprobada. */
-  tres: '#1baf7a',
+  tres: 'var(--chart-serie-3)',
   /** Slot 4 — ámbar. */
-  cuatro: '#eda100',
+  cuatro: 'var(--chart-serie-4)',
 } as const;
 
 /** Orden fijo de asignación: nunca se cicla ni se generan tonos nuevos. */
@@ -30,21 +36,21 @@ export const SERIES_ORDEN = [SERIES.uno, SERIES.dos, SERIES.tres, SERIES.cuatro]
 
 /** Escala de estado: significado reservado, siempre acompañada de icono o rótulo. */
 export const ESTADO = {
-  bueno: '#0ca30c',
-  advertencia: '#fab219',
-  serio: '#ec835a',
-  critico: '#d03b3b',
+  bueno: 'var(--chart-bueno)',
+  advertencia: 'var(--chart-advertencia)',
+  serio: 'var(--chart-serio)',
+  critico: 'var(--chart-critico)',
 } as const;
 
 /** Cromo del gráfico. Alineado con la escala silver del tema de la aplicación. */
 export const CHROME = {
-  superficie: '#ffffff',
-  tintaPrimaria: '#383d44',
-  tintaSecundaria: '#5e6671',
-  tintaTenue: '#929aa5',
-  rejilla: '#edeef1',
-  ejes: '#d9dce1',
-  atenuado: '#d9dce1',
+  superficie: 'var(--chart-superficie)',
+  tintaPrimaria: 'var(--chart-tinta-primaria)',
+  tintaSecundaria: 'var(--chart-tinta-secundaria)',
+  tintaTenue: 'var(--chart-tinta-tenue)',
+  rejilla: 'var(--chart-rejilla)',
+  ejes: 'var(--chart-ejes)',
+  atenuado: 'var(--chart-atenuado)',
 } as const;
 
 /** Compacta cifras grandes para rótulos: 81.171 → 81,2 mil. */

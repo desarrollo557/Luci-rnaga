@@ -104,7 +104,16 @@ export function SerieTemporal({
         ))}
 
         {series.map((s) =>
-          s.area ? <path key={`a-${s.clave}`} d={area(s.clave)} fill={s.color} opacity={0.1} /> : null,
+          s.area ? (
+            // La opacidad viene del tema: un 10% que se lee bien sobre blanco
+            // desaparece sobre el lienzo oscuro, que necesita algo más de cuerpo.
+            <path
+              key={`a-${s.clave}`}
+              d={area(s.clave)}
+              fill={s.color}
+              style={{ opacity: 'var(--chart-area-opacidad)' }}
+            />
+          ) : null,
         )}
 
         {series.map((s) => (
@@ -181,7 +190,7 @@ export function SerieTemporal({
 
       {puntoActivo && activo != null && (
         <div
-          className="pointer-events-none absolute z-10 min-w-36 rounded-lg border border-silver-200 bg-white px-3 py-2 shadow-lg"
+          className="pointer-events-none absolute z-10 min-w-36 rounded-lg border border-silver-200 bg-surface px-3 py-2 shadow-lg"
           style={{
             left: Math.min(Math.max(x(activo) - 72, 0), Math.max(ancho - 150, 0)),
             top: 4,
