@@ -369,6 +369,9 @@ export const inventarioApi = {
   update: (id: string | number, data: DataRow) => api.put<InventarioSaveResponse>(`/inventario/${id}`, data),
   remove: (id: string | number) => api.delete(`/inventario/${id}`),
   sync: (id: string | number) => api.post<InventarioSaveResponse>(`/inventario/${id}/sync`),
+  /** El mismo Excel que se sube a Zoho, para guardarlo en el equipo. */
+  descargarExcel: (id: string | number) =>
+    api.get(`/inventario/${id}/excel`, { responseType: 'blob' }),
   clientesParaInventario: () =>
     api.get<Array<Pick<ClienteParaInventario, 'codigo' | 'entidad_remitente'>>>('/inventario/clientes'),
   clienteParaInventario: (codigo: string) =>
