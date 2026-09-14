@@ -23,6 +23,7 @@ import { fuidApi, getApiErrorCode, modulosCajaApi } from '@/lib/api';
 import { cn } from '@/lib/cn';
 import { toastApiError } from '@/lib/feedback';
 import { invalidateDomain } from '@/lib/queryInvalidation';
+import { retornoDeCaja } from '@/lib/navegacion';
 import { OPCIONES_FRECUENCIA, OPCIONES_OTRO, OPCIONES_SOPORTE } from '@/lib/catalogos';
 import { limiteDe } from '@/lib/limites';
 import { fechaHoyISO } from '@/lib/utils';
@@ -870,7 +871,9 @@ export default function DatosPage() {
   const canMarcarOk = user?.rol === 'LIDER' || user?.rol === 'ADMIN' || user?.rol === 'TECNICA' || user?.rol === 'CALIDAD';
   const canCrear = user?.rol !== 'CALIDAD';
   const canEliminar = user?.rol !== 'CALIDAD';
-  const fromPath = (location.state as { from?: string } | null)?.from ?? `/clientes`;
+  // El retorno se resuelve más abajo, cuando ya se conoce la caja: necesita
+  // saber de qué acta cuelga para poder subir un nivel sin depender del
+  // historial de navegación.
 
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<FuidDato | null>(null);
@@ -885,6 +888,11 @@ export default function DatosPage() {
   });
 
   const cajaCode = cajaQuery.data?.caja_modulo ?? cajaId ?? '';
+
+  // Botón de volver: la vista de la que se vino si consta, y si no el acta de
+  // la caja. Nunca salta directamente a la lista de clientes salvo que la caja
+  // no tenga acta.
+  const retorno = retornoDeCaja(location.state, cajaQuery.data);
 
   const fuidQuery = useQuery({
     queryKey: ['fuiddatosreal', 'list', cajaCode],
@@ -1069,7 +1077,7 @@ export default function DatosPage() {
         <UpdInicioDialog
           open
           cajaCode={cajaCode}
-          volverA={fromPath}
+          volverA={retorno.to}
           onListo={() => void updInicioQuery.refetch()}
           mensaje={updInicioQuery.data?.message}
         />
@@ -1078,8 +1086,8 @@ export default function DatosPage() {
       <PageHeader
         title={`Digitación FUID — Caja ${cajaCode}`}
         description="Clientes / Actas / Cajas / Digitación"
-        backTo={fromPath}
-        backLabel="Volver a Cajas"
+        backTo={retorno.to}
+        backLabel={retorno.label}
         actions={
           <>
             {canCrear && (
