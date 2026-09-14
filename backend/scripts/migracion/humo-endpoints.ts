@@ -103,7 +103,6 @@ async function main(): Promise<void> {
     ['/api/estadisticas', null],
     ['/api/historial', null],
     ['/api/historial?q=UPD', null],
-    ['/api/historial/resumen', null],
     [`/api/historial/registro/${idFuid}`, idFuid],
     ['/api/inventario', null],
     ['/api/inventario/clientes', null],
