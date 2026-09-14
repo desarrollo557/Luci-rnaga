@@ -35,6 +35,14 @@ const FIELDS = [
 type InventarioField = (typeof FIELDS)[number];
 
 /**
+ * Las columnas de `inventario` están en mayúsculas, y PostgreSQL solo las
+ * respeta entre comillas dobles: sin ellas las buscaría en minúsculas y no
+ * las encontraría. Es la única tabla del sistema con este problema, herencia
+ * de cómo se creó en MySQL.
+ */
+const comillas = (columna: string): string => `"${columna}"`;
+
+/**
  * Columnas de texto del inventario que se guardan como `N/A` cuando el
  * formulario las deja en blanco, igual que en el FUID y en la caja.
  *
@@ -141,7 +149,7 @@ function extraerResourceIdDeUrl(url: string | null | undefined): string | null {
 async function syncInventarioToWorkDrive(data: Record<string, unknown>, itemsId: number | string): Promise<SyncOutcome> {
   if (!isZohoSheetConfigured()) {
     await query(
-      `UPDATE inventario SET ZOHO_SYNC_STATE = 'ERROR', ZOHO_SYNC_ERROR = ?, ZOHO_SYNC_AT = NOW() WHERE ITEMS = ?`,
+      `UPDATE inventario SET "ZOHO_SYNC_STATE" = 'ERROR', "ZOHO_SYNC_ERROR" = ?, "ZOHO_SYNC_AT" = NOW() WHERE "ITEMS" = ?`,
       ['Zoho Sheet no configurado (faltan ZOHO_* en .env)', itemsId],
     );
     return { state: 'ERROR', error: 'Zoho Sheet no configurado (faltan ZOHO_* en .env)' };
@@ -152,7 +160,7 @@ async function syncInventarioToWorkDrive(data: Record<string, unknown>, itemsId:
     if (!filas || filas.length === 0) {
       const message = 'El cliente no tiene datos FUID registrados para generar el inventario';
       await query(
-        `UPDATE inventario SET ZOHO_SYNC_STATE = 'ERROR', ZOHO_SYNC_ERROR = ?, ZOHO_SYNC_AT = NOW() WHERE ITEMS = ?`,
+        `UPDATE inventario SET "ZOHO_SYNC_STATE" = 'ERROR', "ZOHO_SYNC_ERROR" = ?, "ZOHO_SYNC_AT" = NOW() WHERE "ITEMS" = ?`,
         [message, itemsId],
       );
       return { state: 'ERROR', error: message };
@@ -162,7 +170,7 @@ async function syncInventarioToWorkDrive(data: Record<string, unknown>, itemsId:
     const resourceIdExistente = extraerResourceIdDeUrl(typeof data.ZOHO_FILE_ID === 'string' ? data.ZOHO_FILE_ID : null);
     const { url } = await subirOActualizarZohoSheetFromExcel(buffer, baseName, resourceIdExistente);
     await query(
-      `UPDATE inventario SET ZOHO_FILE_ID = ?, ZOHO_SYNC_STATE = 'SUBIDO', ZOHO_SYNC_AT = NOW(), ZOHO_SYNC_ERROR = NULL WHERE ITEMS = ?`,
+      `UPDATE inventario SET "ZOHO_FILE_ID" = ?, "ZOHO_SYNC_STATE" = 'SUBIDO', "ZOHO_SYNC_AT" = NOW(), "ZOHO_SYNC_ERROR" = NULL WHERE "ITEMS" = ?`,
       [url, itemsId],
     );
     console.log(`[Zoho Sheet] Inventario subido: ${baseName}`);
@@ -170,7 +178,7 @@ async function syncInventarioToWorkDrive(data: Record<string, unknown>, itemsId:
   } catch (error) {
     const message = error instanceof ZohoSheetError ? error.message : 'Error desconocido al subir a Zoho Sheet';
     await query(
-      `UPDATE inventario SET ZOHO_SYNC_STATE = 'ERROR', ZOHO_SYNC_ERROR = ?, ZOHO_SYNC_AT = NOW() WHERE ITEMS = ?`,
+      `UPDATE inventario SET "ZOHO_SYNC_STATE" = 'ERROR', "ZOHO_SYNC_ERROR" = ?, "ZOHO_SYNC_AT" = NOW() WHERE "ITEMS" = ?`,
       [message.slice(0, 500), itemsId],
     );
     console.error('[Zoho Sheet] Error al subir inventario:', error);
@@ -190,11 +198,11 @@ async function inventarioExistsByCode(codigo: unknown, excludeItems?: number | s
   if (code === null) return false;
   const row = excludeItems != null
     ? await queryOne<{ ITEMS: number }>(
-        `SELECT ITEMS FROM inventario WHERE CODIGO_DEL_CLIENTE = ? AND ITEMS <> ? LIMIT 1`,
+        `SELECT "ITEMS" FROM inventario WHERE "CODIGO_DEL_CLIENTE" = ? AND "ITEMS" <> ? LIMIT 1`,
         [code, excludeItems],
       )
     : await queryOne<{ ITEMS: number }>(
-        `SELECT ITEMS FROM inventario WHERE CODIGO_DEL_CLIENTE = ? LIMIT 1`,
+        `SELECT "ITEMS" FROM inventario WHERE "CODIGO_DEL_CLIENTE" = ? LIMIT 1`,
         [code],
       );
   return !!row;
@@ -253,7 +261,7 @@ export async function getClienteParaInventario(req: Request, res: Response): Pro
 
 export async function getInventario(req: Request, res: Response): Promise<void> {
   const { id } = req.params;
-  const row = await queryOne<Inventario>('SELECT * FROM inventario WHERE ITEMS = ?', [id]);
+  const row = await queryOne<Inventario>('SELECT * FROM inventario WHERE "ITEMS" = ?', [id]);
   if (!row) {
     res.status(404).json({ error: 'Registro no encontrado' });
     return;
@@ -264,7 +272,7 @@ export async function getInventario(req: Request, res: Response): Promise<void> 
 /** Filas FUID del cliente de un inventario, con paginación opcional (limit/offset). */
 export async function getInventarioFuid(req: Request, res: Response): Promise<void> {
   const { id } = req.params;
-  const inventario = await queryOne<Inventario>('SELECT * FROM inventario WHERE ITEMS = ?', [id]);
+  const inventario = await queryOne<Inventario>('SELECT * FROM inventario WHERE "ITEMS" = ?', [id]);
   if (!inventario) {
     res.status(404).json({ error: 'Registro no encontrado' });
     return;
@@ -308,13 +316,13 @@ export async function getInventarioFuid(req: Request, res: Response): Promise<vo
 
 export async function createInventario(req: Request, res: Response): Promise<void> {
   const body = req.body as Record<string, unknown>;
-  const existente = await queryOne<Inventario>('SELECT * FROM inventario WHERE CODIGO_DEL_CLIENTE = ? LIMIT 1', [body.CODIGO_DEL_CLIENTE]);
+  const existente = await queryOne<Inventario>('SELECT * FROM inventario WHERE "CODIGO_DEL_CLIENTE" = ? LIMIT 1', [body.CODIGO_DEL_CLIENTE]);
   if (existente) {
     const values = pickValues(body);
     const usuarioActual = auditoriaUsuario(req.session.user);
-    const sets = `${FIELDS.map((f) => `${f} = ?`).join(', ')}, FECHA_ACTUALIZACION = NOW(), USUARIO_ACTUALIZACION = ?`;
-    await query(`UPDATE inventario SET ${sets} WHERE ITEMS = ?`, [...values, usuarioActual, existente.ITEMS]);
-    const row = await queryOne<Inventario>('SELECT * FROM inventario WHERE ITEMS = ?', [existente.ITEMS]);
+    const sets = `${FIELDS.map((f) => `${comillas(f)} = ?`).join(', ')}, "FECHA_ACTUALIZACION" = NOW(), "USUARIO_ACTUALIZACION" = ?`;
+    await query(`UPDATE inventario SET ${sets} WHERE "ITEMS" = ?`, [...values, usuarioActual, existente.ITEMS]);
+    const row = await queryOne<Inventario>('SELECT * FROM inventario WHERE "ITEMS" = ?', [existente.ITEMS]);
     if (!row) {
       res.status(500).json({ error: 'Registro actualizado pero no se pudo recuperar' });
       return;
@@ -330,11 +338,11 @@ export async function createInventario(req: Request, res: Response): Promise<voi
   const placeholders = [...values.map(() => '?'), 'NOW()', '?'].join(', ');
 
   const result = await queryResult(
-    `INSERT INTO inventario (${FIELDS.join(', ')}, FECHA_ACTUALIZACION, USUARIO_ACTUALIZACION)
+    `INSERT INTO inventario (${FIELDS.map(comillas).join(', ')}, "FECHA_ACTUALIZACION", "USUARIO_ACTUALIZACION")
      VALUES (${placeholders})`,
     valuesConAuditoria,
   );
-  const row = await queryOne<Inventario>('SELECT * FROM inventario WHERE ITEMS = ?', [result.insertId]);
+  const row = await queryOne<Inventario>('SELECT * FROM inventario WHERE "ITEMS" = ?', [result.insertId]);
   if (!row) {
     res.status(500).json({ error: 'Registro insertado pero no se pudo recuperar' });
     return;
@@ -354,9 +362,9 @@ export async function updateInventario(req: Request, res: Response): Promise<voi
   const values = pickValues(body);
   const usuarioActual = auditoriaUsuario(req.session.user);
 
-  const sets = `${FIELDS.map((f) => `${f} = ?`).join(', ')}, FECHA_ACTUALIZACION = NOW(), USUARIO_ACTUALIZACION = ?`;
-  await query(`UPDATE inventario SET ${sets} WHERE ITEMS = ?`, [...values, usuarioActual, id]);
-  const row = await queryOne<Inventario>('SELECT * FROM inventario WHERE ITEMS = ?', [id]);
+  const sets = `${FIELDS.map((f) => `${comillas(f)} = ?`).join(', ')}, "FECHA_ACTUALIZACION" = NOW(), "USUARIO_ACTUALIZACION" = ?`;
+  await query(`UPDATE inventario SET ${sets} WHERE "ITEMS" = ?`, [...values, usuarioActual, id]);
+  const row = await queryOne<Inventario>('SELECT * FROM inventario WHERE "ITEMS" = ?', [id]);
   if (!row) {
     res.status(404).json({ error: 'Registro no encontrado' });
     return;
@@ -368,7 +376,7 @@ export async function updateInventario(req: Request, res: Response): Promise<voi
 
 export async function syncInventarioController(req: Request, res: Response): Promise<void> {
   const { id } = req.params;
-  const row = await queryOne<Inventario>('SELECT * FROM inventario WHERE ITEMS = ?', [id]);
+  const row = await queryOne<Inventario>('SELECT * FROM inventario WHERE "ITEMS" = ?', [id]);
   if (!row) {
     res.status(404).json({ error: 'Registro no encontrado' });
     return;
@@ -381,14 +389,14 @@ export async function syncInventarioController(req: Request, res: Response): Pro
 export async function deleteInventario(req: Request, res: Response): Promise<void> {
   const { id } = req.params;
   const existente = await queryOne<{ ITEMS: number; CLIENTE: string | null; No_ACTA: string | null }>(
-    'SELECT ITEMS, CLIENTE, No_ACTA FROM inventario WHERE ITEMS = ?',
+    'SELECT "ITEMS", "CLIENTE", "No_ACTA" FROM inventario WHERE "ITEMS" = ?',
     [id],
   );
   if (!existente) {
     res.status(404).json({ message: 'El registro de inventario no existe o ya fue eliminado' });
     return;
   }
-  await query('DELETE FROM inventario WHERE ITEMS = ?', [id]);
+  await query('DELETE FROM inventario WHERE "ITEMS" = ?', [id]);
   void audit({
     entidad: 'inventario',
     entidadId: id,

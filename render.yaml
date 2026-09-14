@@ -1,0 +1,69 @@
+# Despliegue de Luciérnaga en Render.
+#
+# Un solo servicio sirve la API y el frontend compilado. Podrían ser dos —el
+# sitio en un CDN y la API aparte—, pero entonces el navegador trataría la
+# cookie de sesión como de terceros y habría que abrirla con SameSite=None,
+# además de mantener la lista de orígenes de CORS. Bajo un mismo dominio no
+# hace falta ninguna de las dos cosas.
+#
+# El backend ya sirve `frontend/dist` cuando NODE_ENV=production (ver app.ts).
+#
+# Requiere que la base de Supabase esté migrada: `database/supabase/01-esquema.sql`
+# y `02-triggers.sql` aplicados, y los datos copiados.
+
+services:
+  - type: web
+    name: luciernaga
+    runtime: node
+    # Ohio (us-east) es la región del proyecto de Supabase: cuanto más cerca,
+    # menos latencia en cada consulta.
+    region: ohio
+    # El plan gratuito duerme el servicio tras 15 minutos sin tráfico y tarda
+    # casi un minuto en despertar, que con gente digitando se nota.
+    plan: starter
+    branch: production
+    buildCommand: npm --prefix frontend install && npm --prefix frontend run build && npm --prefix backend install && npm --prefix backend run build
+    startCommand: node backend/dist/server.js
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      # Dónde está el frontend compilado, resuelto desde la raíz del repositorio,
+      # que es el directorio desde el que arranca el proceso.
+      - key: FRONTEND_DIST
+        value: frontend/dist
+      # Supabase no publica el host directo `db.<ref>.supabase.co`: se entra por
+      # el pooler, y el usuario lleva la referencia del proyecto.
+      - key: PG_HOST
+        value: aws-0-us-east-2.pooler.supabase.com
+      - key: PG_PORT
+        value: 5432
+      - key: PG_DATABASE
+        value: postgres
+      - key: PG_USER
+        value: postgres.atvkrqhpoaopqtcxwlzz
+      # Los secretos se cargan a mano en el panel de Render; nunca en el repositorio.
+      - key: PG_PASSWORD
+        sync: false
+      - key: SESSION_SECRET
+        sync: false
+      # Solo hace falta si el frontend se sirve desde otro dominio (Vercel). Con
+      # todo bajo este servicio, se deja sin definir.
+      - key: CORS_ORIGIN
+        sync: false
+      - key: COOKIE_CROSS_SITE
+        sync: false
+      # Integración con Zoho (subida de inventarios). Opcionales: sin ellas, esa
+      # función queda inactiva y el resto del sistema funciona igual.
+      - key: ZOHO_CLIENT_ID
+        sync: false
+      - key: ZOHO_CLIENT_SECRET
+        sync: false
+      - key: ZOHO_REFRESH_TOKEN
+        sync: false
+      - key: ZOHO_FOLDER_ID
+        sync: false
+      - key: ZOHO_DC
+        sync: false
+      - key: ZOHO_WORKSPACE_ID
+        sync: false

@@ -5,8 +5,10 @@ import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import session from 'express-session';
+import connectPgSimple from 'connect-pg-simple';
 import rateLimit from 'express-rate-limit';
 import apiRoutes from './routes/index.js';
+import { pool } from './config/db.js';
 import { notFoundHandler, errorHandler } from './middlewares/errorHandler.js';
 import { cuerpoEnMayusculas } from './middlewares/mayusculas.js';
 import {
@@ -55,15 +57,40 @@ app.use(express.json());
 // Todo lo que se guarda en el software va en MAYÚSCULAS (salvo contraseñas).
 app.use(cuerpoEnMayusculas);
 
+/**
+ * La sesión se guarda en la base, no en memoria.
+ *
+ * Con el almacén en memoria, cada despliegue y cada reinicio del servidor
+ * echaba a todo el mundo, y con más de una instancia el usuario entraba en una
+ * y la petición siguiente caía en otra que no lo conocía. La tabla `session` la
+ * crea el propio almacén si no existe.
+ */
+const AlmacenPg = connectPgSimple(session);
+
+/**
+ * Cuando el frontend vive en otro dominio que la API —por ejemplo el sitio en
+ * Vercel y la API en Render—, el navegador solo manda la cookie de sesión si va
+ * marcada `SameSite=None`, y eso exige `Secure`. Servidos ambos desde el mismo
+ * dominio, `lax` es más estricto y suficiente.
+ */
+const dominiosSeparados = process.env.COOKIE_CROSS_SITE === 'true';
+const enProduccion = process.env.NODE_ENV === 'production';
+
+// Render, Vercel y cualquier plataforma con proxy delante terminan el TLS antes
+// de la aplicación: sin esto, Express cree que la conexión es HTTP y se niega a
+// enviar una cookie `Secure`.
+if (enProduccion) app.set('trust proxy', 1);
+
 app.use(
   session({
+    store: new AlmacenPg({ pool, createTableIfMissing: true, tableName: 'session' }),
     secret: resolveSessionSecret(),
     resave: false,
     saveUninitialized: true,
     cookie: {
-      secure: process.env.NODE_ENV === 'production',
+      secure: enProduccion || dominiosSeparados,
       httpOnly: true,
-      sameSite: 'lax',
+      sameSite: dominiosSeparados ? 'none' : 'lax',
       maxAge: SESSION_MAX_AGE_MS,
     },
   }),

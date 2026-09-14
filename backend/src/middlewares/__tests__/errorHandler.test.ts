@@ -24,12 +24,14 @@ function manejar(err: unknown): Respuesta {
   return capturado;
 }
 
-describe('punto 9 — el error 1406 de MySQL deja de ser un 500 genérico', () => {
-  it('responde 400 y nombra la columna que hay que recortar', () => {
+describe('un texto más largo que su columna no es un 500 genérico', () => {
+  it('responde 400 con el campo cuando el error nombra la columna', () => {
+    // PostgreSQL usa el SQLSTATE 22001 (string_data_right_truncation), que
+    // sustituye al 1406 de MySQL.
     const { codigo, cuerpo } = manejar({
-      code: 'ER_DATA_TOO_LONG',
-      errno: 1406,
-      sqlMessage: "Data too long for column 'asunto' at row 1",
+      code: '22001',
+      detail: "Data too long for column 'asunto'",
+      message: 'value too long for type character varying(255)',
     });
     expect(codigo).toBe(400);
     expect(cuerpo).toEqual({
@@ -40,31 +42,60 @@ describe('punto 9 — el error 1406 de MySQL deja de ser un 500 genérico', () =
     });
   });
 
-  it('responde 400 aunque la columna no esté en el mapa', () => {
+  it('responde 400 genérico cuando el error no dice qué columna es', () => {
+    // Es el caso normal en PostgreSQL: el mensaje solo nombra el tipo. Los
+    // validadores zod acotan cada campo antes, así que esto es el último
+    // recurso y basta con que el usuario sepa que algo se pasó de largo.
     const { codigo, cuerpo } = manejar({
-      code: 'ER_DATA_TOO_LONG',
-      errno: 1406,
-      sqlMessage: "Data too long for column 'otra_tabla_columna' at row 1",
+      code: '22001',
+      message: 'value too long for type character varying(255)',
     });
     expect(codigo).toBe(400);
-    expect(cuerpo).toMatchObject({ error: 'Datos inválidos' });
-  });
-
-  it('lo reconoce por el número de error aunque falte el código', () => {
-    expect(manejar({ errno: 1406, sqlMessage: 'Data too long' }).codigo).toBe(400);
+    expect(cuerpo).toEqual({
+      error: 'Datos inválidos',
+      details: [
+        { field: '', message: 'Uno de los campos supera la longitud máxima permitida. Acórtelo e intente de nuevo.' },
+      ],
+    });
   });
 });
 
-describe('otros errores de MySQL siguen tratándose igual', () => {
+describe('el resto de errores de la base', () => {
   it('un duplicado responde 409', () => {
-    expect(manejar({ code: 'ER_DUP_ENTRY' }).codigo).toBe(409);
+    const { codigo, cuerpo } = manejar({
+      code: '23505',
+      detail: 'Key (upd)=(UPD2950163) already exists.',
+    });
+    expect(codigo).toBe(409);
+    expect(cuerpo).toEqual({ error: 'Registro duplicado. Ya existe un elemento con esos datos.' });
   });
 
-  it('una llave foránea inexistente responde 409', () => {
-    expect(manejar({ code: 'ER_NO_REFERENCED_ROW_2' }).codigo).toBe(409);
+  it('una referencia que no existe responde 409', () => {
+    const { codigo, cuerpo } = manejar({
+      code: '23503',
+      detail: 'Key (id_submodulo)=(99) is not present in table "sub_modulos".',
+    });
+    expect(codigo).toBe(409);
+    expect(cuerpo).toEqual({
+      error: 'La referencia no existe. Verifica que el módulo cliente o el usuario seleccionado sea válido.',
+    });
   });
 
-  it('un error desconocido sigue siendo 500', () => {
-    expect(manejar(new Error('algo se rompió')).codigo).toBe(500);
+  it('borrar un registro del que cuelgan otros responde 409 con su propio mensaje', () => {
+    // En PostgreSQL los dos casos comparten código y solo el detalle los separa.
+    const { codigo, cuerpo } = manejar({
+      code: '23503',
+      detail: 'Key (id)=(3) is still referenced from table "moduloscliente".',
+    });
+    expect(codigo).toBe(409);
+    expect(cuerpo).toEqual({
+      error: 'No se puede eliminar: el registro tiene elementos asociados. Elimina primero sus dependencias.',
+    });
+  });
+
+  it('un error desconocido sigue siendo un 500', () => {
+    const { codigo, cuerpo } = manejar(new Error('algo raro'));
+    expect(codigo).toBe(500);
+    expect(cuerpo).toEqual({ error: 'Error interno del servidor' });
   });
 });
