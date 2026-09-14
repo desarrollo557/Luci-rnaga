@@ -199,7 +199,7 @@ export async function estadisticasProduccion(_req: Request, res: Response): Prom
       ultimo_registro: string | null;
     }>(
       `SELECT f.elaborado_por AS nombre,
-              SUBSTRING_INDEX(SUBSTRING_INDEX(f.elaborado_por, '(', -1), ')', 1) AS cc,
+              substring(f.elaborado_por from '[(]([^)]*)[)]') AS cc,
               MAX(u.rol) AS rol,
               MAX(u.sede) AS sede,
               COUNT(*) AS total,
@@ -207,7 +207,7 @@ export async function estadisticasProduccion(_req: Request, res: Response): Prom
               COUNT(DISTINCT f.caja) AS cajas,
               MAX(f.fecha_del_dato) AS ultimo_registro
        FROM fuiddatosreal f
-       LEFT JOIN users u ON u.cc = SUBSTRING_INDEX(SUBSTRING_INDEX(f.elaborado_por, '(', -1), ')', 1)
+       LEFT JOIN users u ON u.cc = substring(f.elaborado_por from '[(]([^)]*)[)]')
        WHERE f.elaborado_por IS NOT NULL AND f.elaborado_por <> ''
        GROUP BY f.elaborado_por
        ORDER BY total DESC`,
