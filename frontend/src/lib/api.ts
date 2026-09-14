@@ -378,6 +378,10 @@ export const inventarioApi = {
 export const historialApi = {
   list: (filtros: HistorialFiltros = {}) =>
     api.get<HistorialPage>('/historial', { params: filtros }),
+  /** Cifras del historial completo, para las tarjetas y las gráficas. */
+  resumen: () => api.get<ResumenHistorial>('/historial/resumen'),
+  /** Todo lo que le ha pasado a un registro, de lo más antiguo a lo más reciente. */
+  registro: (idDato: number) => api.get<LineaDeTiempo>(`/historial/registro/${idDato}`),
 };
 
 export const plantillaApi = {
@@ -421,13 +425,52 @@ export interface Digitador {
   ultimo_registro: string | null;
 }
 
+/** Un campo que cambió entre dos versiones del mismo registro. */
+export interface CambioCampo {
+  campo: string;
+  etiqueta: string;
+  antes: string | null;
+  despues: string | null;
+}
+
+/**
+ * Una entrada del historial: la copia del registro antes del cambio, más el
+ * detalle de qué quedó distinto después.
+ */
+export interface MovimientoHistorial extends Historial {
+  cambios: CambioCampo[];
+  registro_eliminado: boolean;
+}
+
 export interface HistorialPage {
-  data: Historial[];
+  data: MovimientoHistorial[];
   total: number;
   page: number;
   pageSize: number;
   tipos: string[];
   sedes: string[];
+}
+
+export interface ResumenHistorial {
+  total_movimientos: number;
+  ediciones: number;
+  eliminaciones: number;
+  registros_afectados: number;
+  cajas_afectadas: number;
+  primer_movimiento: string | null;
+  ultimo_movimiento: string | null;
+  por_dia: Array<{ dia: string; ediciones: number; eliminaciones: number }>;
+  por_persona: Array<{ persona: string; total: number }>;
+  por_caja: Array<{ caja: string; total: number }>;
+  campos_mas_editados: Array<{ campo: string; etiqueta: string; total: number }>;
+}
+
+/** La vida completa de un registro FUID. */
+export interface LineaDeTiempo {
+  id_dato: number;
+  registro_eliminado: boolean;
+  actual: Record<string, unknown> | null;
+  movimientos: MovimientoHistorial[];
 }
 
 export interface HistorialFiltros {
@@ -436,6 +479,7 @@ export interface HistorialFiltros {
   q?: string;
   tipo?: string;
   sede?: string;
+  caja?: string;
   desde?: string;
   hasta?: string;
 }
