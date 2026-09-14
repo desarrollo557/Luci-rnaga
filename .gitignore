@@ -15,6 +15,10 @@ dist
 *.tmp
 cookies.txt
 
+# Excels generados por generarPlantilla: se recrean en cada descarga
+# (plantilla.service.ts hace mkdirSync) y el controlador los borra al enviarlos.
+backend/temp/
+
 # Herramientas locales (opencode)
 .atl/
 
@@ -24,3 +28,5 @@ cookies.txt
 # Sistema
 .DS_Store
 Thumbs.db
+# Respaldos locales de la base generados por database/limpiar_bd.ps1 y reinstalar_bd.ps1
+database/respaldos/

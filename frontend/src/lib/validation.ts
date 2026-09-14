@@ -1,3 +1,5 @@
+import { esValorVacio } from './camposVacios';
+
 export type FieldValidator = (value: string, label: string) => string | null;
 
 export function required(value: string, label: string): string | null {
@@ -5,9 +7,10 @@ export function required(value: string, label: string): string | null {
 }
 
 export function onlyDigits(value: string, label: string): string | null {
-  return value.trim() !== '' && !/^\d+$/.test(value.trim())
-    ? `${label} debe contener solo números`
-    : null;
+  // `N/A` es el marcador que deja el diálogo de campos sin diligenciar y la base
+  // ya lo guarda así en columnas de texto como `folios`: no es un formato inválido.
+  if (value.trim() === '' || esValorVacio(value)) return null;
+  return /^\d+$/.test(value.trim()) ? null : `${label} debe contener solo números`;
 }
 
 export function minLength(value: string, n: number, label: string): string | null {

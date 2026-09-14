@@ -4,8 +4,12 @@ import { pool, query, queryOne } from '../config/db.js';
 import type { FuidDato } from '../types/db.js';
 import type { FuidCreateDto, FuidUpdateDto } from '../types/index.js';
 import { fuidValues, isSuggestionField } from '../services/fuid.service.js';
+import { audit } from '../services/audit.service.js';
+import { fechaHoyLocal } from '../utils/format.js';
 
-const fechaActual = (): string => new Date().toISOString().slice(0, 10);
+// La fecha del dato la fija el navegador en hora local; aquí se compara con la
+// fecha local de Colombia para que "hoy" coincida también después de las 7 p. m.
+const fechaActual = (): string => fechaHoyLocal();
 
 /** Error de MySQL por violación de la restricción UNIQUE (backstop de consumo). */
 function isErDupEntry(error: unknown): boolean {
@@ -29,9 +33,9 @@ export async function listFuid(req: Request, res: Response): Promise<void> {
   if (user.rol === 'LIDER' || user.rol === 'ADMIN') {
     const results = caja
       ? await query<FuidDato>(
-          'SELECT * FROM fuiddatosreal WHERE caja = ? LIMIT ? OFFSET ?',
-          [caja, limit, offset],
-        )
+        'SELECT * FROM fuiddatosreal WHERE caja = ? LIMIT ? OFFSET ?',
+        [caja, limit, offset],
+      )
       : await query<FuidDato>('SELECT * FROM fuiddatosreal LIMIT ? OFFSET ?', [limit, offset]);
     res.json(results);
     return;
@@ -41,18 +45,24 @@ export async function listFuid(req: Request, res: Response): Promise<void> {
     // El técnico/calidad ve los FUIDs de las cajas que le fueron asignadas,
     // sin importar quién los digitó (la caja es del equipo asignado).
     const tabla = user.rol === 'CALIDAD' ? 'asignacion_caja_calidad' : 'asignacion_caja_tecnica';
+    // EXISTS en lugar de JOIN: si el mismo número de caja existiera en más de un
+    // registro de modulos_caja, el JOIN devolvería cada FUID repetido.
     const sql = caja
       ? `SELECT f.* FROM fuiddatosreal f
-         JOIN modulos_caja mc ON mc.caja_modulo = f.caja
-         JOIN ${tabla} ac ON ac.modulo_id = mc.id
-         WHERE ac.usuario_id = ? AND f.caja = ?
+         WHERE f.caja = ? AND EXISTS (
+           SELECT 1 FROM modulos_caja mc
+           JOIN ${tabla} ac ON ac.modulo_id = mc.id
+           WHERE mc.caja_modulo = f.caja AND ac.usuario_id = ?
+         )
          LIMIT ? OFFSET ?`
       : `SELECT f.* FROM fuiddatosreal f
-         JOIN modulos_caja mc ON mc.caja_modulo = f.caja
-         JOIN ${tabla} ac ON ac.modulo_id = mc.id
-         WHERE ac.usuario_id = ?
+         WHERE EXISTS (
+           SELECT 1 FROM modulos_caja mc
+           JOIN ${tabla} ac ON ac.modulo_id = mc.id
+           WHERE mc.caja_modulo = f.caja AND ac.usuario_id = ?
+         )
          LIMIT ? OFFSET ?`;
-    const params = caja ? [user.id, caja, limit, offset] : [user.id, limit, offset];
+    const params = caja ? [caja, user.id, limit, offset] : [user.id, limit, offset];
     const results = await query<FuidDato>(sql, params);
     res.json(results);
     return;
@@ -95,7 +105,17 @@ export async function checkCajaDuplicates(req: Request, res: Response): Promise<
 export async function getFuid(req: Request, res: Response): Promise<void> {
   const { id } = req.params;
   const results = await query<FuidDato>('SELECT * FROM fuiddatosreal WHERE id = ?', [id]);
-  res.json(results);
+
+  // Se devuelve el registro, no el array de la consulta: un id inexistente daba
+  // 200 con `[]`, que el cliente no puede distinguir de un registro válido.
+  // El resto de controladores (getUser, getInventario, getModuloCajaById) ya
+  // seguían este contrato.
+  if (results.length === 0) {
+    res.status(404).json({ error: 'Registro FUID no encontrado' });
+    return;
+  }
+
+  res.json(results[0]);
 }
 
 export async function createFuid(req: Request, res: Response): Promise<void> {
@@ -146,14 +166,19 @@ export async function createFuid(req: Request, res: Response): Promise<void> {
     await conn.query(sql, values);
 
     // El técnico avanza su consecutivo propio: actualiza ultimo_upd de su asignación
-    // solo cuando el registro insertado trae un UPD.
+    // solo cuando el registro insertado trae un UPD. Si el usuario editó a mano un valor
+    // más alto, se conserva el máximo real para no romper la secuencia del siguiente.
     if (user.rol === 'TECNICA' && body.caja && body.upd) {
       await conn.query(
         `UPDATE asignacion_caja_tecnica act
          JOIN modulos_caja mc ON mc.id = act.modulo_id
-         SET act.ultimo_upd = ?
+         SET act.ultimo_upd = CASE
+           WHEN act.ultimo_upd IS NULL OR CAST(SUBSTRING(?, 4) AS UNSIGNED) >= CAST(SUBSTRING(act.ultimo_upd, 4) AS UNSIGNED)
+             THEN ?
+           ELSE act.ultimo_upd
+         END
          WHERE act.usuario_id = ? AND mc.caja_modulo = ?`,
-        [body.upd, user.id, body.caja],
+        [body.upd, body.upd, user.id, body.caja],
       );
     }
 
@@ -185,7 +210,7 @@ export async function updateFuid(req: Request, res: Response): Promise<void> {
   const results = await query<FuidDato>('SELECT * FROM fuiddatosreal WHERE id = ?', [id]);
   const registro = results[0];
   if (!registro) {
-    res.status(403).json({ error: 'No autorizado para actualizar este registro' });
+    res.status(404).json({ error: 'El registro no existe o ya fue eliminado' });
     return;
   }
 
@@ -220,7 +245,30 @@ export async function updateFuid(req: Request, res: Response): Promise<void> {
     cambio_calidad = ?, sede_calidad = ?, asunto_2 = ?, asunto_3 = ?
     WHERE id = ?`;
 
-  await query(sql, values);
+  try {
+    await query(sql, values);
+
+    if (user.rol === 'TECNICA' && body.caja && body.upd) {
+      await query(
+        `UPDATE asignacion_caja_tecnica act
+         JOIN modulos_caja mc ON mc.id = act.modulo_id
+         SET act.ultimo_upd = CASE
+           WHEN act.ultimo_upd IS NULL OR CAST(SUBSTRING(?, 4) AS UNSIGNED) >= CAST(SUBSTRING(act.ultimo_upd, 4) AS UNSIGNED)
+             THEN ?
+           ELSE act.ultimo_upd
+         END
+         WHERE act.usuario_id = ? AND mc.caja_modulo = ?`,
+        [body.upd, body.upd, user.id, body.caja],
+      );
+    }
+  } catch (error) {
+    if (isErDupEntry(error)) {
+      res.status(409).json({ error: 'El UPD ya fue usado', code: 'UPD_YA_USADO' });
+      return;
+    }
+    console.error('Error al actualizar el registro:', error);
+    res.status(500).json({ error: 'Error interno del servidor' });
+  }
   res.status(200).json({ message: 'Registro actualizado' });
 }
 
@@ -228,36 +276,50 @@ export async function deleteFuid(req: Request, res: Response): Promise<void> {
   const { id } = req.params;
   const user = req.session.user;
   if (!user) {
-    res.status(403).json({ error: 'No autorizado para eliminar este registro' });
+    res.status(401).json({ error: 'No autenticado' });
     return;
   }
 
-  const results = await query<FuidDato>('SELECT * FROM fuiddatosreal WHERE id = ?', [id]);
-  const registro = results[0];
+  const registro = await queryOne<FuidDato>('SELECT * FROM fuiddatosreal WHERE id = ?', [id]);
   if (!registro) {
-    res.status(403).json({ error: 'No autorizado para eliminar este registro' });
+    res.status(404).json({ error: 'El registro no existe o ya fue eliminado' });
     return;
   }
 
-  const { cc, rol } = user;
-
-  // RESTRICCIÓN DE SEGURIDAD: Los registros del día actual no se pueden eliminar al día siguiente
-  if (registro.fecha_del_dato !== fechaActual()) {
-    res.status(403).json({ error: 'Los registros de días anteriores no pueden ser eliminados' });
+  // Jerarquía: ADMIN borra cualquier registro; LIDER los de su sede; TECNICA solo
+  // los que digitó el mismo día (fecha local de Colombia); CALIDAD no borra.
+  const { rol } = user;
+  if (rol === 'CALIDAD') {
+    res.status(403).json({ error: 'El rol CALIDAD no puede eliminar registros FUID' });
     return;
   }
-
-  const nombreCompletoMayus = `${user.nombre.toUpperCase()} (${cc})`;
-  const isCreator =
-    rol !== 'LIDER' && rol !== 'ADMIN' &&
-    (registro.elaborado_por?.toUpperCase() !== nombreCompletoMayus);
-
-  if (isCreator) {
-    res.status(403).json({ error: 'No autorizado para eliminar este registro' });
+  if (rol === 'LIDER' && registro.sede && registro.sede !== user.sede) {
+    res.status(403).json({ error: 'Solo puede eliminar registros de su sede' });
     return;
   }
+  if (rol === 'TECNICA') {
+    const autor = `${user.nombre.toUpperCase()} (${user.cc})`;
+    if ((registro.elaborado_por ?? '').toUpperCase() !== autor) {
+      res.status(403).json({ error: 'Solo puede eliminar los registros que usted digitó' });
+      return;
+    }
+    if (registro.fecha_del_dato !== fechaActual()) {
+      res.status(403).json({
+        error: 'Los registros de días anteriores no pueden ser eliminados; solicítelo a su líder',
+      });
+      return;
+    }
+  }
 
+  // El trigger after_delete_fuiddatosreal conserva una copia en historial.
   await query('DELETE FROM fuiddatosreal WHERE id = ?', [id]);
+  void audit({
+    entidad: 'fuiddatosreal',
+    entidadId: id,
+    accion: 'ELIMINAR',
+    detalle: `FUID ${registro.upd ?? `#${id}`} de la caja ${registro.caja ?? '—'}`,
+    usuario: user,
+  });
   res.status(200).json({ message: 'Registro eliminado' });
 }
 
@@ -273,28 +335,6 @@ export async function suggestions(req: Request, res: Response): Promise<void> {
   const sql = `SELECT DISTINCT ${campo} FROM fuiddatosreal WHERE caja = ? AND ${campo} LIKE ? LIMIT 8`;
   const rows = await query<Record<string, string>>(sql, [caja, `${q}%`]);
   res.json(rows.map((row) => row[campo]));
-}
-
-export async function saveSuggestionValue(req: Request, res: Response): Promise<void> {
-  const { caja, campo } = req.params;
-  const { valor } = req.body as { valor: string };
-
-  if (!valor || !caja || !isSuggestionField(campo)) {
-    res.status(400).json({ error: 'Datos incompletos o campo no válido' });
-    return;
-  }
-
-  const check = await queryOne<{ count: number }>(
-    `SELECT COUNT(*) AS count FROM fuiddatosreal WHERE caja = ? AND ${campo} = ?`,
-    [caja, valor],
-  );
-
-  if ((check?.count ?? 0) === 0) {
-    await query(`INSERT INTO fuiddatosreal (caja, ${campo}) VALUES (?, ?)`, [caja, valor]);
-    res.status(201).json({ message: `Valor guardado en ${campo}` });
-  } else {
-    res.status(200).json({ message: `El valor ya existe en ${campo}` });
-  }
 }
 
 export async function marcarOk(req: Request, res: Response): Promise<void> {

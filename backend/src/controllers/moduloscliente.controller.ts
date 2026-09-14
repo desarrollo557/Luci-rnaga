@@ -1,5 +1,7 @@
 import type { Request, Response } from 'express';
-import { query } from '../config/db.js';
+import { query, queryOne } from '../config/db.js';
+import { audit } from '../services/audit.service.js';
+import { fueraDeSuSede, sedeDeActa, sedeDeCliente } from '../services/jerarquia.service.js';
 import type { ModuloCliente } from '../types/db.js';
 
 export async function listModulosCliente(req: Request, res: Response): Promise<void> {
@@ -11,39 +13,22 @@ export async function listModulosCliente(req: Request, res: Response): Promise<v
 
   const subModuloId = String(req.query.subModuloId ?? '');
 
-  if (user.rol === 'TECNICA') {
-    const results = subModuloId
-      ? await query<ModuloCliente>(
-          `SELECT m.*, (SELECT COUNT(*) FROM modulos_caja mc WHERE mc.id_modulo_caja = m.id) AS total_cajas
-           FROM moduloscliente m
-           JOIN modulo_tecnica mt ON mt.modulo_id = m.id
-           WHERE mt.usuario_id = ? AND m.id_submodulo = ?`,
-          [user.id, subModuloId],
-        )
-      : await query<ModuloCliente>(
-          `SELECT m.*, (SELECT COUNT(*) FROM modulos_caja mc WHERE mc.id_modulo_caja = m.id) AS total_cajas
-           FROM moduloscliente m
-           JOIN modulo_tecnica mt ON mt.modulo_id = m.id
-           WHERE mt.usuario_id = ?`,
-          [user.id],
-        );
-    res.json(results);
-  } else if (user.rol === 'CALIDAD') {
-    const results = subModuloId
-      ? await query<ModuloCliente>(
-          `SELECT m.*, (SELECT COUNT(*) FROM modulos_caja mc WHERE mc.id_modulo_caja = m.id) AS total_cajas
-           FROM moduloscliente m
-           JOIN modulo_calidad mc ON mc.modulo_id = m.id
-           WHERE mc.usuario_id = ? AND m.id_submodulo = ?`,
-          [user.id, subModuloId],
-        )
-      : await query<ModuloCliente>(
-          `SELECT m.*, (SELECT COUNT(*) FROM modulos_caja mc WHERE mc.id_modulo_caja = m.id) AS total_cajas
-           FROM moduloscliente m
-           JOIN modulo_calidad mc ON mc.modulo_id = m.id
-           WHERE mc.usuario_id = ?`,
-          [user.id],
-        );
+  if (user.rol === 'TECNICA' || user.rol === 'CALIDAD') {
+    // Técnica y calidad ven las actas en las que tienen al menos una caja
+    // asignada: la asignación por caja es la única fuente de acceso.
+    const tablaAsignacion = user.rol === 'CALIDAD' ? 'asignacion_caja_calidad' : 'asignacion_caja_tecnica';
+    const filtroSubModulo = subModuloId ? ' AND m.id_submodulo = ?' : '';
+    const params: unknown[] = subModuloId ? [user.id, subModuloId] : [user.id];
+    const results = await query<ModuloCliente>(
+      `SELECT m.*, (SELECT COUNT(*) FROM modulos_caja mc WHERE mc.id_modulo_caja = m.id) AS total_cajas
+       FROM moduloscliente m
+       WHERE EXISTS (
+         SELECT 1 FROM modulos_caja mc
+         JOIN ${tablaAsignacion} a ON a.modulo_id = mc.id
+         WHERE mc.id_modulo_caja = m.id AND a.usuario_id = ?
+       )${filtroSubModulo}`,
+      params,
+    );
     res.json(results);
   } else if (user.rol === 'LIDER' || user.rol === 'ADMIN') {
     const results = subModuloId
@@ -84,6 +69,17 @@ export async function createModuloCliente(req: Request, res: Response): Promise<
     return;
   }
 
+  // El acta cuelga de un cliente existente y, para un líder, de su propia sede.
+  const cliente = await sedeDeCliente(id_submodulo);
+  if (!cliente.existe) {
+    res.status(404).json({ error: 'El cliente indicado no existe' });
+    return;
+  }
+  if (fueraDeSuSede(req.session.user, cliente.sede)) {
+    res.status(403).json({ error: 'Solo puede crear actas para clientes de su sede' });
+    return;
+  }
+
   await query(
     'INSERT INTO moduloscliente (codigo, entidad_remitente, acta_transferencia_modulo, fecha_trans_modulo, id_submodulo) VALUES (?, ?, ?, ?, ?)',
     [codigo, entidad_remitente, acta_transferencia_modulo, fecha_trans_modulo, id_submodulo],
@@ -101,6 +97,26 @@ export async function updateModuloCliente(req: Request, res: Response): Promise<
     return;
   }
 
+  const acta = await sedeDeActa(id);
+  if (!acta.existe) {
+    res.status(404).json({ error: 'El acta no existe' });
+    return;
+  }
+  if (fueraDeSuSede(req.session.user, acta.sede)) {
+    res.status(403).json({ error: 'Solo puede editar actas de clientes de su sede' });
+    return;
+  }
+  // Si se mueve el acta a otro cliente, ese cliente también debe ser de su sede.
+  const destino = await sedeDeCliente(id_submodulo);
+  if (!destino.existe) {
+    res.status(404).json({ error: 'El cliente indicado no existe' });
+    return;
+  }
+  if (fueraDeSuSede(req.session.user, destino.sede)) {
+    res.status(403).json({ error: 'No puede mover el acta a un cliente de otra sede' });
+    return;
+  }
+
   await query(
     'UPDATE moduloscliente SET codigo = ?, entidad_remitente = ?, acta_transferencia_modulo = ?, fecha_trans_modulo = ?, id_submodulo = ? WHERE id = ?',
     [codigo, entidad_remitente, acta_transferencia_modulo, fecha_trans_modulo, id_submodulo, id],
@@ -110,6 +126,24 @@ export async function updateModuloCliente(req: Request, res: Response): Promise<
 
 export async function deleteModuloCliente(req: Request, res: Response): Promise<void> {
   const { id } = req.params;
+  const user = req.session.user;
+
+  const acta = await queryOne<{ id: number; codigo: string; acta_transferencia_modulo: string; sede: string | null }>(
+    `SELECT m.id, m.codigo, m.acta_transferencia_modulo, sm.sede_submodulos AS sede
+     FROM moduloscliente m
+     LEFT JOIN sub_modulos sm ON sm.id = m.id_submodulo
+     WHERE m.id = ?`,
+    [id],
+  );
+  if (!acta) {
+    res.status(404).json({ error: 'El acta no existe o ya fue eliminada' });
+    return;
+  }
+  // Un líder solo administra las actas de los clientes de su sede.
+  if (user?.rol === 'LIDER' && acta.sede && acta.sede !== user.sede) {
+    res.status(403).json({ error: 'Solo puede eliminar actas de clientes de su sede' });
+    return;
+  }
 
   // No se puede eliminar un módulo cliente con cajas asociadas: la FK
   // (modulos_caja.id_modulo_caja) lo impediría con un 500 genérico.
@@ -119,105 +153,20 @@ export async function deleteModuloCliente(req: Request, res: Response): Promise<
   );
   if ((dependientes[0]?.total ?? 0) > 0) {
     res.status(409).json({
-      error: `No se puede eliminar: el módulo tiene ${dependientes[0].total} caja(s) asociada(s)`,
+      error: `No se puede eliminar: el acta tiene ${dependientes[0].total} caja(s) registrada(s)`,
     });
     return;
   }
 
   await query('DELETE FROM moduloscliente WHERE id = ?', [id]);
-  res.send('Módulo cliente eliminado');
-}
-
-export async function assignUsersToModulo(req: Request, res: Response): Promise<void> {
-  const { moduloId } = req.params;
-  const { usuarios } = req.body as { usuarios: number[] };
-  const rol = String(req.query.rol ?? '').toLowerCase();
-
-  if (!usuarios || usuarios.length === 0) {
-    res.status(400).json({ message: 'No se enviaron usuarios para agregar' });
-    return;
-  }
-  if (rol !== 'tecnica' && rol !== 'calidad') {
-    res.status(400).json({ message: 'El parámetro rol debe ser "tecnica" o "calidad"' });
-    return;
-  }
-
-  const tablaRelacion = rol === 'calidad' ? 'modulo_calidad' : 'modulo_tecnica';
-  const idsUnicos = [...new Set(usuarios.map(Number).filter((n) => Number.isInteger(n)))];
-  if (idsUnicos.length === 0) {
-    res.status(400).json({ message: 'La lista de usuarios no es válida' });
-    return;
-  }
-
-  const existentes = await query<{ id: number; nombre: string; rol: string }>(
-    'SELECT id, nombre, rol FROM users WHERE id IN (?)',
-    [idsUnicos],
-  );
-  const mapa = new Map(existentes.map((u) => [u.id, u.rol]));
-  const inexistentes = idsUnicos.filter((id) => !mapa.has(id));
-  if (inexistentes.length > 0) {
-    res.status(400).json({ message: `Los siguientes usuarios no existen: ${inexistentes.join(', ')}` });
-    return;
-  }
-
-  const rolEsperado = rol === 'calidad' ? 'CALIDAD' : 'TECNICA';
-  const rolIncorrecto = idsUnicos.filter((id) => mapa.get(id) !== rolEsperado);
-  if (rolIncorrecto.length > 0) {
-    const nombres = rolIncorrecto.map((id) => existentes.find((u) => u.id === id)?.nombre ?? id);
-    res.status(400).json({
-      message: `Los siguientes usuarios no tienen el rol ${rolEsperado}: ${nombres.join(', ')}`,
-    });
-    return;
-  }
-
-  const yaAsignados = await query<{ usuario_id: number }>(
-    `SELECT usuario_id FROM ${tablaRelacion} WHERE modulo_id = ? AND usuario_id IN (?)`,
-    [moduloId, idsUnicos],
-  );
-  const yaSet = new Set(yaAsignados.map((a) => a.usuario_id));
-  const nuevos = idsUnicos.filter((id) => !yaSet.has(id));
-  if (nuevos.length === 0) {
-    res.status(409).json({ message: 'Los usuarios seleccionados ya están asignados a este módulo' });
-    return;
-  }
-
-  const values = nuevos.map((usuarioId) => [moduloId, usuarioId]);
-  await query(`INSERT INTO ${tablaRelacion} (modulo_id, usuario_id) VALUES ?`, [values]);
-  res.json({
-    message: yaSet.size > 0
-      ? `Asignación guardada (${yaSet.size} ya estaban asignados)`
-      : `Usuarios ${rol} agregados correctamente`,
+  void audit({
+    entidad: 'moduloscliente',
+    entidadId: id,
+    accion: 'ELIMINAR',
+    detalle: `Acta ${acta.acta_transferencia_modulo} del cliente ${acta.codigo}`,
+    usuario: user,
   });
-}
-
-export async function removeUsersFromModulo(req: Request, res: Response): Promise<void> {
-  const { moduloId } = req.params;
-  const { usuarios } = req.body as { usuarios: number[] };
-  const rol = String(req.query.rol ?? '').toLowerCase();
-
-  if (!usuarios || usuarios.length === 0) {
-    res.status(400).json({ message: 'No se enviaron usuarios para eliminar' });
-    return;
-  }
-
-  const tablaRelacion = rol === 'calidad' ? 'modulo_calidad' : 'modulo_tecnica';
-  await query(`DELETE FROM ${tablaRelacion} WHERE modulo_id = ? AND usuario_id IN (?)`, [moduloId, usuarios]);
-  res.json({ message: `Usuarios ${rol} eliminados correctamente` });
-}
-
-export async function listUsersOfModulo(req: Request, res: Response): Promise<void> {
-  const { moduloId } = req.params;
-  const rol = String(req.query.rol ?? '').toLowerCase();
-  const tablaRelacion = rol === 'calidad' ? 'modulo_calidad' : 'modulo_tecnica';
-
-  const results = await query(
-    `SELECT u.id, u.nombre, u.sede
-     FROM users u
-     JOIN ${tablaRelacion} mt ON u.id = mt.usuario_id
-     WHERE mt.modulo_id = ? AND u.rol = ?`,
-    [moduloId, rol.toUpperCase()],
-  );
-  res.json(results);
+  res.send('Acta eliminada correctamente');
 }
 
 export async function countCajasOfModulo(req: Request, res: Response): Promise<void> {

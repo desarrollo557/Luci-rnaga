@@ -1,8 +1,7 @@
 import 'dotenv/config';
 import { app } from './app.js';
+import { DEFAULT_HOST, DEFAULT_PORT } from './config/constants.js';
 
-const PORT = Number(process.env.PORT) || 3000;
-
-app.listen(PORT, '0.0.0.0', () => {
-  console.log(`API Luciérnaga ejecutándose en http://localhost:${PORT}`);
+app.listen(DEFAULT_PORT, DEFAULT_HOST, () => {
+  console.log(`API Luciérnaga ejecutándose en http://localhost:${DEFAULT_PORT}`);
 });

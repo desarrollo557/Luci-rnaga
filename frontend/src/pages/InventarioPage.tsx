@@ -138,7 +138,7 @@ function Chip({ label, active, onClick }: { label: string; active: boolean; onCl
       className={cn(
         'rounded-full border px-3 py-1.5 text-xs font-medium transition-all duration-200',
         active
-          ? 'border-primary-500 bg-primary-600 text-white shadow-sm shadow-primary-600/30'
+          ? 'border-primary-500 bg-brand text-white shadow-sm shadow-brand/30'
           : 'border-silver-200 bg-silver-100 text-silver-600 hover:border-primary-300 hover:bg-primary-50 hover:text-primary-800',
       )}
     >
@@ -356,8 +356,8 @@ export default function InventarioPage() {
       toast.success('Inventario eliminado');
       setDeleting(null);
     },
-    onError: () => {
-      toast.error('Error al eliminar el inventario');
+    onError: (error) => {
+      toastApiError(error, { context: 'No se pudo eliminar el inventario:' });
     },
   });
 
@@ -544,7 +544,7 @@ export default function InventarioPage() {
       />
 
       {/* Panel de filtros — diseño propio de Inventario */}
-      <div className="rounded-2xl border border-silver-200 bg-white p-5 shadow-sm">
+      <div className="rounded-2xl border border-silver-200 bg-surface p-5 shadow-sm">
         <div className="relative">
           <Search className="pointer-events-none absolute left-3.5 top-1/2 size-5 -translate-y-1/2 text-silver-400" />
           <input
@@ -555,7 +555,7 @@ export default function InventarioPage() {
               setPage(0);
             }}
             placeholder="Buscar por cliente, código, acta, funcionario, caja…"
-            className="h-12 w-full rounded-xl border border-silver-300 bg-silver-50 pl-11 pr-4 text-sm text-silver-900 shadow-sm placeholder:text-silver-400 transition-all duration-200 focus:border-primary-500 focus:bg-white focus:outline-none focus:ring-4 focus:ring-primary-500/20"
+            className="h-12 w-full rounded-xl border border-silver-300 bg-silver-50 pl-11 pr-4 text-sm text-silver-900 shadow-sm placeholder:text-silver-400 transition-all duration-200 focus:border-primary-500 focus:bg-surface focus:outline-none focus:ring-4 focus:ring-primary-500/20"
           />
         </div>
 
@@ -825,7 +825,7 @@ export default function InventarioPage() {
         open={detalle !== null}
         onClose={() => setDetalle(null)}
         title={detalle ? `FUID — ${detalle.CLIENTE ?? ''}` : ''}
-        size="xl"
+        size="full"
         footer={
           <Button variant="ghost" onClick={() => setDetalle(null)}>
             Cerrar
@@ -892,7 +892,7 @@ export default function InventarioPage() {
                   setFuidPage(0);
                 }}
                 placeholder="Buscar por caja, UPD, asunto, entidad, serie…"
-                className="h-10 w-full rounded-lg border border-silver-300 bg-silver-50 pl-9 pr-3 text-sm text-silver-900 placeholder:text-silver-400 transition-all duration-200 focus:border-primary-500 focus:bg-white focus:outline-none focus:ring-4 focus:ring-primary-500/20"
+                className="h-10 w-full rounded-lg border border-silver-300 bg-silver-50 pl-9 pr-3 text-sm text-silver-900 placeholder:text-silver-400 transition-all duration-200 focus:border-primary-500 focus:bg-surface focus:outline-none focus:ring-4 focus:ring-primary-500/20"
               />
             </div>
 
@@ -905,22 +905,23 @@ export default function InventarioPage() {
                 { label: 'Desde', value: fmtFecha(fuidQuery.data?.stats?.fecha_inicial_min) },
                 { label: 'Hasta', value: fmtFecha(fuidQuery.data?.stats?.fecha_final_max) },
               ].map(({ label, value }) => (
-                <div key={label} className="rounded-lg border border-silver-200 bg-white px-3 py-2">
+                <div key={label} className="rounded-lg border border-silver-200 bg-surface px-3 py-2">
                   <p className="text-[10px] font-semibold uppercase tracking-wide text-silver-500">{label}</p>
                   <p className="truncate text-sm font-semibold text-silver-800">{value ?? '—'}</p>
                 </div>
               ))}
             </div>
 
-            <div className="overflow-x-auto">
-              <Table
-                columns={fuidColumns}
-                data={fuidQuery.data?.filas ?? []}
-                rowKey={(row) => row.id}
-                loading={fuidQuery.isLoading}
-                emptyMessage={fuidQ ? 'No se encontraron registros con ese filtro' : 'El cliente no tiene datos FUID registrados'}
-              />
-            </div>
+            <Table
+              columns={fuidColumns}
+              data={fuidQuery.data?.filas ?? []}
+              rowKey={(row) => row.id}
+              loading={fuidQuery.isLoading}
+              nowrap
+              stickyFirstColumn
+              maxHeight="55vh"
+              emptyMessage={fuidQ ? 'No se encontraron registros con ese filtro' : 'El cliente no tiene datos FUID registrados'}
+            />
 
             {fuidQuery.data && fuidTotal > 0 && (
               <div className="flex items-center justify-between">

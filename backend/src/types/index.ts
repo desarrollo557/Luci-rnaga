@@ -15,14 +15,13 @@ declare module 'express-session' {
 export interface LoginRequest {
   cc: string;
   contrasena: string;
-  rol: string;
-  sede: string;
 }
 
 export interface LoginResponse {
   success: boolean;
   message?: string;
   redirect?: string;
+  rol?: string;
 }
 
 export interface CreateUserDto {
