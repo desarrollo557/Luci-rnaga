@@ -24,6 +24,7 @@ async function limpiar(): Promise<void> {
   await query('DELETE FROM historial WHERE caja = ?', [MARCA]);
   await query('DELETE FROM fuiddatosreal WHERE caja = ?', [MARCA]);
   await query('DELETE FROM users WHERE nombre = ?', [MARCA]);
+  await query('DELETE FROM modulos_caja WHERE entidad_remitente_caja = ?', [MARCA]);
 }
 
 async function main(): Promise<void> {
@@ -92,7 +93,39 @@ async function main(): Promise<void> {
   );
   comprobar('el borrado queda en el historial', trasBorrar.some((h) => h.tipo === 'ELIMINADO'));
 
-  // 8. Una fecha vuelve como texto, no como Date desplazado por la zona horaria.
+  // 8. Las consultas de caja, que son las que más rompieron al migrar: un
+  //    parámetro dentro de CONCAT no tiene tipo deducible en PostgreSQL y la
+  //    petición muere con 42P18 antes de tocar ninguna fila.
+  const siguiente = await queryOne<{ max_num: number | null }>(
+    `SELECT MAX(CAST(SUBSTRING(caja_modulo FROM LENGTH(CAST(? AS text)) + 1) AS INTEGER)) AS max_num
+     FROM modulos_caja
+     WHERE caja_modulo LIKE CAST(? AS text) || '%'`,
+    ['080C', '080C'],
+  );
+  comprobar('el siguiente número de caja se calcula', siguiente !== undefined);
+
+  const ocupadas = await query(
+    `SELECT caja_modulo, id_modulo_caja FROM modulos_caja
+     WHERE caja_modulo LIKE CAST(? AS text) || '%'
+       AND CAST(SUBSTRING(caja_modulo FROM LENGTH(CAST(? AS text)) + 1) AS INTEGER) BETWEEN ? AND ?`,
+    ['999C', '999C', 1, 5],
+  );
+  comprobar('el rango de una serie se puede consultar', Array.isArray(ocupadas));
+
+  // Inserción en lote: `VALUES ?` con un array de filas, como en createCajasSerie.
+  await query(
+    `INSERT INTO modulos_caja (caja_modulo, entidad_remitente_caja, acta_trans_caja, fecha_trans_caja, estado_caja)
+     VALUES ?`,
+    [[['999C000001', MARCA, '1', '2025-03-10', 'EN PROCESO'],
+      ['999C000002', MARCA, '1', '2025-03-10', 'EN PROCESO']]],
+  );
+  const creadas = await query<{ id: number }>(
+    'SELECT id FROM modulos_caja WHERE entidad_remitente_caja = ?', [MARCA],
+  );
+  comprobar('la creación de cajas en serie inserta el lote', creadas.length === 2, `${creadas.length} cajas`);
+  await query('DELETE FROM modulos_caja WHERE entidad_remitente_caja = ?', [MARCA]);
+
+  // 9. Una fecha vuelve como texto, no como Date desplazado por la zona horaria.
   const fecha = await queryOne<{ f: unknown }>('SELECT CAST(? AS date) AS f', ['2025-03-10']);
   comprobar('las fechas vuelven como texto', fecha?.f === '2025-03-10', String(fecha?.f));
 }
