@@ -1,10 +1,33 @@
 import { z } from 'zod';
 import { isUpdValid, normalizeUpd } from '../utils/updFormat.js';
-import { FRECUENCIAS_VALIDAS, OTROS_VALIDOS, SOPORTES_VALIDOS } from '../config/constants.js';
+import {
+  ETIQUETA_CAMPO_FUID,
+  FRECUENCIAS_VALIDAS,
+  LONGITUD_MAXIMA_FUID,
+  OTROS_VALIDOS,
+  SOPORTES_VALIDOS,
+} from '../config/constants.js';
 import { fechaDocumental } from './common.validator.js';
 
-const optionalText = z.string().nullable().optional();
 const optionalNumber = z.union([z.number(), z.string()]).nullable().optional();
+
+type CampoFuid = keyof typeof LONGITUD_MAXIMA_FUID;
+
+/**
+ * Texto opcional acotado al tamaño real de su columna en MySQL.
+ *
+ * Reemplaza al antiguo `optionalText`, que no tenía tope: el texto de más
+ * llegaba hasta MySQL y volvía como error 1406, que el cliente veía como un 500
+ * genérico sin saber qué campo recortar.
+ */
+function textoOpcional(campo: CampoFuid) {
+  const maximo = LONGITUD_MAXIMA_FUID[campo];
+  return z
+    .string()
+    .max(maximo, `${ETIQUETA_CAMPO_FUID[campo]} no puede superar los ${maximo} caracteres`)
+    .nullable()
+    .optional();
+}
 
 /** `N/A` es el marcador de campo no diligenciado; no es un valor inválido. */
 const NO_DILIGENCIADO = 'N/A';
@@ -117,43 +140,45 @@ const updField = z
 const fuidBaseSchema = z.object({
   fecha_del_dato: fechaDocumental('La fecha del dato'),
   n_orden: optionalNumber,
-  codigo: optionalText,
-  entidad_remitente: optionalText,
-  entidad_productora: optionalText,
-  unidad_administrativa: optionalText,
-  oficina_productora: optionalText,
-  objeto: optionalText,
-  serie: optionalText,
-  subserie: optionalText,
-  numero_de_orden_interno: optionalText,
-  accionado_procesado: optionalText,
-  accionado_denunciante: optionalText,
-  identificacion: optionalText,
-  asunto: optionalText,
-  radicado: optionalText,
-  numero_doc: optionalText,
-  numero_doc_hasta: optionalText,
+  codigo: textoOpcional('codigo'),
+  entidad_remitente: textoOpcional('entidad_remitente'),
+  entidad_productora: textoOpcional('entidad_productora'),
+  unidad_administrativa: textoOpcional('unidad_administrativa'),
+  oficina_productora: textoOpcional('oficina_productora'),
+  objeto: textoOpcional('objeto'),
+  serie: textoOpcional('serie'),
+  subserie: textoOpcional('subserie'),
+  numero_de_orden_interno: textoOpcional('numero_de_orden_interno'),
+  accionado_procesado: textoOpcional('accionado_procesado'),
+  accionado_denunciante: textoOpcional('accionado_denunciante'),
+  identificacion: textoOpcional('identificacion'),
+  asunto: textoOpcional('asunto'),
+  radicado: textoOpcional('radicado'),
+  numero_doc: textoOpcional('numero_doc'),
+  numero_doc_hasta: textoOpcional('numero_doc_hasta'),
   fecha_inicial: fechaDocumental('La fecha inicial'),
   fecha_final: fechaDocumental('La fecha final'),
   caja: z.string({ message: 'La caja es requerida' }).min(1, 'La caja es requerida'),
   upd: updField,
   tomo: referenciaDeTomo('El tomo'),
   otro: catalogoCerrado(OTROS_VALIDOS, 'El campo Otro'),
-  caja_interna: optionalText,
+  caja_interna: textoOpcional('caja_interna'),
   folios: enteroNoNegativoOna('Los folios'),
   soporte: catalogoCerrado(SOPORTES_VALIDOS, 'El soporte'),
   frecuencia: catalogoCerrado(FRECUENCIAS_VALIDAS, 'La frecuencia'),
-  elaborado_por: optionalText,
-  nro_acta_transferible: optionalText,
+  elaborado_por: textoOpcional('elaborado_por'),
+  nro_acta_transferible: textoOpcional('nro_acta_transferible'),
   fecha_transferencia: fechaDocumental('La fecha de transferencia'),
-  notas: optionalText,
-  sede: optionalText,
-  tiempo: optionalText,
-  historial_y_cambios: optionalText,
-  cambio_calidad: optionalText,
-  sede_calidad: optionalText,
-  asunto_2: optionalText,
-  asunto_3: optionalText,
+  notas: textoOpcional('notas'),
+  sede: textoOpcional('sede'),
+  // `tiempo` es una columna TIME (duración de la digitación), no un varchar: no
+  // tiene longitud que acotar y por eso queda fuera de LONGITUD_MAXIMA_FUID.
+  tiempo: z.string().nullable().optional(),
+  historial_y_cambios: textoOpcional('historial_y_cambios'),
+  cambio_calidad: textoOpcional('cambio_calidad'),
+  sede_calidad: textoOpcional('sede_calidad'),
+  asunto_2: textoOpcional('asunto_2'),
+  asunto_3: textoOpcional('asunto_3'),
 });
 
 /**

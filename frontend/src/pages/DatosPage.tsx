@@ -24,6 +24,7 @@ import { cn } from '@/lib/cn';
 import { toastApiError } from '@/lib/feedback';
 import { invalidateDomain } from '@/lib/queryInvalidation';
 import { OPCIONES_FRECUENCIA, OPCIONES_OTRO, OPCIONES_SOPORTE } from '@/lib/catalogos';
+import { limiteDe } from '@/lib/limites';
 import { fechaHoyISO } from '@/lib/utils';
 import { FECHA_MINIMA_DOCUMENTAL, dateInRange, dateOrderValid, fechaHoyLocal, onlyDigits } from '@/lib/validation';
 import { useAuthStore } from '@/stores/authStore';
@@ -344,6 +345,9 @@ function SuggestionInput({
         disabled={disabled}
         readOnly={readOnly}
         autoFocus={autoFocus}
+        // El componente ya recibe el nombre de la columna, así que el tope sale
+        // del mapa sin tener que repetirlo en cada uno de los campos del FUID.
+        maxLength={limiteDe(campo)}
       />
       <datalist id={`sug-${campo}`}>
         {(suggestionsQuery.data ?? []).map((suggestion) => (
@@ -666,7 +670,7 @@ function FuidFormModal({ open, cajaId, editing, defaultNOrden, defaultTomo, caja
           hint={nextUpdQuery.data?.message}
           defaultUnlocked
         />
-        <Input label="Tomo" value={form.tomo} onChange={setField('tomo')} inputMode="numeric" />
+        <Input label="Tomo" value={form.tomo} onChange={setField('tomo')} inputMode="numeric" maxLength={limiteDe('tomo')} />
         <Select
           label="Otro"
           options={opcionesCon(OPCIONES_OTRO, form.otro)}

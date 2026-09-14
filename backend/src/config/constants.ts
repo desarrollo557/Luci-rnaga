@@ -79,6 +79,95 @@ export const SOPORTES_VALIDOS = ['N/A', 'CD', 'PLANOS'] as const;
 export const FRECUENCIAS_VALIDAS = ['N/A', 'ALTA', 'MEDIA', 'BAJA'] as const;
 export const OTROS_VALIDOS = ['N/A', 'A-Z', 'LIBROS', 'BOLSA'] as const;
 
+// ── Longitud de las columnas de texto del FUID ────────────────────────────
+/**
+ * Tamaño declarado en MySQL de cada columna de texto de `fuiddatosreal`, leído
+ * de `database/schema.sql`.
+ *
+ * Sin este tope, un texto más largo que la columna llegaba hasta MySQL y volvía
+ * como error 1406 (`Data too long`), que el cliente recibía como un 500 genérico
+ * sin saber qué campo recortar. Ahora se rechaza antes, con el nombre del campo.
+ *
+ * Todas las columnas son `varchar(255)` salvo `historial_y_cambios`, que es
+ * `TEXT`. El margen es más ajustado de lo que parece: en producción hay un
+ * `asunto` de 253 caracteres, a dos del tope.
+ *
+ * `frontend/src/lib/limites.ts` repite estos valores para poner `maxLength` en
+ * los inputs, y `limites.test.ts` comprueba que ambos mapas coincidan.
+ */
+export const LONGITUD_MAXIMA_FUID = {
+  codigo: 255,
+  entidad_remitente: 255,
+  entidad_productora: 255,
+  unidad_administrativa: 255,
+  oficina_productora: 255,
+  objeto: 255,
+  serie: 255,
+  subserie: 255,
+  numero_de_orden_interno: 255,
+  accionado_procesado: 255,
+  accionado_denunciante: 255,
+  identificacion: 255,
+  asunto: 255,
+  radicado: 255,
+  numero_doc: 255,
+  numero_doc_hasta: 255,
+  caja: 255,
+  upd: 255,
+  tomo: 255,
+  otro: 255,
+  caja_interna: 255,
+  folios: 255,
+  soporte: 255,
+  frecuencia: 255,
+  elaborado_por: 255,
+  nro_acta_transferible: 255,
+  notas: 255,
+  sede: 255,
+  cambio_calidad: 255,
+  sede_calidad: 255,
+  asunto_2: 255,
+  asunto_3: 255,
+  historial_y_cambios: 65535,
+} as const;
+
+/** Nombre legible de cada campo, para que el mensaje de error diga qué recortar. */
+export const ETIQUETA_CAMPO_FUID: Record<keyof typeof LONGITUD_MAXIMA_FUID, string> = {
+  codigo: 'El código',
+  entidad_remitente: 'La entidad remitente',
+  entidad_productora: 'La entidad productora',
+  unidad_administrativa: 'La unidad administrativa',
+  oficina_productora: 'La oficina productora',
+  objeto: 'El objeto',
+  serie: 'La serie',
+  subserie: 'La subserie',
+  numero_de_orden_interno: 'El número de orden interno',
+  accionado_procesado: 'El accionado/procesado',
+  accionado_denunciante: 'El accionado/denunciante',
+  identificacion: 'La identificación',
+  asunto: 'El asunto',
+  radicado: 'El radicado',
+  numero_doc: 'El número de documento inicial',
+  numero_doc_hasta: 'El número de documento final',
+  caja: 'La caja',
+  upd: 'El UPD',
+  tomo: 'El tomo',
+  otro: 'El campo Otro',
+  caja_interna: 'La caja interna',
+  folios: 'Los folios',
+  soporte: 'El soporte',
+  frecuencia: 'La frecuencia',
+  elaborado_por: 'El campo Elaborado por',
+  nro_acta_transferible: 'El número de acta',
+  notas: 'Las notas',
+  sede: 'La sede',
+  cambio_calidad: 'El cambio de calidad',
+  sede_calidad: 'La sede de calidad',
+  asunto_2: 'El asunto 2',
+  asunto_3: 'El asunto 3',
+  historial_y_cambios: 'El historial de cambios',
+};
+
 // ── Paginación ────────────────────────────────────────────────────────────
 export const DEFAULT_PAGE_SIZE = 50;
 export const MAX_PAGE_SIZE = 500;
