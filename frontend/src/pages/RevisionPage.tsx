@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useLocation, useParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import * as XLSX from 'xlsx';
 import axios from 'axios';
 import { CheckCircle2, ChevronLeft, ChevronRight, Eye, FileDown, FileText } from 'lucide-react';
 import { toast } from 'sonner';
@@ -19,6 +18,7 @@ import {
 import { fuidApi, modulosCajaApi, plantillaApi, reportesApi } from '@/lib/api';
 import { invalidateDomain } from '@/lib/queryInvalidation';
 import { useAuthStore } from '@/stores/authStore';
+import { descargarBlob, exportExcel } from '@/lib/utils';
 import type { FuidDato } from '@/types';
 
 const PAGE_SIZE = 25;
@@ -198,6 +198,7 @@ export default function RevisionPage() {
   const [entidadFiltro, setEntidadFiltro] = useState('');
   const [page, setPage] = useState(1);
   const [exporting, setExporting] = useState(false);
+  const [descargandoPlantilla, setDescargandoPlantilla] = useState(false);
 
   const cajaQuery = useQuery({
     queryKey: ['modulos-caja', 'detalle', cajaId],
@@ -284,15 +285,7 @@ export default function RevisionPage() {
         caja: cajaCode,
         ...(entidadFiltro.trim() ? { entidad_remitente: entidadFiltro.trim() } : {}),
       });
-      const blob = response.data as Blob;
-      const url = window.URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `plantilla_${cajaCode}.xlsx`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      window.URL.revokeObjectURL(url);
+      descargarBlob(response.data as Blob, `plantilla_${cajaCode}.xlsx`);
       toast.success('Plantilla exportada correctamente');
     } catch (error) {
       let message = 'Error al exportar la plantilla';
@@ -311,6 +304,44 @@ export default function RevisionPage() {
       toast.error(message);
     } finally {
       setExporting(false);
+    }
+  };
+
+  /** Exporta el resumen por rangos de cajas que se está viendo en pantalla. */
+  const handleDescargarResumen = () => {
+    const filas = resumenQuery.data ?? [];
+    if (filas.length === 0) {
+      toast.error('No hay datos para exportar');
+      return;
+    }
+    exportExcel(
+      'Resumen Cajas',
+      [
+        { label: 'Caja Inicial', key: 'caja_inicial' },
+        { label: 'Caja Fin', key: 'caja_fin' },
+        { label: 'UPD Inicio', key: 'upd_inicio' },
+        { label: 'UPD Fin', key: 'upd_fin' },
+        { label: 'Cajas Encontradas', key: 'cajas_encontradas' },
+        { label: 'Registros', key: 'total_registros' },
+      ],
+      filas,
+      `resumen_cajas_${new Date().toISOString().slice(0, 10)}`,
+    );
+    toast.success('Reporte descargado correctamente');
+  };
+
+  /** Descarga el formato FUID vacío. */
+  const handleDescargarPlantillaGeneral = async () => {
+    if (descargandoPlantilla) return;
+    setDescargandoPlantilla(true);
+    try {
+      const response = await plantillaApi.generar('plantilla_fuid', { vacia: true });
+      descargarBlob(response.data as Blob, `plantilla_fuid_${new Date().toISOString().slice(0, 10)}.xlsx`);
+      toast.success('Plantilla descargada correctamente');
+    } catch {
+      toast.error('No se pudo descargar la plantilla general');
+    } finally {
+      setDescargandoPlantilla(false);
     }
   };
 
@@ -500,7 +531,7 @@ export default function RevisionPage() {
               </thead>
               <tbody className="divide-y divide-silver-200">
                 {resumenQuery.data.map((row, idx) => (
-                  <tr key={idx} className={idx % 2 === 0 ? 'bg-white' : 'bg-silver-50'}>
+                  <tr key={idx} className={idx % 2 === 0 ? 'bg-surface' : 'bg-silver-50'}>
                     <td className="px-4 py-3 font-mono text-silver-800">{row.caja_inicial}</td>
                     <td className="px-4 py-3 font-mono text-silver-800">{row.caja_fin}</td>
                     <td className="px-4 py-3 font-mono text-silver-800">{row.upd_inicio ?? '—'}</td>
@@ -513,40 +544,13 @@ export default function RevisionPage() {
             </table>
           </div>
           <div className="mt-4 flex flex-wrap gap-2">
-            <Button
-              variant="secondary"
-              onClick={() => {
-                // Descargar Reporte - exportar a Excel
-                const data = resumenQuery.data!.map((r) => ({
-                  'Caja Inicial': r.caja_inicial,
-                  'Caja Fin': r.caja_fin,
-                  'UPD Inicio': r.upd_inicio ?? '',
-                  'UPD Fin': r.upd_fin ?? '',
-                  'Cajas Encontradas': r.cajas_encontradas,
-                  Registro: r.total_registros,
-                }));
-                const ws = XLSX.utils.json_to_sheet(data);
-                const wb = XLSX.utils.book_new();
-                XLSX.utils.book_append_sheet(wb, ws, 'Resumen Cajas');
-                XLSX.writeFile(wb, `resumen_cajas_${new Date().toISOString().slice(0, 10)}.xlsx`);
-              }}
-            >
+            <Button variant="secondary" onClick={handleDescargarResumen}>
               <FileDown className="size-4" /> Descargar Reporte
             </Button>
             <Button
               variant="secondary"
-              onClick={() => {
-                // Plantilla General - descargar formato FUID vacío
-                plantillaApi.generar('plantilla_fuid', {}).then((response) => {
-                  const blob = response.data;
-                  const url = window.URL.createObjectURL(blob);
-                  const a = document.createElement('a');
-                  a.href = url;
-                  a.download = `plantilla_fuid_${new Date().toISOString().slice(0, 10)}.xlsx`;
-                  a.click();
-                  window.URL.revokeObjectURL(url);
-                });
-              }}
+              loading={descargandoPlantilla}
+              onClick={() => void handleDescargarPlantillaGeneral()}
             >
               <FileText className="size-4" /> Plantilla General
             </Button>

@@ -10,6 +10,14 @@ const TEMP_DIR = path.resolve(process.cwd(), 'temp');
 export interface PlantillaFiltros {
   caja?: string;
   entidad_remitente?: string;
+  /**
+   * Devuelve el formato en blanco, sin consultar la base.
+   *
+   * Sin esta bandera, una petición sin filtros arrastra la tabla completa
+   * (más de 80.000 registros), que es justo lo contrario de lo que espera
+   * quien pide "la plantilla general".
+   */
+  vacia?: boolean;
 }
 
 function formatDateNoTime(date: Date | string | null | undefined): Date | null {
@@ -29,6 +37,20 @@ export async function generarPlantilla(
     throw new Error(`La plantilla no existe en: ${TEMPLATE_PATH}`);
   }
 
+  const rows = filtros.vacia ? [] : await consultarDatos(filtros);
+
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.readFile(TEMPLATE_PATH);
+
+  const worksheet = workbook.getWorksheet(1);
+  if (!worksheet) {
+    throw new Error('La plantilla no tiene una hoja válida');
+  }
+
+  return escribirFilas(workbook, worksheet, rows, fileName);
+}
+
+async function consultarDatos(filtros: PlantillaFiltros): Promise<FuidDato[]> {
   let sql = `SELECT
       n_orden, codigo, entidad_remitente, entidad_productora,
       unidad_administrativa, oficina_productora, objeto, serie, subserie,
@@ -52,15 +74,16 @@ export async function generarPlantilla(
   if (!rows || rows.length === 0) {
     throw new Error('No se encontraron datos en la base de datos.');
   }
+  return rows;
+}
 
-  const workbook = new ExcelJS.Workbook();
-  await workbook.xlsx.readFile(TEMPLATE_PATH);
-
-  const worksheet = workbook.getWorksheet(1);
-  if (!worksheet) {
-    throw new Error('La plantilla no tiene una hoja válida');
-  }
-
+/** Vuelca los registros en la plantilla y la guarda en el directorio temporal. */
+async function escribirFilas(
+  workbook: ExcelJS.Workbook,
+  worksheet: ExcelJS.Worksheet,
+  rows: FuidDato[],
+  fileName: string,
+): Promise<{ outputPath: string; count: number }> {
   let startRow = 8;
   rows.forEach((dato) => {
     const row = worksheet.getRow(startRow++);

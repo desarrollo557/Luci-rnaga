@@ -540,7 +540,7 @@ export default function CajasPage() {
                   ) : (
                     <ul className="space-y-2">
                       {usuariosAsignadosQuery.data?.tecnica.map((u) => (
-                        <li key={u.id} className="flex flex-col gap-1 text-sm text-silver-700 bg-white px-3 py-2 rounded-lg border border-silver-200">
+                        <li key={u.id} className="flex flex-col gap-1 text-sm text-silver-700 bg-surface px-3 py-2 rounded-lg border border-silver-200">
                           <div className="flex items-center gap-2">
                             <User className="size-4 text-silver-400" />
                             <span>{u.nombre}</span>
@@ -568,7 +568,7 @@ export default function CajasPage() {
                   ) : (
                     <ul className="space-y-2">
                       {usuariosAsignadosQuery.data?.calidad.map((u) => (
-                        <li key={u.id} className="flex items-center gap-2 text-sm text-silver-700 bg-white px-3 py-2 rounded-lg border border-silver-200">
+                        <li key={u.id} className="flex items-center gap-2 text-sm text-silver-700 bg-surface px-3 py-2 rounded-lg border border-silver-200">
                           <User className="size-4 text-silver-400" />
                           <span>{u.nombre}</span>
                           <span className="text-xs text-silver-400 px-2 py-0.5 rounded-full bg-silver-100">{u.sede}</span>

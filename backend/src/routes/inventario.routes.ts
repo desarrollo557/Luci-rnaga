@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { isAuthenticated, isLiderOrAdmin } from '../middlewares/auth.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
+import { idNumerico } from '../middlewares/paramId.js';
 import {
   listInventario,
   getInventario,
@@ -14,6 +15,7 @@ import {
 } from '../controllers/inventario.controller.js';
 
 const router = Router();
+router.param('id', idNumerico);
 
 router.get('/inventario', isAuthenticated, isLiderOrAdmin, asyncHandler(listInventario));
 router.get('/inventario/clientes', isAuthenticated, isLiderOrAdmin, asyncHandler(listClientesParaInventario));

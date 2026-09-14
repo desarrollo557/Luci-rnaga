@@ -23,6 +23,32 @@ const api = axios.create({
   headers: { 'Content-Type': 'application/json' },
 });
 
+/** Claves cuyo valor nunca se pasa a mayúsculas: credenciales. */
+const CLAVES_SIN_MAYUSCULAS = new Set(['contrasena', 'password', 'contrasena_actual', 'nueva_contrasena']);
+
+function aMayusculas(valor: unknown): unknown {
+  if (typeof valor === 'string') return valor.toUpperCase();
+  if (Array.isArray(valor)) return valor.map(aMayusculas);
+  if (valor !== null && typeof valor === 'object' && Object.getPrototypeOf(valor) === Object.prototype) {
+    return Object.fromEntries(
+      Object.entries(valor as Record<string, unknown>).map(([clave, contenido]) => [
+        clave,
+        CLAVES_SIN_MAYUSCULAS.has(clave) ? contenido : aMayusculas(contenido),
+      ]),
+    );
+  }
+  return valor;
+}
+
+// Regla de negocio: todo lo que se envía a guardar va en MAYÚSCULAS. El backend
+// aplica la misma regla, así que ningún dato llega en minúsculas a la base.
+api.interceptors.request.use((config) => {
+  if (config.data && typeof config.data === 'object' && !(config.data instanceof FormData)) {
+    config.data = aMayusculas(config.data);
+  }
+  return config;
+});
+
 api.interceptors.response.use(
   (response) => response,
   (error: unknown) => {
@@ -116,8 +142,6 @@ export interface ModuloClienteInput {
   id_submodulo: number;
 }
 
-export type RolAsignacion = 'tecnica' | 'calidad';
-
 export interface UsuarioAsignado {
   id: number;
   nombre: string;
@@ -139,6 +163,23 @@ export interface ModuloCajaInput {
   estado_caja: string;
 }
 
+export interface SerieCajasInput {
+  id_modulo_caja: number;
+  numero_inicial: string;
+  numero_final: string;
+  entidad_remitente_caja: string;
+  acta_trans_caja: string;
+  fecha_trans_caja: string | null;
+  entidad_productora_caja: string;
+  unidad_administrativa_caja: string;
+  oficina_productora_caja: string;
+  objeto_caja: string;
+  estado_caja: string;
+  /** Usuarios que quedan asignados a todas las cajas creadas. */
+  usuarios_tecnica?: number[];
+  usuarios_calidad?: number[];
+}
+
 export interface AsignacionCajaInput {
   modulo_id: number;
   usuarios: number[];
@@ -152,8 +193,8 @@ export interface AsignacionCajaRangoInput {
 }
 
 export const authApi = {
-  login: (cc: string, contrasena: string, rol: string) =>
-    api.post<LoginResponse>('/login', { cc, contrasena, rol }),
+  login: (cc: string, contrasena: string) =>
+    api.post<LoginResponse>('/login', { cc, contrasena }),
   logout: () => api.post<{ success: boolean }>('/logout'),
   currentUser: () => api.get<SessionUser>('/currentUser'),
   checkAuth: () => api.get<string>('/checkAuth'),
@@ -181,17 +222,6 @@ export const modulosClienteApi = {
   update: (moduloId: string | number, data: ModuloClienteInput) =>
     api.put<ModuloCliente>(`/moduloscliente/${moduloId}`, data),
   remove: (moduloId: string | number) => api.delete(`/moduloscliente/${moduloId}`),
-  usuarios: (moduloId: string | number, rol?: RolAsignacion) =>
-    api.get<UsuarioAsignado[]>(`/moduloscliente/${moduloId}/usuarios`, {
-      params: rol ? { rol } : undefined,
-    }),
-  agregarUsuarios: (moduloId: string | number, rol: RolAsignacion, data: { usuarios: number[] }) =>
-    api.post(`/moduloscliente/${moduloId}/agregar`, data, { params: { rol } }),
-  eliminarUsuarios: (
-    moduloId: string | number,
-    rol: RolAsignacion,
-    data: { usuarios: number[] },
-  ) => api.post(`/moduloscliente/${moduloId}/eliminar`, data, { params: { rol } }),
   countCajas: (moduloClienteId: string | number) =>
     api.get<{ total: number }>('/moduloscliente/count_cajas', {
       params: { modulo_cliente_id: moduloClienteId },
@@ -203,19 +233,6 @@ export const subModulosApi = {
   create: (data: SubModuloInput) => api.post<SubModulo>('/sub_modulos', data),
   update: (id: string | number, data: SubModuloInput) => api.put<SubModulo>(`/sub_modulos/${id}`, data),
   remove: (id: string | number) => api.delete(`/sub_modulos/${id}`),
-};
-
-export const asignacionTecnicaApi = {
-  asignar: (data: DataRow) => api.post('/asignacion_tecnica', data),
-  eliminar: (moduloId: string | number) =>
-    api.post(`/asignacion_tecnica/${moduloId}/eliminar`),
-  usuarios: (moduloId: string | number) => api.get<User[]>(`/asignacion_tecnica/${moduloId}/usuarios`),
-};
-
-export const asignacionCalidadApi = {
-  asignar: (data: DataRow) => api.post('/asignacion_calidad', data),
-  eliminar: (moduloId: string | number) => api.post(`/asignacion_calidad/${moduloId}/eliminar`),
-  usuarios: (moduloId: string | number) => api.get<User[]>(`/asignacion_calidad/${moduloId}/usuarios`),
 };
 
 export const modulosCajaApi = {
@@ -230,7 +247,8 @@ export const modulosCajaApi = {
   create: (data: ModuloCajaInput) => api.post<ModuloCaja>('/modulos_caja', data),
   update: (id: string | number, data: Omit<ModuloCajaInput, 'id_modulo_caja'>) =>
     api.put<ModuloCaja>(`/modulos_caja/${id}`, data),
-  remove: (id: string | number) => api.delete(`/modulos_caja/${id}`),
+  remove: (id: string | number) =>
+    api.delete<{ message: string; fuids_eliminados: number }>(`/modulos_caja/${id}`),
   cambiarEstado: (id: string | number, estado_caja: string) =>
     api.patch(`/modulos_caja/${id}/cambiarEstado`, { estado_caja }),
   usuariosTecnica: (moduloId: string | number) =>
@@ -244,7 +262,15 @@ export const modulosCajaApi = {
   siguienteNumero: (prefijo: string) =>
     api.get<{ prefijo: string; siguiente: string }>(`/modulos_caja/next/${prefijo}`),
   siguienteUpd: (cajaModulo: string) =>
-    api.get<{ upd: string | null }>(`/modulos_caja/next-upd/${encodeURIComponent(cajaModulo)}`),
+    api.get<{ upd: string | null; requiere_inicio?: boolean; limite_alcanzado?: boolean; message?: string }>(
+      `/modulos_caja/next-upd/${encodeURIComponent(cajaModulo)}`,
+    ),
+  /** Fija el UPD con el que el técnico arranca la caja. Se envía solo el número. */
+  fijarUpdInicio: (cajaModulo: string, numero: string) =>
+    api.put<{ upd: string; message: string }>(
+      `/modulos_caja/${encodeURIComponent(cajaModulo)}/upd-inicio`,
+      { numero },
+    ),
   getTecnicaStats: () => api.get<{
     usuario: { id: number; nombre: string; cc: string };
     resumen: { cajas_asignadas: number; fuid_creados: number; ultimo_upd_global: string | null };
@@ -257,8 +283,11 @@ export const modulosCajaApi = {
       rango_ultimo: string | null;
     }>;
   }>('/modulos_caja/tecnica-stats'),
-  createSerie: (data: { id_modulo_caja: number; numero_inicial: string; numero_final: string; entidad_remitente_caja: string; acta_trans_caja: string; fecha_trans_caja: string | null; entidad_productora_caja: string; unidad_administrativa_caja: string; oficina_productora_caja: string; objeto_caja: string; estado_caja: string }) =>
-    api.post('/modulos_caja/serie', data),
+  createSerie: (data: SerieCajasInput) =>
+    api.post<{ message: string; cantidad: number; asignados: { tecnica: number; calidad: number } }>(
+      '/modulos_caja/serie',
+      data,
+    ),
 };
 
 export const asignacionCajaTecnicaApi = {
@@ -291,8 +320,6 @@ export const fuidApi = {
     api.get<DataRow[]>(`/fuiddatosreal/${caja}/suggestions/${campo}`, {
       params: q ? { q } : undefined,
     }),
-  setValue: (caja: string, campo: string, valor: unknown) =>
-    api.post(`/fuiddatosreal/${caja}/${campo}`, { valor }),
 };
 
 
@@ -344,11 +371,12 @@ export const inventarioApi = {
 };
 
 export const historialApi = {
-  list: () => api.get<Historial[]>('/historial'),
+  list: (filtros: HistorialFiltros = {}) =>
+    api.get<HistorialPage>('/historial', { params: filtros }),
 };
 
 export const plantillaApi = {
-  generar: (fileName: string, filtros: { caja?: string; entidad_remitente?: string }) =>
+  generar: (fileName: string, filtros: { caja?: string; entidad_remitente?: string; vacia?: boolean }) =>
     api.post('/generarPlantilla', { fileName, filtros }, { responseType: 'blob' }),
 };
 
@@ -364,11 +392,47 @@ export interface EstadisticasProduccion {
   promedio_fuids_por_caja: number;
   total_modulos_cliente: number;
   total_usuarios: number;
+  total_actas: number;
+  total_clientes: number;
   por_estado_caja: Array<{ estado: string; total: number }>;
-  fuids_por_mes: Array<{ mes: string; total: number }>;
+  fuids_por_mes: Array<{ mes: string; total: number; aprobados: number }>;
   fuids_por_sede: Array<{ sede: string; total: number }>;
-  top_digitadores: Array<{ nombre: string; total: number }>;
+  digitadores: Digitador[];
   usuarios_por_rol: Array<{ rol: string; total: number }>;
+  cajas_por_estado: Array<{ estado: string; total: number }>;
+  avance_por_submodulo: Array<{ submodulo: string; entidad: string; total: number; aprobados: number }>;
+  actividad_reciente: Array<{ dia: string; total: number }>;
+  generado_en: string;
+}
+
+export interface Digitador {
+  nombre: string;
+  cc: string | null;
+  rol: string | null;
+  sede: string | null;
+  total: number;
+  aprobados: number;
+  cajas: number;
+  ultimo_registro: string | null;
+}
+
+export interface HistorialPage {
+  data: Historial[];
+  total: number;
+  page: number;
+  pageSize: number;
+  tipos: string[];
+  sedes: string[];
+}
+
+export interface HistorialFiltros {
+  page?: number;
+  pageSize?: number;
+  q?: string;
+  tipo?: string;
+  sede?: string;
+  desde?: string;
+  hasta?: string;
 }
 
 export const reportesApi = {

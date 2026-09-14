@@ -114,7 +114,7 @@ export const Select = function Select({
           aria-invalid={error ? true : undefined}
           aria-required={required || undefined}
           className={cn(
-            `flex w-full items-center justify-between gap-2 rounded-lg border border-silver-300 bg-white text-silver-800 shadow-sm transition-all duration-200 ease-in-out hover:border-silver-400 hover:shadow focus:border-primary-500 focus:outline-none focus:ring-4 focus:ring-primary-500/15 disabled:cursor-not-allowed disabled:bg-silver-50 disabled:hover:border-silver-300 disabled:hover:shadow-none`,
+            `flex w-full items-center justify-between gap-2 rounded-lg border border-silver-300 bg-surface text-silver-800 shadow-sm transition-all duration-200 ease-in-out hover:border-silver-400 hover:shadow focus:border-primary-500 focus:outline-none focus:ring-4 focus:ring-primary-500/15 disabled:cursor-not-allowed disabled:bg-surface-muted disabled:hover:border-silver-300 disabled:hover:shadow-none`,
             size === 'sm' && 'h-9 px-2.5 text-sm',
             size === 'md' && 'h-10 px-3 text-sm',
             size === 'lg' && 'h-12 px-4 text-base',
@@ -147,7 +147,7 @@ export const Select = function Select({
                 width: position.width,
               }}
               className={cn(
-                'overflow-y-auto rounded-xl border border-silver-200 bg-white p-1.5 shadow-2xl ring-1 ring-silver-900/5 animate-[modal-panel-in_0.2s_ease-out]',
+                'overflow-y-auto rounded-xl border border-silver-200 bg-surface p-1.5 shadow-2xl ring-1 ring-silver-900/5 animate-[modal-panel-in_0.2s_ease-out]',
                 size === 'lg' ? 'max-h-96' : 'max-h-64',
               )}
             >

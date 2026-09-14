@@ -64,6 +64,9 @@ export interface ModuloCaja {
   estado_caja: string;
   upd_inicio?: string | null;
   total_fuids?: number;
+  /** Nombres separados por coma; solo llegan en el listado para líder/admin. */
+  tecnicos_asignados?: string | null;
+  calidad_asignados?: string | null;
   upd: UpdFormat | null;
   created_at?: string | null;
   updated_at?: string | null;

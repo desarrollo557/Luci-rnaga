@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
@@ -10,8 +10,8 @@ import {
   Package,
   Pencil,
   Plus,
+  Search,
   Trash2,
-  Users,
   type LucideIcon,
 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -23,7 +23,6 @@ import {
   DatePicker,
   EditableInput,
   Input,
-  LoadingState,
   Modal,
   PageHeader,
   Select,
@@ -33,13 +32,13 @@ import {
 import {
   modulosClienteApi,
   subModulosApi,
-  usersApi,
   type ModuloClienteInput,
-  type RolAsignacion,
   type SubModuloInput,
 } from '@/lib/api';
 import { toastApiError } from '@/lib/feedback';
 import { invalidateDomain } from '@/lib/queryInvalidation';
+import { sedeOptionsCon } from '@/lib/sedes';
+import { fechaHoyISO } from '@/lib/utils';
 import { useAuthStore } from '@/stores/authStore';
 import { cn } from '@/lib/cn';
 import type { ModuloCliente, Role, SubModulo } from '@/types';
@@ -114,159 +113,23 @@ const PROCESOS_ATAJOS: ProcesoAtajo[] = [
   },
 ];
 
-function SeccionAsignacion({
-  moduloId,
-  rol,
-  label,
-}: {
-  moduloId: number;
-  rol: RolAsignacion;
-  label: string;
-}) {
-  const queryClient = useQueryClient();
-  const queryKey = ['modulos-cliente', 'usuarios', moduloId, rol];
-  const currentUser = useAuthStore((state) => state.user);
-
-  const asignadosQuery = useQuery({
-    queryKey,
-    queryFn: () => modulosClienteApi.usuarios(moduloId, rol).then((res) => res.data),
-    enabled: moduloId > 0,
-  });
-
-  const disponiblesQuery = useQuery({
-    queryKey: ['users', 'rol', rol.toUpperCase()],
-    queryFn: () =>
-      usersApi.byRol(rol.toUpperCase() as Role, { sede: currentUser?.sede }).then((res) => res.data),
-    enabled: moduloId > 0,
-  });
-
-  const [selected, setSelected] = useState<Set<number>>(new Set());
-
-  useEffect(() => {
-    if (asignadosQuery.data) {
-      setSelected(new Set(asignadosQuery.data.map((usuario) => usuario.id)));
-    }
-  }, [asignadosQuery.data]);
-
-  const agregarMutation = useMutation({
-    mutationFn: (usuarios: number[]) => modulosClienteApi.agregarUsuarios(moduloId, rol, { usuarios }),
-    onSuccess: () => {
-      toast.success('Usuarios asignados correctamente');
-      void invalidateDomain(queryClient, 'users');
-    },
-  });
-
-  const eliminarMutation = useMutation({
-    mutationFn: (usuarios: number[]) =>
-      modulosClienteApi.eliminarUsuarios(moduloId, rol, { usuarios }),
-    onSuccess: () => {
-      toast.success('Usuarios eliminados correctamente');
-      void invalidateDomain(queryClient, 'users');
-    },
-  });
-
-  const asignadosIds = new Set((asignadosQuery.data ?? []).map((usuario) => usuario.id));
-  const usuarios = disponiblesQuery.data ?? [];
-  const loading = asignadosQuery.isPending || disponiblesQuery.isPending;
-
-  const toggle = (id: number) => {
-    setSelected((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  };
-
-  const handleGuardar = () => {
-    const toAdd = usuarios
-      .filter((usuario) => selected.has(usuario.id) && !asignadosIds.has(usuario.id))
-      .map((usuario) => usuario.id);
-    if (toAdd.length === 0) {
-      toast.info('No hay usuarios nuevos por asignar');
-      return;
-    }
-    agregarMutation.mutate(toAdd);
-  };
-
-  const handleEliminar = () => {
-    const toRemove = usuarios
-      .filter((usuario) => selected.has(usuario.id) && asignadosIds.has(usuario.id))
-      .map((usuario) => usuario.id);
-    if (toRemove.length === 0) {
-      toast.info('Selecciona usuarios ya asignados para eliminarlos');
-      return;
-    }
-    eliminarMutation.mutate(toRemove);
-  };
-
-  return (
-    <Card className="p-4">
-      <div className="mb-3 flex items-center justify-between gap-2">
-        <h3 className="text-sm font-semibold text-silver-800">{label}</h3>
-        <Badge color={rol === 'tecnica' ? 'blue' : 'green'}>
-          {asignadosQuery.data?.length ?? 0} asignados
-        </Badge>
-      </div>
-
-      {loading ? (
-        <div className="flex justify-center py-6">
-          <LoadingState message="Estamos consultando la información…" />
-        </div>
-      ) : (
-        <ul className="max-h-64 space-y-1 overflow-y-auto">
-          {usuarios.length === 0 && (
-            <li className="text-sm text-silver-500">No hay usuarios de este rol</li>
-          )}
-          {usuarios.map((usuario) => {
-            const isAssigned = asignadosIds.has(usuario.id);
-            return (
-              <li key={usuario.id}>
-                <label className="flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-sm hover:bg-silver-50">
-                  <input
-                    type="checkbox"
-                    checked={selected.has(usuario.id)}
-                    onChange={() => toggle(usuario.id)}
-                  />
-                  <span className="flex-1 text-silver-700">{usuario.nombre}</span>
-                  {isAssigned && <Badge color="gray">Asignado</Badge>}
-                </label>
-              </li>
-            );
-          })}
-        </ul>
-      )}
-
-      <div className="mt-3 flex gap-2">
-        <Button size="sm" onClick={handleGuardar} loading={agregarMutation.isPending} disabled={loading}>
-          Guardar
-        </Button>
-        <Button
-          size="sm"
-          variant="danger"
-          onClick={handleEliminar}
-          loading={eliminarMutation.isPending}
-          disabled={loading}
-        >
-          Eliminar seleccionados
-        </Button>
-      </div>
-    </Card>
-  );
-}
-
 export default function ClientesPage() {
   const queryClient = useQueryClient();
   const user = useAuthStore((state) => state.user);
   const isManager = user?.rol === 'ADMIN' || user?.rol === 'LIDER';
 
   const [subModuloId, setSubModuloId] = useState<number | null>(null);
+  // Cliente recién creado: se selecciona automáticamente cuando la lista se
+  // refresca, para que "Nueva acta" quede habilitado sin pasos intermedios.
+  const [clientePendiente, setClientePendiente] = useState<(SubModuloInput & { desde: number }) | null>(
+    null,
+  );
+  const [filtroActas, setFiltroActas] = useState('');
   const [subModuloModalOpen, setSubModuloModalOpen] = useState(false);
   const [editingSubModulo, setEditingSubModulo] = useState<SubModulo | null>(null);
   const [subModuloDeleteTarget, setSubModuloDeleteTarget] = useState<SubModulo | null>(null);
   const [moduloModalOpen, setModuloModalOpen] = useState(false);
   const [editingModulo, setEditingModulo] = useState<ModuloCliente | null>(null);
-  const [asignarModulo, setAsignarModulo] = useState<ModuloCliente | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<ModuloCliente | null>(null);
   const [subModuloForm, setSubModuloForm] = useState<SubModuloForm>(() => ({
     ...EMPTY_SUB_MODULO_FORM,
@@ -280,60 +143,100 @@ export default function ClientesPage() {
     queryFn: () => subModulosApi.list().then((res) => res.data),
   });
 
+  // Ordenados por código (comparación numérica: 007C antes que 015C) para que
+  // el selector sea predecible.
+  const clientes = useMemo(
+    () =>
+      [...(subModulosQuery.data ?? [])].sort((a, b) =>
+        a.codigo.localeCompare(b.codigo, 'es', { numeric: true, sensitivity: 'base' }),
+      ),
+    [subModulosQuery.data],
+  );
+  const clienteSeleccionado = clientes.find((sm) => sm.id === subModuloId) ?? null;
+
+  useEffect(() => {
+    // Solo se acepta una lista obtenida después de crear el cliente; así no se
+    // selecciona por error un registro previo con el mismo código.
+    if (!clientePendiente || !subModulosQuery.data) return;
+    if (subModulosQuery.dataUpdatedAt < clientePendiente.desde) return;
+    const creado = subModulosQuery.data
+      .filter(
+        (sm) =>
+          sm.codigo === clientePendiente.codigo &&
+          sm.entidad_remitente === clientePendiente.entidad_remitente,
+      )
+      .sort((a, b) => b.id - a.id)[0];
+    if (creado) setSubModuloId(creado.id);
+    setClientePendiente(null);
+  }, [clientePendiente, subModulosQuery.data, subModulosQuery.dataUpdatedAt]);
+
   const modulosQuery = useQuery({
     queryKey: ['modulos-cliente', subModuloId],
     queryFn: () => modulosClienteApi.list(subModuloId ?? undefined).then((res) => res.data),
     enabled: isManager ? subModuloId !== null : true,
   });
+  const actasDelCliente = modulosQuery.data ?? [];
+  const terminoActas = filtroActas.trim().toLowerCase();
+  const actasFiltradas = terminoActas
+    ? actasDelCliente.filter((acta) =>
+        [
+          acta.codigo,
+          acta.entidad_remitente,
+          acta.acta_transferencia_modulo,
+          acta.fecha_trans_modulo?.slice(0, 10) ?? '',
+        ].some((campo) => campo.toLowerCase().includes(terminoActas)),
+      )
+    : actasDelCliente;
 
   const createSubModuloMutation = useMutation({
     mutationFn: (data: SubModuloInput) => subModulosApi.create(data),
-    onSuccess: () => {
-      toast.success('Sub-módulo creado');
+    onSuccess: (_res, variables) => {
+      toast.success('Cliente creado');
       setSubModuloModalOpen(false);
+      setClientePendiente({ ...variables, desde: Date.now() });
       void invalidateDomain(queryClient, 'sub-modulos');
     },
     onError: (error) => {
-      toastApiError(error, { context: 'No se pudo crear el sub-módulo:' });
+      toastApiError(error, { context: 'No se pudo crear el cliente:' });
     },
   });
 
   const updateSubModuloMutation = useMutation({
     mutationFn: ({ id, data }: { id: number; data: SubModuloInput }) => subModulosApi.update(id, data),
     onSuccess: () => {
-      toast.success('Sub-módulo actualizado');
+      toast.success('Cliente actualizado');
       setSubModuloModalOpen(false);
       setEditingSubModulo(null);
       void invalidateDomain(queryClient, 'sub-modulos');
     },
     onError: (error) => {
-      toastApiError(error, { context: 'No se pudo actualizar el sub-módulo:' });
+      toastApiError(error, { context: 'No se pudo actualizar el cliente:' });
     },
   });
 
   const deleteSubModuloMutation = useMutation({
     mutationFn: (id: number) => subModulosApi.remove(id),
     onSuccess: () => {
-      toast.success('Sub-módulo eliminado');
+      toast.success('Cliente eliminado');
       setSubModuloDeleteTarget(null);
       setSubModuloId(null);
       void invalidateDomain(queryClient, 'sub-modulos');
       void invalidateDomain(queryClient, 'modulos-cliente');
     },
     onError: (error) => {
-      toastApiError(error, { context: 'No se pudo eliminar el sub-módulo:' });
+      toastApiError(error, { context: 'No se pudo eliminar el cliente:' });
     },
   });
 
   const createModuloMutation = useMutation({
     mutationFn: (data: ModuloClienteInput) => modulosClienteApi.create(data),
     onSuccess: () => {
-      toast.success('Módulo cliente creado');
+      toast.success('Acta creada');
       setModuloModalOpen(false);
       void invalidateDomain(queryClient, 'modulos-cliente');
     },
     onError: (error) => {
-      toastApiError(error, { context: 'No se pudo crear el módulo cliente:' });
+      toastApiError(error, { context: 'No se pudo crear el acta:' });
     },
   });
 
@@ -341,24 +244,24 @@ export default function ClientesPage() {
     mutationFn: ({ id, data }: { id: number; data: ModuloClienteInput }) =>
       modulosClienteApi.update(id, data),
     onSuccess: () => {
-      toast.success('Módulo cliente actualizado');
+      toast.success('Acta actualizada');
       setModuloModalOpen(false);
       void invalidateDomain(queryClient, 'modulos-cliente');
     },
     onError: (error) => {
-      toastApiError(error, { context: 'No se pudo actualizar el módulo cliente:' });
+      toastApiError(error, { context: 'No se pudo actualizar el acta:' });
     },
   });
 
   const deleteModuloMutation = useMutation({
     mutationFn: (id: number) => modulosClienteApi.remove(id),
     onSuccess: () => {
-      toast.success('Módulo cliente eliminado');
+      toast.success('Acta eliminada');
       setDeleteTarget(null);
       void invalidateDomain(queryClient, 'modulos-cliente');
     },
     onError: (error) => {
-      toastApiError(error, { context: 'No se pudo eliminar el módulo cliente:' });
+      toastApiError(error, { context: 'No se pudo eliminar el acta:' });
     },
   });
 
@@ -397,7 +300,7 @@ export default function ClientesPage() {
 
     const idSubmodulo = editingModulo?.id_submodulo ?? subModuloId;
     if (idSubmodulo === null) {
-      toast.error('Seleccione un sub-módulo primero');
+      toast.error('Seleccione un cliente primero');
       return;
     }
 
@@ -418,7 +321,9 @@ export default function ClientesPage() {
 
   const openNuevoSubModulo = () => {
     setEditingSubModulo(null);
-    setSubModuloForm({ ...EMPTY_SUB_MODULO_FORM });
+    // Igual que en la versión anterior: el cliente se registra en la sede del
+    // usuario que lo crea (el backend usa la sede de la sesión).
+    setSubModuloForm({ ...EMPTY_SUB_MODULO_FORM, sede_submodulos: user?.sede ?? '' });
     setSubModuloErrors({});
     setSubModuloModalOpen(true);
   };
@@ -435,18 +340,40 @@ export default function ClientesPage() {
   };
 
   const handleEliminarSubModulo = (subModulo: SubModulo) => {
+    // El backend rechaza borrar un cliente con actas (FK); se avisa antes de
+    // pedir la confirmación con cédula.
+    if (actasDelCliente.length > 0) {
+      toast.error(
+        `El cliente ${subModulo.codigo} tiene ${actasDelCliente.length} acta(s) registrada(s). Elimine primero sus actas.`,
+      );
+      return;
+    }
     setSubModuloDeleteTarget(subModulo);
+  };
+
+  const handleEliminarModulo = (modulo: ModuloCliente) => {
+    const cajas = modulo.total_cajas ?? 0;
+    if (cajas > 0) {
+      toast.error(
+        `El acta ${modulo.acta_transferencia_modulo} tiene ${cajas} caja(s) registrada(s). Elimine primero sus cajas.`,
+      );
+      return;
+    }
+    setDeleteTarget(modulo);
   };
 
   const openNuevoModulo = () => {
     setEditingModulo(null);
-    // Autocompletar desde el sub-módulo seleccionado: el código y la entidad
-    // remitente ya existen lógicamente en la jerarquía (sub_módulo → módulo).
-    const subModulo = (subModulosQuery.data ?? []).find((sm) => sm.id === subModuloId);
+    // El acta hereda el código y la entidad remitente del cliente seleccionado
+    // (jerarquía sub_modulos → moduloscliente); quedan bloqueados pero editables.
     setModuloForm({
       ...EMPTY_MODULO_FORM,
-      codigo: subModulo?.codigo ?? '',
-      entidad_remitente: subModulo?.entidad_remitente ?? '',
+      codigo: clienteSeleccionado?.codigo ?? '',
+      entidad_remitente: clienteSeleccionado?.entidad_remitente ?? '',
+      // Un acta se registra el día en que se recibe la transferencia, así que
+      // hoy es el valor correcto en la enorme mayoría de los casos; queda
+      // editable para cargar actas atrasadas.
+      fecha_trans_modulo: fechaHoyISO(),
     });
     setModuloErrors({});
     setModuloModalOpen(true);
@@ -485,18 +412,15 @@ export default function ClientesPage() {
         <div className="flex flex-wrap items-center gap-2">
           <Link to={`/clientes/${modulo.id}/actas`}>
             <Button variant="secondary" size="sm">
-              <FileText className="size-4" /> Ver Actas
+              <FileText className="size-4" /> Ver cajas
             </Button>
           </Link>
           {isManager && (
             <>
-              <Button variant="secondary" size="sm" onClick={() => setAsignarModulo(modulo)}>
-                <Users className="size-4" /> Asignar Usuarios
-              </Button>
               <Button variant="secondary" size="sm" onClick={() => handleEditarModulo(modulo)}>
                 <Pencil className="size-4" /> Editar
               </Button>
-              <Button variant="danger" size="sm" onClick={() => setDeleteTarget(modulo)}>
+              <Button variant="danger" size="sm" onClick={() => handleEliminarModulo(modulo)}>
                 <Trash2 className="size-4" /> Eliminar
               </Button>
             </>
@@ -509,16 +433,24 @@ export default function ClientesPage() {
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Módulos de Cliente"
-        description="Seleccione un sub-módulo para ver sus módulos cliente"
+        title="Clientes"
+        description={
+          isManager
+            ? 'Seleccione un cliente para consultar y registrar sus actas de transferencia'
+            : 'Actas con cajas asignadas a su usuario'
+        }
         actions={
           isManager ? (
             <>
               <Button variant="secondary" onClick={openNuevoSubModulo}>
-                <Plus className="size-4" /> Nuevo Sub-Módulo
+                <Plus className="size-4" /> Nuevo cliente
               </Button>
-              <Button onClick={openNuevoModulo} disabled={subModuloId === null}>
-                <Plus className="size-4" /> Nuevo Módulo Cliente
+              <Button
+                onClick={openNuevoModulo}
+                disabled={clienteSeleccionado === null}
+                title={clienteSeleccionado === null ? 'Seleccione un cliente para registrar un acta' : undefined}
+              >
+                <Plus className="size-4" /> Nueva acta
               </Button>
             </>
           ) : undefined
@@ -550,72 +482,93 @@ export default function ClientesPage() {
             <Building2 className="size-5" />
           </div>
           <div>
-            <h3 className="font-semibold text-silver-800">Sub-módulo</h3>
-            <p className="text-xs text-silver-500">Seleccione un sub-módulo para ver sus módulos cliente</p>
+            <h3 className="font-semibold text-silver-800">Cliente</h3>
+            <p className="text-xs text-silver-500">Seleccione un cliente para ver sus actas de transferencia</p>
           </div>
         </div>
         <Select
-          label="Sub-módulo"
-          placeholder="Seleccione un sub-módulo"
-          options={(subModulosQuery.data ?? []).map((sm) => ({
+          label="Cliente"
+          placeholder="Seleccione un cliente"
+          options={clientes.map((sm) => ({
             value: String(sm.id),
             label: `${sm.codigo} — ${sm.entidad_remitente}`,
           }))}
           value={subModuloId === null ? '' : String(subModuloId)}
-          onChange={(value) => setSubModuloId(value ? Number(value) : null)}
+          onChange={(value) => {
+            setSubModuloId(value ? Number(value) : null);
+            setFiltroActas('');
+          }}
           className="h-12 text-base"
         />
       </Card>
 
-      {isManager && subModuloId !== null && (() => {
-        const seleccionado = (subModulosQuery.data ?? []).find((sm) => sm.id === subModuloId);
-        if (!seleccionado) return null;
-        return (
-          <Card>
-            <div className="mb-4 flex items-center gap-3">
+      {isManager && clienteSeleccionado && (
+        <Card>
+          <div className="mb-4 flex items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
               <div className="flex size-11 items-center justify-center rounded-xl bg-primary-50 text-primary-600">
                 <Building2 className="size-5" />
               </div>
               <div>
-                <h3 className="font-semibold text-silver-800">Sub-módulo seleccionado</h3>
+                <h3 className="font-semibold text-silver-800">Cliente seleccionado</h3>
                 <p className="text-xs text-silver-500">
-                  {seleccionado.codigo} — {seleccionado.entidad_remitente} · {seleccionado.sede_submodulos}
+                  {clienteSeleccionado.codigo} — {clienteSeleccionado.entidad_remitente} ·{' '}
+                  {clienteSeleccionado.sede_submodulos}
                 </p>
               </div>
             </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <Button variant="secondary" onClick={() => openEditarSubModulo(seleccionado)}>
-                <Pencil className="size-4" /> Editar Sub-módulo
-              </Button>
-              <Button
-                variant="danger"
-                onClick={() => handleEliminarSubModulo(seleccionado)}
-                loading={deleteSubModuloMutation.isPending && subModuloDeleteTarget?.id === seleccionado.id}
-              >
-                <Trash2 className="size-4" /> Eliminar Sub-módulo
-              </Button>
-            </div>
-          </Card>
-        );
-      })()}
+            <Badge color="blue">
+              {actasDelCliente.length} {actasDelCliente.length === 1 ? 'acta' : 'actas'}
+            </Badge>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button variant="secondary" onClick={() => openEditarSubModulo(clienteSeleccionado)}>
+              <Pencil className="size-4" /> Editar cliente
+            </Button>
+            <Button
+              variant="danger"
+              onClick={() => handleEliminarSubModulo(clienteSeleccionado)}
+              loading={
+                deleteSubModuloMutation.isPending && subModuloDeleteTarget?.id === clienteSeleccionado.id
+              }
+            >
+              <Trash2 className="size-4" /> Eliminar cliente
+            </Button>
+          </div>
+        </Card>
+      )}
 
       {isManager && subModuloId === null ? (
         <Card>
           <p className="text-sm text-silver-500">
-            Seleccione un sub-módulo para ver sus módulos cliente.
+            Seleccione un cliente para ver sus actas de transferencia.
           </p>
         </Card>
       ) : (
-        <div key={`modulos-${subModuloId ?? 'todos'}`} className="form-fill-anim">
+        <div key={`modulos-${subModuloId ?? 'todos'}`} className="form-fill-anim space-y-4">
+          <Card className="p-4">
+            <div className="relative">
+              <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-silver-400" />
+              <Input
+                value={filtroActas}
+                onChange={(event) => setFiltroActas(event.target.value)}
+                placeholder="Buscar acta por número, código, entidad o fecha…"
+                className="pl-9"
+                aria-label="Buscar actas"
+              />
+            </div>
+          </Card>
           <Table
             columns={columns}
-            data={modulosQuery.data ?? []}
+            data={actasFiltradas}
             rowKey={(modulo) => modulo.id}
             loading={modulosQuery.isPending}
             emptyMessage={
-              isManager
-                ? 'No hay módulos cliente en este sub-módulo'
-                : 'No tiene módulos asignados. Contacte al administrador.'
+              terminoActas
+                ? 'Ninguna acta coincide con la búsqueda'
+                : isManager
+                  ? 'Este cliente aún no tiene actas registradas'
+                  : 'Aún no tiene cajas asignadas. Solicite la asignación a su líder.'
             }
           />
         </div>
@@ -627,7 +580,7 @@ export default function ClientesPage() {
           setSubModuloModalOpen(false);
           setEditingSubModulo(null);
         }}
-        title={editingSubModulo ? 'Editar Sub-Módulo' : 'Nuevo Sub-Módulo'}
+        title={editingSubModulo ? 'Editar cliente' : 'Nuevo cliente'}
         footer={
           <>
             <Button
@@ -645,7 +598,7 @@ export default function ClientesPage() {
               form="submodulo-form"
               loading={createSubModuloMutation.isPending || updateSubModuloMutation.isPending}
             >
-              {editingSubModulo ? 'Guardar' : 'Crear'}
+              Guardar
             </Button>
           </>
         }
@@ -656,7 +609,7 @@ export default function ClientesPage() {
             value={subModuloForm.codigo}
             onChange={(event) => setSubModuloForm({ ...subModuloForm, codigo: event.target.value })}
             error={subModuloErrors.codigo}
-            placeholder="Código del sub-módulo"
+            placeholder="Código del cliente"
           />
           <Input
             label="Entidad Remitente"
@@ -667,14 +620,17 @@ export default function ClientesPage() {
             error={subModuloErrors.entidad_remitente}
             placeholder="Entidad remitente"
           />
-          <Input
+          <Select
             label="Sede"
+            options={sedeOptionsCon(subModuloForm.sede_submodulos)}
             value={subModuloForm.sede_submodulos}
-            onChange={(event) =>
-              setSubModuloForm({ ...subModuloForm, sede_submodulos: event.target.value })
+            onChange={(value) =>
+              setSubModuloForm({ ...subModuloForm, sede_submodulos: value })
             }
             error={subModuloErrors.sede_submodulos}
-            placeholder="Sede del sub-módulo"
+            placeholder="Seleccione una sede"
+            disabled
+            hint="Se registra con la sede del usuario que crea el cliente"
           />
         </form>
       </Modal>
@@ -682,7 +638,11 @@ export default function ClientesPage() {
       <Modal
         open={moduloModalOpen}
         onClose={() => setModuloModalOpen(false)}
-        title={editingModulo ? 'Editar Módulo Cliente' : 'Nuevo Módulo Cliente'}
+        title={
+          editingModulo
+            ? `Editar acta · ${editingModulo.acta_transferencia_modulo}`
+            : `Nueva acta · ${clienteSeleccionado?.codigo ?? ''}`
+        }
         footer={
           <>
             <Button
@@ -708,7 +668,7 @@ export default function ClientesPage() {
             value={moduloForm.codigo}
             onChange={(value) => setModuloForm({ ...moduloForm, codigo: value })}
             error={moduloErrors.codigo}
-            placeholder="Código del módulo cliente"
+            placeholder="Código del cliente"
             defaultUnlocked={false}
           />
           <EditableInput
@@ -726,7 +686,7 @@ export default function ClientesPage() {
               setModuloForm({ ...moduloForm, acta_transferencia_modulo: event.target.value })
             }
             error={moduloErrors.acta_transferencia_modulo}
-            placeholder="Acta de transferencia"
+            placeholder="Número del acta de transferencia"
           />
           <DatePicker
             label="Fecha de Transferencia"
@@ -738,24 +698,10 @@ export default function ClientesPage() {
         </form>
       </Modal>
 
-      <Modal
-        open={asignarModulo !== null}
-        onClose={() => setAsignarModulo(null)}
-        title={`Asignar Usuarios · ${asignarModulo?.codigo ?? ''}`}
-        size="lg"
-      >
-        {asignarModulo && (
-          <div className="grid gap-4 md:grid-cols-2">
-            <SeccionAsignacion moduloId={asignarModulo.id} rol="tecnica" label="Técnicos" />
-            <SeccionAsignacion moduloId={asignarModulo.id} rol="calidad" label="Calidad" />
-          </div>
-        )}
-      </Modal>
-
       <ConfirmDialog
         open={deleteTarget !== null}
-        title="Eliminar módulo cliente"
-        description={`¿Estás seguro de que deseas eliminar el módulo ${deleteTarget?.codigo ?? ''}? Esta acción no se puede deshacer.`}
+        title="Eliminar acta"
+        description={`¿Estás seguro de que deseas eliminar el acta ${deleteTarget?.acta_transferencia_modulo ?? ''} del cliente ${deleteTarget?.codigo ?? ''}? Esta acción no se puede deshacer.`}
         confirmLabel="Eliminar"
         loading={deleteModuloMutation.isPending}
         requireCc
@@ -768,8 +714,8 @@ export default function ClientesPage() {
 
       <ConfirmDialog
         open={subModuloDeleteTarget !== null}
-        title="Eliminar sub-módulo"
-        description={`¿Estás seguro de que deseas eliminar el sub-módulo ${subModuloDeleteTarget?.codigo ?? ''} — ${subModuloDeleteTarget?.entidad_remitente ?? ''}? Esta acción no se puede deshacer.`}
+        title="Eliminar cliente"
+        description={`¿Estás seguro de que deseas eliminar el cliente ${subModuloDeleteTarget?.codigo ?? ''} — ${subModuloDeleteTarget?.entidad_remitente ?? ''}? Esta acción no se puede deshacer.`}
         confirmLabel="Eliminar"
         loading={deleteSubModuloMutation.isPending}
         requireCc

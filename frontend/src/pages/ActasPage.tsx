@@ -1,12 +1,13 @@
 import { useState, type FormEvent } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { FileText, Pencil, Plus, Trash2 } from 'lucide-react';
+import { ClipboardList, FileText, Pencil, Plus, Search, Trash2, Users } from 'lucide-react';
 import { toast } from 'sonner';
 import { exportExcel } from '@/lib/utils';
 import {
   Badge,
   Button,
+  Card,
   ConfirmDialog,
   EditableInput,
   EditableDatePicker,
@@ -17,8 +18,15 @@ import {
   Table,
   type Column,
 } from '@/components/ui';
-import { modulosCajaApi, modulosClienteApi } from '@/lib/api';
-import { getApiErrorMessage } from '@/lib/api';
+import {
+  asignacionCajaCalidadApi,
+  asignacionCajaTecnicaApi,
+  getApiErrorMessage,
+  modulosCajaApi,
+  modulosClienteApi,
+  usersApi,
+  type SerieCajasInput,
+} from '@/lib/api';
 import { invalidateDomain } from '@/lib/queryInvalidation';
 import { useAuthStore } from '@/stores/authStore';
 import type { ModuloCaja } from '@/types';
@@ -51,6 +59,59 @@ const EMPTY_CAJA_FORM: CajaForm = {
   estado_caja: 'EN PROCESO',
 };
 
+interface AsignacionCaja {
+  tecnica: Set<number>;
+  calidad: Set<number>;
+}
+
+const sinAsignacion = (): AsignacionCaja => ({ tecnica: new Set(), calidad: new Set() });
+
+function ListaUsuariosAsignables({
+  titulo,
+  usuarios,
+  seleccionados,
+  onToggle,
+  cargando,
+}: {
+  titulo: string;
+  usuarios: Array<{ id: number; nombre: string; sede?: string | null }>;
+  seleccionados: Set<number>;
+  onToggle: (id: number) => void;
+  cargando: boolean;
+}) {
+  return (
+    <div className="rounded-lg border border-silver-200 p-3">
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <span className="text-sm font-semibold text-silver-800">{titulo}</span>
+        <Badge color="blue">{seleccionados.size} seleccionados</Badge>
+      </div>
+      {cargando ? (
+        <p className="text-sm text-silver-500">Cargando usuarios…</p>
+      ) : usuarios.length === 0 ? (
+        <p className="text-sm text-silver-500">No hay usuarios de este rol en su sede</p>
+      ) : (
+        <ul className="max-h-40 space-y-1 overflow-y-auto">
+          {usuarios.map((usuario) => (
+            <li key={usuario.id}>
+              <label className="flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1 text-sm hover:bg-silver-50">
+                <input
+                  type="checkbox"
+                  checked={seleccionados.has(usuario.id)}
+                  onChange={() => onToggle(usuario.id)}
+                />
+                <span className="text-silver-700">
+                  {usuario.nombre}
+                  {usuario.sede ? <span className="text-silver-400"> ({usuario.sede})</span> : null}
+                </span>
+              </label>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
 function EstadoBadge({ estado }: { estado: string }) {
   const color = estado === 'FINALIZADO' ? 'green' : estado === 'EN PROCESO' ? 'amber' : 'gray';
   return <Badge color={color}>{estado || '—'}</Badge>;
@@ -62,13 +123,19 @@ export default function ActasPage() {
   const user = useAuthStore((state) => state.user);
   const isManager = user?.rol === 'ADMIN' || user?.rol === 'LIDER';
 
+  const [filtroCajas, setFiltroCajas] = useState('');
   const [modalOpen, setModalOpen] = useState(false);
   const [editingCaja, setEditingCaja] = useState<ModuloCaja | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<ModuloCaja | null>(null);
   const [cajaForm, setCajaForm] = useState<CajaForm>(() => ({ ...EMPTY_CAJA_FORM }));
   const [cajaErrors, setCajaErrors] = useState<Partial<Record<keyof CajaForm, string>>>({});
+  // Usuarios asignados a la caja (o a toda la serie al crear). En edición se
+  // conserva el estado original para aplicar solo las diferencias al guardar.
+  const [asignacion, setAsignacion] = useState<AsignacionCaja>(sinAsignacion);
+  const [asignacionOriginal, setAsignacionOriginal] = useState<AsignacionCaja>(sinAsignacion);
+  const [cargandoAsignacion, setCargandoAsignacion] = useState(false);
 
-const cajasQuery = useQuery({
+  const cajasQuery = useQuery({
     queryKey: ['modulos-caja', 'list', id],
     queryFn: () => modulosCajaApi.list(id as string).then((res) => res.data),
     enabled: Boolean(id),
@@ -76,6 +143,19 @@ const cajasQuery = useQuery({
 
   const cajasData = cajasQuery.data ?? [];
   const loadingCajas = cajasQuery.isLoading;
+  const terminoCajas = filtroCajas.trim().toLowerCase();
+  const cajasFiltradas = terminoCajas
+    ? cajasData.filter((caja) =>
+      [
+        caja.caja_modulo,
+        caja.entidad_remitente_caja,
+        caja.entidad_productora_caja,
+        caja.acta_trans_caja,
+        caja.estado_caja,
+        caja.fecha_trans_caja?.slice(0, 10) ?? '',
+      ].some((campo) => String(campo ?? '').toLowerCase().includes(terminoCajas)),
+    )
+    : cajasData;
 
   const moduloQuery = useQuery({
     queryKey: ['modulos-cliente', 'get', id],
@@ -84,14 +164,79 @@ const cajasQuery = useQuery({
   });
 
   const actaModulo = moduloQuery.data?.acta_transferencia_modulo ?? '';
+  // Prefijo de las cajas (código del cliente + "C"). Solo se muestra: el backend
+  // lo calcula al crear la serie y al editar se conserva el de la caja.
+  const prefijoCaja = moduloQuery.data ? `${moduloQuery.data.codigo.padStart(3, '0')}C` : '';
+
+  const tecnicosQuery = useQuery({
+    queryKey: ['users', 'rol', 'TECNICA'],
+    queryFn: () => usersApi.byRol('TECNICA', { sede: user?.sede }).then((res) => res.data),
+    enabled: isManager,
+  });
+  const calidadQuery = useQuery({
+    queryKey: ['users', 'rol', 'CALIDAD'],
+    queryFn: () => usersApi.byRol('CALIDAD', { sede: user?.sede }).then((res) => res.data),
+    enabled: isManager,
+  });
+
+  const toggleAsignacion = (rol: keyof AsignacionCaja, id: number) => {
+    setAsignacion((prev) => {
+      const next = new Set(prev[rol]);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return { ...prev, [rol]: next };
+    });
+  };
+
+  /** Carga los usuarios ya asignados a la caja para precargar el formulario de edición. */
+  const cargarAsignacion = async (cajaId: number) => {
+    setAsignacion(sinAsignacion());
+    setAsignacionOriginal(sinAsignacion());
+    setCargandoAsignacion(true);
+    try {
+      const [tecnica, calidad] = await Promise.all([
+        modulosCajaApi.usuariosTecnica(cajaId).then((res) => res.data),
+        modulosCajaApi.usuariosCalidad(cajaId).then((res) => res.data),
+      ]);
+      const actual: AsignacionCaja = {
+        tecnica: new Set(tecnica.map((u) => u.id)),
+        calidad: new Set(calidad.map((u) => u.id)),
+      };
+      setAsignacion(actual);
+      setAsignacionOriginal({ tecnica: new Set(actual.tecnica), calidad: new Set(actual.calidad) });
+    } catch (error) {
+      toast.error(getApiErrorMessage(error));
+    } finally {
+      setCargandoAsignacion(false);
+    }
+  };
+
+  /** Aplica sobre la caja solo las altas y bajas respecto a la asignación original. */
+  const sincronizarAsignacion = async (cajaId: number) => {
+    const roles = [
+      { rol: 'tecnica' as const, cliente: asignacionCajaTecnicaApi },
+      { rol: 'calidad' as const, cliente: asignacionCajaCalidadApi },
+    ];
+    for (const { rol, cliente } of roles) {
+      const actual = asignacion[rol];
+      const original = asignacionOriginal[rol];
+      const altas = [...actual].filter((id) => !original.has(id));
+      const bajas = [...original].filter((id) => !actual.has(id));
+      if (altas.length > 0) await cliente.asignar({ modulo_id: cajaId, usuarios: altas });
+      if (bajas.length > 0) await cliente.eliminar(cajaId, bajas);
+    }
+  };
 
   const updateMutation = useMutation({
-    mutationFn: ({ cajaId, data }: { cajaId: number; data: { caja_modulo: string; entidad_remitente_caja: string; entidad_productora_caja: string; unidad_administrativa_caja: string; oficina_productora_caja: string; objeto_caja: string; acta_trans_caja: string; fecha_trans_caja: string | null; estado_caja: string } }) =>
-      modulosCajaApi.update(cajaId, data),
+    mutationFn: async ({ cajaId, data }: { cajaId: number; data: { caja_modulo: string; entidad_remitente_caja: string; entidad_productora_caja: string; unidad_administrativa_caja: string; oficina_productora_caja: string; objeto_caja: string; acta_trans_caja: string; fecha_trans_caja: string | null; estado_caja: string } }) => {
+      await modulosCajaApi.update(cajaId, data);
+      await sincronizarAsignacion(cajaId);
+    },
     onSuccess: () => {
       toast.success('Caja actualizada correctamente');
       setModalOpen(false);
       void invalidateDomain(queryClient, 'modulos-caja');
+      void invalidateDomain(queryClient, 'users');
     },
     onError: (error) => {
       toast.error(getApiErrorMessage(error));
@@ -99,12 +244,12 @@ const cajasQuery = useQuery({
   });
 
   const createSerieMutation = useMutation({
-    mutationFn: (data: { id_modulo_caja: number; numero_inicial: string; numero_final: string; entidad_remitente_caja: string; acta_trans_caja: string; fecha_trans_caja: string | null; entidad_productora_caja: string; unidad_administrativa_caja: string; oficina_productora_caja: string; objeto_caja: string; estado_caja: string }) =>
-      modulosCajaApi.createSerie(data),
+    mutationFn: (data: SerieCajasInput) => modulosCajaApi.createSerie(data),
     onSuccess: (res) => {
       toast.success(res.data?.message || 'Serie de cajas creada correctamente');
       setModalOpen(false);
       void invalidateDomain(queryClient, 'modulos-caja');
+      void invalidateDomain(queryClient, 'users');
     },
     onError: (error) => {
       toast.error(getApiErrorMessage(error));
@@ -113,10 +258,11 @@ const cajasQuery = useQuery({
 
   const deleteMutation = useMutation({
     mutationFn: (cajaId: number) => modulosCajaApi.remove(cajaId),
-    onSuccess: () => {
-      toast.success('Caja eliminada');
+    onSuccess: (res) => {
+      toast.success(res.data?.message || 'Caja eliminada');
       setDeleteTarget(null);
       void invalidateDomain(queryClient, 'modulos-caja');
+      void invalidateDomain(queryClient, 'fuiddatosreal');
     },
     onError: (error) => {
       toast.error(getApiErrorMessage(error));
@@ -177,6 +323,8 @@ const cajasQuery = useQuery({
       acta_trans_caja: cajaForm.acta_trans_caja.trim(),
       fecha_trans_caja: cajaForm.fecha_trans_caja || null,
       estado_caja: cajaForm.estado_caja,
+      usuarios_tecnica: [...asignacion.tecnica],
+      usuarios_calidad: [...asignacion.calidad],
     };
 
     if (editingCaja) {
@@ -200,7 +348,7 @@ const cajasQuery = useQuery({
     }
 
     if (!id) {
-      toast.error('Falta el identificador del módulo cliente');
+      toast.error('Falta el identificador del acta');
       return;
     }
 
@@ -222,6 +370,8 @@ const cajasQuery = useQuery({
       { label: 'Acta', key: 'acta_trans_caja' },
       { label: 'Fecha', key: 'fecha_trans_caja' },
       { label: 'Estado', key: 'estado_caja' },
+      { label: 'Técnicos', key: 'tecnicos_asignados' },
+      { label: 'Calidad', key: 'calidad_asignados' },
     ];
 
     exportExcel(
@@ -232,7 +382,7 @@ const cajasQuery = useQuery({
     );
   };
 
-  const openNuevaCaja = () => {
+  const openNuevaCaja = async () => {
     setEditingCaja(null);
     const actaModulo = moduloQuery.data?.acta_transferencia_modulo ?? '';
     // Entidades de referencia: se toman de una caja existente del módulo, así la
@@ -240,15 +390,25 @@ const cajasQuery = useQuery({
     const todasLasCajas: ModuloCaja[] = cajasData;
     const cajaReferencia =
       todasLasCajas.find((c) => c.entidad_remitente_caja?.trim() || c.entidad_productora_caja?.trim());
-    // Sugerir siguiente número inicial basado en la última caja creada
-    const ultimaCaja = [...cajasData].sort((a, b) => {
-      const na = parseInt(a.caja_modulo.slice(-6), 10);
-      const nb = parseInt(b.caja_modulo.slice(-6), 10);
-      return nb - na;
-    })[0];
-    const sugeridoInicial = ultimaCaja
-      ? String(parseInt(ultimaCaja.caja_modulo.slice(-6), 10) + 1).padStart(6, '0')
-      : '000001';
+    // Siguiente número libre del prefijo en TODA la base, no solo en esta acta:
+    // el número de caja no puede repetirse entre actas del mismo cliente.
+    let sugeridoInicial = '000001';
+    try {
+      if (prefijoCaja) {
+        const { data } = await modulosCajaApi.siguienteNumero(prefijoCaja);
+        sugeridoInicial = data.siguiente.slice(-6);
+      }
+    } catch {
+      // Sin respuesta del servidor: se parte de la última caja de esta acta.
+      const ultimaCaja = [...cajasData].sort((a, b) => {
+        const na = parseInt(a.caja_modulo.slice(-6), 10);
+        const nb = parseInt(b.caja_modulo.slice(-6), 10);
+        return nb - na;
+      })[0];
+      if (ultimaCaja) {
+        sugeridoInicial = String(parseInt(ultimaCaja.caja_modulo.slice(-6), 10) + 1).padStart(6, '0');
+      }
+    }
     setCajaForm({
       ...EMPTY_CAJA_FORM,
       numero_inicial: sugeridoInicial,
@@ -263,6 +423,8 @@ const cajasQuery = useQuery({
       fecha_trans_caja: moduloQuery.data?.fecha_trans_modulo?.slice(0, 10) ?? '',
     });
     setCajaErrors({});
+    setAsignacion(sinAsignacion());
+    setAsignacionOriginal(sinAsignacion());
     setModalOpen(true);
   };
 
@@ -284,6 +446,7 @@ const cajasQuery = useQuery({
     });
     setCajaErrors({});
     setModalOpen(true);
+    void cargarAsignacion(caja.id);
   };
 
   const columns: Column<ModuloCaja>[] = [
@@ -306,6 +469,26 @@ const cajasQuery = useQuery({
       header: 'Estado',
       render: (caja: ModuloCaja) => <EstadoBadge estado={caja.estado_caja} />,
     },
+    ...(isManager
+      ? [
+        {
+          key: 'asignados',
+          header: 'Asignados',
+          render: (caja: ModuloCaja) => (
+            <div className="space-y-0.5 text-xs">
+              <p>
+                <span className="font-medium text-silver-500">Técnica:</span>{' '}
+                <span className="text-silver-700">{caja.tecnicos_asignados || '—'}</span>
+              </p>
+              <p>
+                <span className="font-medium text-silver-500">Calidad:</span>{' '}
+                <span className="text-silver-700">{caja.calidad_asignados || '—'}</span>
+              </p>
+            </div>
+          ),
+        },
+      ]
+      : []),
     {
       key: 'created_at',
       header: 'Creada',
@@ -321,9 +504,9 @@ const cajasQuery = useQuery({
       header: 'Acciones',
       render: (caja: ModuloCaja) => (
         <div className="flex flex-wrap items-center gap-2">
-          <Link to={`/clientes/${id}/actas/${caja.id}/cajas`}>
+          <Link to={`/cajas/${caja.id}/datos`} state={{ from: `/clientes/${id}/actas` }}>
             <Button variant="secondary" size="sm">
-              <FileText className="size-4" /> Ver Caja
+              <ClipboardList className="size-4" /> Ir a Digitación
             </Button>
           </Link>
           {isManager && (
@@ -344,10 +527,10 @@ const cajasQuery = useQuery({
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Actas"
-        description="Clientes / Actas — Cajas del módulo cliente"
+        title={actaModulo ? `Acta ${actaModulo}` : 'Acta'}
+        description="Clientes / Actas — Cajas registradas en el acta"
         backTo="/clientes"
-        backLabel="Módulos de Cliente"
+        backLabel="Clientes"
         actions={
           isManager ? (
             <>
@@ -362,12 +545,27 @@ const cajasQuery = useQuery({
         }
       />
 
+      <Card className="p-4">
+        <div className="relative">
+          <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-silver-400" />
+          <Input
+            value={filtroCajas}
+            onChange={(event) => setFiltroCajas(event.target.value)}
+            placeholder="Buscar caja por número, entidad, acta, fecha o estado…"
+            className="pl-9"
+            aria-label="Buscar cajas"
+          />
+        </div>
+      </Card>
+
       <Table
         columns={columns}
-        data={cajasData}
+        data={cajasFiltradas}
         rowKey={(caja) => caja.id}
         loading={loadingCajas}
-        emptyMessage="No hay cajas para este módulo cliente"
+        emptyMessage={
+          terminoCajas ? 'Ninguna caja coincide con la búsqueda' : 'Esta acta aún no tiene cajas registradas'
+        }
       />
 
       <Modal
@@ -395,27 +593,64 @@ const cajasQuery = useQuery({
         }
       >
         <form id="caja-form" onSubmit={handleSubmit} autoComplete="off" className="grid gap-4 md:grid-cols-2">
+          {/* Mismo orden de campos que el formulario de cajas anterior */}
           <Input
-            label="Número Inicial (6 dígitos)"
-            value={cajaForm.numero_inicial}
-            onChange={(event) => setCajaForm({ ...cajaForm, numero_inicial: event.target.value })}
-            error={cajaErrors.numero_inicial}
-            placeholder="000001"
-            maxLength={6}
+            label="Prefijo"
+            value={editingCaja ? editingCaja.caja_modulo.slice(0, 4) : prefijoCaja}
+            readOnly
+            disabled
+            hint={editingCaja ? undefined : 'Se toma del código del cliente'}
           />
-          <Input
-            label="Número Final (6 dígitos)"
-            value={cajaForm.numero_final}
-            onChange={(event) => setCajaForm({ ...cajaForm, numero_final: event.target.value })}
-            error={cajaErrors.numero_final}
-            placeholder="000001"
-            maxLength={6}
-          />
+          {editingCaja ? (
+            <Input
+              label="Número de caja (6 dígitos)"
+              value={cajaForm.numero_inicial}
+              onChange={(event) =>
+                setCajaForm({ ...cajaForm, numero_inicial: event.target.value, numero_final: event.target.value })
+              }
+              error={cajaErrors.numero_inicial ?? cajaErrors.numero_final}
+              placeholder="000001"
+              maxLength={6}
+            />
+          ) : (
+            <>
+              <Input
+                label="Número Inicial (6 dígitos)"
+                value={cajaForm.numero_inicial}
+                onChange={(event) => setCajaForm({ ...cajaForm, numero_inicial: event.target.value })}
+                error={cajaErrors.numero_inicial}
+                placeholder="000001"
+                maxLength={6}
+              />
+              <Input
+                label="Número Final (6 dígitos)"
+                value={cajaForm.numero_final}
+                onChange={(event) => setCajaForm({ ...cajaForm, numero_final: event.target.value })}
+                error={cajaErrors.numero_final}
+                placeholder="000001"
+                maxLength={6}
+              />
+            </>
+          )}
           <Input
             label="Entidad Remitente"
             value={cajaForm.entidad_remitente_caja}
             onChange={(event) => setCajaForm({ ...cajaForm, entidad_remitente_caja: event.target.value })}
             error={cajaErrors.entidad_remitente_caja}
+          />
+          <EditableInput
+            label="Acta de Transferencia"
+            value={cajaForm.acta_trans_caja}
+            onChange={(value) => setCajaForm({ ...cajaForm, acta_trans_caja: value })}
+            error={cajaErrors.acta_trans_caja}
+            placeholder={actaModulo || 'Ingrese el número de acta'}
+            defaultUnlocked={false}
+          />
+          <EditableDatePicker
+            label="Fecha de Transferencia"
+            value={cajaForm.fecha_trans_caja}
+            onChange={(value) => setCajaForm({ ...cajaForm, fecha_trans_caja: value })}
+            defaultUnlocked={false}
           />
           <Input
             label="Entidad Productora"
@@ -436,24 +671,10 @@ const cajasQuery = useQuery({
             error={cajaErrors.oficina_productora_caja}
           />
           <Input
-            label="Objeto"
+            label="Objeto de la Caja"
             value={cajaForm.objeto_caja}
             onChange={(event) => setCajaForm({ ...cajaForm, objeto_caja: event.target.value })}
             error={cajaErrors.objeto_caja}
-          />
-          <EditableInput
-            label="Acta de Transferencia"
-            value={cajaForm.acta_trans_caja}
-            onChange={(value) => setCajaForm({ ...cajaForm, acta_trans_caja: value })}
-            error={cajaErrors.acta_trans_caja}
-            placeholder={actaModulo || 'Ingrese el número de acta'}
-            defaultUnlocked={false}
-          />
-          <EditableDatePicker
-            label="Fecha de Transferencia"
-            value={cajaForm.fecha_trans_caja}
-            onChange={(value) => setCajaForm({ ...cajaForm, fecha_trans_caja: value })}
-            defaultUnlocked={false}
           />
           <Select
             label="Estado"
@@ -461,15 +682,49 @@ const cajasQuery = useQuery({
             value={cajaForm.estado_caja}
             onChange={(value) => setCajaForm({ ...cajaForm, estado_caja: value })}
           />
+
+          <div className="space-y-2 border-t border-silver-100 pt-4 md:col-span-2">
+            <div className="flex items-center gap-2">
+              <Users className="size-4 text-silver-500" />
+              <h4 className="text-sm font-semibold text-silver-800">Usuarios asignados a la caja</h4>
+            </div>
+            <p className="text-xs text-silver-500">
+              {editingCaja
+                ? 'Marque o desmarque usuarios; los cambios se aplican al guardar.'
+                : 'Los usuarios marcados quedan asignados a todas las cajas de la serie.'}
+            </p>
+            <div className="grid gap-3 md:grid-cols-2">
+              <ListaUsuariosAsignables
+                titulo="Técnicos"
+                usuarios={tecnicosQuery.data ?? []}
+                seleccionados={asignacion.tecnica}
+                onToggle={(id) => toggleAsignacion('tecnica', id)}
+                cargando={tecnicosQuery.isPending || cargandoAsignacion}
+              />
+              <ListaUsuariosAsignables
+                titulo="Calidad"
+                usuarios={calidadQuery.data ?? []}
+                seleccionados={asignacion.calidad}
+                onToggle={(id) => toggleAsignacion('calidad', id)}
+                cargando={calidadQuery.isPending || cargandoAsignacion}
+              />
+            </div>
+          </div>
         </form>
       </Modal>
 
       <ConfirmDialog
         open={deleteTarget !== null}
         title="Eliminar caja"
-        description={`¿Estás seguro de que deseas eliminar la caja ${deleteTarget?.caja_modulo ?? ''}?`}
+        description={
+          (deleteTarget?.total_fuids ?? 0) > 0
+            ? `La caja ${deleteTarget?.caja_modulo ?? ''} tiene ${deleteTarget?.total_fuids ?? 0} registro(s) FUID. Se eliminarán primero todos sus registros (UPD) y después la caja. Esta acción no se puede deshacer.`
+            : `¿Estás seguro de que deseas eliminar la caja ${deleteTarget?.caja_modulo ?? ''}? Esta acción no se puede deshacer.`
+        }
         confirmLabel="Eliminar"
         loading={deleteMutation.isPending}
+        requireCc
+        userCc={user?.cc ?? ''}
         onConfirm={() => {
           if (deleteTarget) deleteMutation.mutate(deleteTarget.id);
         }}

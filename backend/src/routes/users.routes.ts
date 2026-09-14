@@ -3,9 +3,11 @@ import { isAuthenticated, isAdmin } from '../middlewares/auth.js';
 import { validate } from '../middlewares/validate.js';
 import { createUserSchema, updateUserSchema } from '../validators/users.validator.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
+import { idNumerico } from '../middlewares/paramId.js';
 import { listUsers, getUser, createUser, updateUser, deleteUser, suspenderUsuario } from '../controllers/users.controller.js';
 
 const router = Router();
+router.param('id', idNumerico);
 
 // Prefijo montado en index.ts: /users
 router.use(isAuthenticated, isAdmin);

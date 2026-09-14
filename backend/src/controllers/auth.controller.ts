@@ -3,6 +3,7 @@ import bcrypt from 'bcryptjs';
 import { query, queryOne } from '../config/db.js';
 import type { User } from '../types/db.js';
 import type { LoginRequest, LoginResponse } from '../types/index.js';
+import { fechaHoyLocal } from '../utils/format.js';
 
 const saltRounds = 10;
 
@@ -24,7 +25,7 @@ export async function checkAuth(req: Request, res: Response): Promise<void> {
 }
 
 export async function login(req: Request, res: Response): Promise<void> {
-  const { cc, contrasena, rol } = req.body as LoginRequest;
+  const { cc, contrasena } = req.body as LoginRequest;
 
   try {
     const user = await queryOne<User>('SELECT * FROM users WHERE cc = ?', [cc]);
@@ -34,7 +35,7 @@ export async function login(req: Request, res: Response): Promise<void> {
       return;
     }
 
-    const today = new Date().toISOString().slice(0, 10);
+    const today = fechaHoyLocal();
     if (user.suspendido_hasta && user.suspendido_hasta >= today) {
       res.status(200).json({ success: false, message: `Usuario suspendido hasta el ${formatDate(user.suspendido_hasta)}. Contacte al administrador.` } satisfies LoginResponse);
       return;
@@ -62,11 +63,6 @@ export async function login(req: Request, res: Response): Promise<void> {
       }
     }
 
-    if (user.rol !== rol) {
-      res.status(200).json({ success: false, message: 'El rol seleccionado no coincide con su cuenta. Verifique con el administrador.' } satisfies LoginResponse);
-      return;
-    }
-
     req.session.user = {
       id: user.id,
       cc: user.cc,
@@ -76,9 +72,9 @@ export async function login(req: Request, res: Response): Promise<void> {
     };
 
     if (user.rol === 'ADMIN') {
-      res.status(200).json({ success: true, redirect: '/admin' } satisfies LoginResponse);
+      res.status(200).json({ success: true, rol: user.rol, redirect: '/admin' } satisfies LoginResponse);
     } else if (['TECNICA', 'LIDER', 'CALIDAD'].includes(user.rol)) {
-      res.status(200).json({ success: true, redirect: '/clientes' } satisfies LoginResponse);
+      res.status(200).json({ success: true, rol: user.rol, redirect: '/clientes' } satisfies LoginResponse);
     } else {
       res.status(200).json({ success: false, message: 'Rol no autorizado' } satisfies LoginResponse);
     }

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from 'react';
-import { useLocation, useParams } from 'react-router-dom';
+import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { CheckCircle2, Pencil, Plus, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -8,20 +8,22 @@ import {
   Button,
   Card,
   ConfirmDialog,
-  DatePicker,
-  EditableInput,
-  EditableDatePicker,
-  EditableSuggestionInput,
   Input,
   LoadingState,
   Modal,
   PageHeader,
+  Select,
   Table,
+  UpdInput,
+  numeroAUpd,
+  updANumero,
   type Column,
 } from '@/components/ui';
 import { fuidApi, getApiErrorCode, modulosCajaApi } from '@/lib/api';
+import { cn } from '@/lib/cn';
+import { toastApiError } from '@/lib/feedback';
 import { invalidateDomain } from '@/lib/queryInvalidation';
-import { onlyDigits, required, validCaja, validDate, validUpd } from '@/lib/validation';
+import { fechaHoyISO } from '@/lib/utils';
 import { useAuthStore } from '@/stores/authStore';
 import {
   SUGGESTION_FIELDS,
@@ -175,28 +177,75 @@ function formFromRecord(record: FuidDato): FuidFormValues {
   };
 }
 
-function emptyFormFor(cajaId: string, user: SessionUser | null, defaultNOrden: number, caja?: ModuloCaja | null): FuidFormValues {
+/** Última caja interna digitada; se recuerda entre registros como hacía la versión anterior. */
+const CLAVE_CAJA_INTERNA = 'luciernaga.fuid.caja_interna';
+
+function leerCajaInternaRecordada(): string {
+  try {
+    return localStorage.getItem(CLAVE_CAJA_INTERNA) ?? '';
+  } catch {
+    return '';
+  }
+}
+
+function recordarCajaInterna(valor: string): void {
+  try {
+    if (valor.trim()) localStorage.setItem(CLAVE_CAJA_INTERNA, valor.trim());
+  } catch {
+    // Sin almacenamiento local solo se pierde la comodidad de recordarla.
+  }
+}
+
+/** UPD siguiente al guardado (7 dígitos); vacío si no es válido o ya era UPD9999999. */
+function siguienteUpdLocal(upd: string): string {
+  const numero = parseInt(updANumero(upd), 10);
+  if (Number.isNaN(numero) || numero >= 9999999) return '';
+  return numeroAUpd(String(numero + 1));
+}
+
+/** Un "N/A" heredado de la caja no se precarga: el campo se muestra vacío. */
+function sinNA(valor?: string | null): string {
+  const limpio = (valor ?? '').trim();
+  return limpio.toUpperCase() === 'N/A' ? '' : limpio;
+}
+
+function emptyFormFor(
+  cajaId: string,
+  user: SessionUser | null,
+  defaultNOrden: number,
+  defaultTomo: string,
+  caja?: ModuloCaja | null,
+): FuidFormValues {
   return {
     ...EMPTY_FORM,
     caja: cajaId,
     n_orden: String(defaultNOrden),
+    tomo: defaultTomo,
+    caja_interna: leerCajaInternaRecordada(),
+    // La fecha del dato es el día en que se digita (hora local del navegador).
+    fecha_del_dato: fechaHoyISO(),
     elaborado_por: user ? `${user.nombre} (${user.cc})` : '',
     sede: user?.sede ?? '',
     // Datos derivados de la caja seleccionada: la persona solo completa UPD y los
     // campos específicos del documento; el resto ya está lógicamente creado en la caja.
-    codigo: caja?.id_modulo_caja ? String(caja.id_modulo_caja) : '',
+    // `codigo` queda en blanco a propósito: el id interno del módulo no es el
+    // código documental que va en el FUID, y precargarlo hacía que se guardara
+    // un número sin significado archivístico.
+    codigo: '',
     entidad_remitente: caja?.entidad_remitente_caja ?? '',
-    entidad_productora: caja?.entidad_productora_caja ?? '',
-    unidad_administrativa: caja?.unidad_administrativa_caja ?? '',
-    oficina_productora: caja?.oficina_productora_caja ?? '',
-    objeto: caja?.objeto_caja ?? '',
+    entidad_productora: sinNA(caja?.entidad_productora_caja),
+    unidad_administrativa: sinNA(caja?.unidad_administrativa_caja),
+    oficina_productora: sinNA(caja?.oficina_productora_caja),
+    objeto: sinNA(caja?.objeto_caja),
     nro_acta_transferible: caja?.acta_trans_caja ?? '',
     fecha_transferencia: caja?.fecha_trans_caja?.slice(0, 10) ?? '',
   };
 }
 
 function buildPayload(form: FuidFormValues, editing: FuidDato | null): DataRow {
-  const text = (value: string): string | null => (value.trim() === '' ? null : value);
+  // Los textos se guardan en mayúsculas, como hacía la versión anterior y como
+  // están los registros históricos; lo vacío viaja como NULL (nunca "N/A").
+  const text = (value: string): string | null => (value.trim() === '' ? null : value.trim().toUpperCase());
   const numero = (value: string): number | null => {
     const trimmed = value.trim();
     if (trimmed === '') return null;
@@ -260,9 +309,21 @@ interface SuggestionInputProps {
   onChange: (value: string) => void;
   disabled?: boolean;
   readOnly?: boolean;
+  autoFocus?: boolean;
+  className?: string;
 }
 
-function SuggestionInput({ caja, campo, label, value, onChange, disabled, readOnly }: SuggestionInputProps) {
+function SuggestionInput({
+  caja,
+  campo,
+  label,
+  value,
+  onChange,
+  disabled,
+  readOnly,
+  autoFocus,
+  className,
+}: SuggestionInputProps) {
   const debouncedQuery = useDebouncedValue(value, 300);
   const suggestionsQuery = useQuery({
     queryKey: ['fuiddatosreal', 'suggestions', caja, campo, debouncedQuery],
@@ -272,7 +333,7 @@ function SuggestionInput({ caja, campo, label, value, onChange, disabled, readOn
   });
 
   return (
-    <div className="w-full">
+    <div className={cn('w-full', className)}>
       <Input
         label={label}
         value={value}
@@ -280,6 +341,7 @@ function SuggestionInput({ caja, campo, label, value, onChange, disabled, readOn
         list={`sug-${campo}`}
         disabled={disabled}
         readOnly={readOnly}
+        autoFocus={autoFocus}
       />
       <datalist id={`sug-${campo}`}>
         {(suggestionsQuery.data ?? []).map((suggestion) => (
@@ -290,23 +352,52 @@ function SuggestionInput({ caja, campo, label, value, onChange, disabled, readOn
   );
 }
 
+const OPCIONES_OTRO = ['N/A', 'A-Z', 'LIBROS', 'BOLSA'];
+const OPCIONES_SOPORTE = ['N/A', 'CD', 'PLANOS'];
+const OPCIONES_FRECUENCIA = ['N/A', 'ALTA', 'MEDIA', 'BAJA'];
+
+/** Opciones fijas de la lista más el valor guardado cuando quedó fuera de ella (registros antiguos). */
+function opcionesCon(lista: string[], actual: string) {
+  const valor = actual.trim().toUpperCase();
+  const base = lista.map((v) => ({ value: v, label: v }));
+  return valor && !lista.includes(valor) ? [...base, { value: valor, label: valor }] : base;
+}
+
 interface FuidFormModalProps {
   open: boolean;
   cajaId: string;
   editing: FuidDato | null;
   defaultNOrden: number;
+  defaultTomo: string;
   caja?: ModuloCaja | null;
   onClose: () => void;
 }
 
-function FuidFormModal({ open, cajaId, editing, defaultNOrden, caja, onClose }: FuidFormModalProps) {
+/**
+ * Formulario de digitación: los mismos 21 campos y el mismo orden que usaba la
+ * versión anterior, en una cuadrícula de 4 columnas que cabe en pantalla sin
+ * desplazarse. Sin validaciones al enviar ni relleno automático con N/A: lo que
+ * va en blanco se guarda vacío y el servidor solo exige caja y UPD. Los datos
+ * derivados (caja, fecha del dato, N° orden, elaborado por, sede, acta y fecha
+ * de transferencia) viajan sin mostrarse.
+ */
+function FuidFormModal({ open, cajaId, editing, defaultNOrden, defaultTomo, caja, onClose }: FuidFormModalProps) {
   const queryClient = useQueryClient();
   const user = useAuthStore((state) => state.user);
 
   const [form, setForm] = useState<FuidFormValues>(() =>
-    editing ? formFromRecord(editing) : emptyFormFor(cajaId, user, defaultNOrden, caja),
+    editing ? formFromRecord(editing) : emptyFormFor(cajaId, user, defaultNOrden, defaultTomo, caja),
   );
-  const [errors, setErrors] = useState<Partial<Record<keyof FuidFormValues, string>>>({});
+  /** Registros guardados sin cerrar el formulario; remonta el formulario para volver a enfocar Codigo. */
+  const [racha, setRacha] = useState(0);
+  /** Confirmación animada del último registro guardado; se apaga sola a los ~2,4 s. */
+  const [confirmacion, setConfirmacion] = useState<{ id: number; upd: string; siguiente: string } | null>(null);
+
+  useEffect(() => {
+    if (!confirmacion) return;
+    const temporizador = setTimeout(() => setConfirmacion(null), 2400);
+    return () => clearTimeout(temporizador);
+  }, [confirmacion]);
 
   const debouncedUpd = useDebouncedValue(form.upd.trim(), 500);
   const updExistsQuery = useQuery({
@@ -317,17 +408,19 @@ function FuidFormModal({ open, cajaId, editing, defaultNOrden, caja, onClose }: 
   });
   const nextUpdQuery = useQuery({
     queryKey: ['modulos-caja', 'next-upd', cajaId],
-    queryFn: () => modulosCajaApi.siguienteUpd(cajaId).then((res) => res.data.upd),
+    queryFn: () => modulosCajaApi.siguienteUpd(cajaId).then((res) => res.data),
     enabled: open && !editing && Boolean(cajaId),
   });
+  const updSugerido = nextUpdQuery.data?.upd ?? '';
 
   useEffect(() => {
-    if (!editing && nextUpdQuery.data && !form.upd.trim()) {
-      setForm((prev) => (prev.upd ? prev : { ...prev, upd: nextUpdQuery.data ?? '' }));
+    if (!editing && updSugerido && !form.upd.trim()) {
+      setForm((prev) => (prev.upd ? prev : { ...prev, upd: updSugerido }));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [nextUpdQuery.data, editing, open]);
-    const setField = (field: keyof FuidFormValues) => (event: ChangeEvent<HTMLInputElement>) =>
+  }, [updSugerido, editing, open]);
+
+  const setField = (field: keyof FuidFormValues) => (event: ChangeEvent<HTMLInputElement>) =>
     setForm((prev) => ({ ...prev, [field]: event.target.value }));
 
   const updateField = (field: keyof FuidFormValues) => (value: string) =>
@@ -336,19 +429,38 @@ function FuidFormModal({ open, cajaId, editing, defaultNOrden, caja, onClose }: 
   const createMutation = useMutation({
     mutationFn: (data: DataRow) => fuidApi.create(data),
     onSuccess: () => {
-      toast.success('Registro FUID creado correctamente');
-      onClose();
+      recordarCajaInterna(form.caja_interna);
       void invalidateDomain(queryClient, 'fuiddatosreal');
+
+      // Producción: no se cierra el formulario. Queda listo el siguiente registro
+      // con el UPD consecutivo, el N° de orden y el tomo siguientes, y los datos
+      // de la caja precargados; el cursor vuelve a Codigo.
+      const guardado = form.upd.trim().toUpperCase();
+      const siguienteUpd = siguienteUpdLocal(guardado);
+      const tomoActual = parseInt(form.tomo, 10);
+      const siguienteTomo = Number.isNaN(tomoActual) ? defaultTomo : String(tomoActual + 1);
+      setForm({
+        ...emptyFormFor(cajaId, user, defaultNOrden + racha + 1, siguienteTomo, caja),
+        upd: siguienteUpd,
+      });
+      setRacha((r) => r + 1);
+      setConfirmacion({ id: Date.now(), upd: guardado, siguiente: siguienteUpd });
+      // El servidor confirma el consecutivo libre (salta UPD ya usados); solo se
+      // reemplaza si la persona todavía no lo cambió.
+      void nextUpdQuery.refetch().then((result) => {
+        const sugerido = result.data?.upd;
+        if (sugerido) setForm((prev) => (prev.upd === siguienteUpd ? { ...prev, upd: sugerido } : prev));
+      });
     },
     onError: (error) => {
-      const code = getApiErrorCode(error);
-      if (code === 'UPD_YA_USADO') {
+      if (getApiErrorCode(error) === 'UPD_YA_USADO') {
         toast.error('El UPD ya fue usado por otro registro. Se asignará el siguiente disponible.');
         void nextUpdQuery.refetch().then((result) => {
-          const next = result.data ?? null;
-          setForm((prev) => ({ ...prev, upd: next ?? '' }));
+          setForm((prev) => ({ ...prev, upd: result.data?.upd ?? '' }));
         });
+        return;
       }
+      toastApiError(error, { context: 'No se pudo guardar el registro:' });
     },
   });
 
@@ -359,337 +471,296 @@ function FuidFormModal({ open, cajaId, editing, defaultNOrden, caja, onClose }: 
       onClose();
       void invalidateDomain(queryClient, 'fuiddatosreal');
     },
+    onError: (error) => {
+      toastApiError(error, { context: 'No se pudo actualizar el registro:' });
+    },
   });
 
   const isSaving = createMutation.isPending || updateMutation.isPending;
 
-  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
+  // Sin validación en el cliente: se envía tal cual y el servidor responde si
+  // falta la caja o el UPD. Menos pasos entre un registro y el siguiente.
+  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    const nextErrors: Partial<Record<keyof FuidFormValues, string>> = {};
-    const updRequired = required(form.upd, 'El UPD');
-    if (updRequired) nextErrors.upd = updRequired;
-    else {
-      const updFormat = validUpd(form.upd, 'El UPD');
-      if (updFormat) nextErrors.upd = updFormat;
-    }
-    const cajaRequired = required(form.caja, 'La caja');
-    if (cajaRequired) nextErrors.caja = cajaRequired;
-    else {
-      const cajaFormat = validCaja(form.caja);
-      if (cajaFormat) nextErrors.caja = cajaFormat;
-    }
-    // Las fechas son opcionales en el backend (optionalDate): solo validan formato
-    // si vienen llenas, nunca bloquean el guardado por estar vacías.
-    const fechaDelDatoFormat = validDate(form.fecha_del_dato, 'La fecha del dato');
-    if (fechaDelDatoFormat) nextErrors.fecha_del_dato = fechaDelDatoFormat;
-    const fechaInicialFormat = validDate(form.fecha_inicial, 'La fecha inicial');
-    if (fechaInicialFormat) nextErrors.fecha_inicial = fechaInicialFormat;
-    const fechaFinalFormat = validDate(form.fecha_final, 'La fecha final');
-    if (fechaFinalFormat) nextErrors.fecha_final = fechaFinalFormat;
-    const fechaTransferenciaFormat = validDate(form.fecha_transferencia, 'La fecha de transferencia');
-    if (fechaTransferenciaFormat) nextErrors.fecha_transferencia = fechaTransferenciaFormat;
-    const nOrdenFormat = onlyDigits(form.n_orden, 'El N° orden');
-    if (nOrdenFormat) nextErrors.n_orden = nOrdenFormat;
-    const foliosFormat = onlyDigits(form.folios, 'Los folios');
-    if (foliosFormat) nextErrors.folios = foliosFormat;
-    setErrors(nextErrors);
-    if (Object.keys(nextErrors).length > 0) return;
-
-    if (!editing) {
-      try {
-        const res = await fuidApi.checkDuplicateUpd(form.upd.trim());
-        const exists = (res.data as unknown as CheckUpdResponse).exists;
-        if (exists) {
-          setErrors({ upd: 'El UPD ya existe' });
-          return;
-        }
-      } catch {
-        // el backend rechaza duplicados de todas formas
-      }
-    }
-
+    if (isSaving) return;
     const payload = buildPayload(form, editing);
-    if (editing) {
-      updateMutation.mutate({ id: editing.id, data: payload });
-    } else {
-      createMutation.mutate(payload);
-    }
+    if (editing) updateMutation.mutate({ id: editing.id, data: payload });
+    else createMutation.mutate(payload);
   };
 
-  const updError = errors.upd ?? (updExistsQuery.data ? 'Este UPD ya existe en la base de datos' : undefined);
-
-  const updFieldError = updError;
+  const updDuplicado = !editing && updExistsQuery.data ? 'Este UPD ya existe en la base de datos' : undefined;
 
   return (
     <Modal
       open={open}
       onClose={onClose}
       title={editing ? 'Editar Registro FUID' : 'Nuevo Registro FUID'}
-      size="lg"
+      size="xl"
       footer={
         <>
           <Button variant="ghost" onClick={onClose} disabled={isSaving}>
             Cancelar
           </Button>
           <Button type="submit" form="fuid-form" loading={isSaving} disabled={isSaving}>
-            Guardar
+            Enviar
           </Button>
         </>
       }
     >
-      <form id="fuid-form" onSubmit={handleSubmit} className="space-y-4">
-        <div className="rounded-lg border border-silver-200 bg-silver-50 p-4">
-          <h3 className="text-sm font-semibold text-silver-800">Identificación</h3>
-          <div className="mt-3 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            <DatePicker
-              label="Fecha del Dato"
-              value={form.fecha_del_dato}
-              onChange={updateField('fecha_del_dato')}
-            />
-            <Input
-              label="N° Orden"
-              type="number"
-              value={form.n_orden}
-              onChange={setField('n_orden')}
-            />
-            <EditableSuggestionInput
-              caja={form.caja}
-              campo="codigo"
-              label="Código"
-              value={form.codigo}
-              onChange={updateField('codigo')}
-              defaultUnlocked={false}
-            />
-            <EditableSuggestionInput
-              caja={form.caja}
-              campo="entidad_remitente"
-              label="Entidad Remitente"
-              value={form.entidad_remitente}
-              onChange={updateField('entidad_remitente')}
-              defaultUnlocked={false}
-            />
-            <EditableSuggestionInput
-              caja={form.caja}
-              campo="entidad_productora"
-              label="Entidad Productora"
-              value={form.entidad_productora}
-              onChange={updateField('entidad_productora')}
-              defaultUnlocked={false}
-            />
+      <div className={cn('relative rounded-xl', confirmacion && 'animate-[fuid-flash_1.2s_ease-out]')}>
+        {confirmacion && (
+          <div
+            role="status"
+            aria-live="polite"
+            className="pointer-events-none absolute inset-x-0 top-2 z-20 flex justify-center animate-[fuid-confirmacion_2.4s_ease-in-out_forwards]"
+          >
+            <div className="flex items-center gap-4 rounded-2xl border border-green-200 bg-green-50 px-6 py-4 shadow-xl">
+              <svg className="size-16 shrink-0" viewBox="0 0 52 52" aria-hidden="true">
+                <circle className="fuid-check-circulo" cx="26" cy="26" r="24" fill="none" stroke="#16a34a" strokeWidth="3" />
+                <path
+                  className="fuid-check-marca"
+                  d="M14 27 l8 8 l16 -16"
+                  fill="none"
+                  stroke="#16a34a"
+                  strokeWidth="4"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+              <div>
+                <p className="text-xl font-bold text-green-800">Registro {confirmacion.upd} guardado</p>
+                <p className="text-base text-green-700">
+                  {confirmacion.siguiente
+                    ? `Listo el siguiente: ${confirmacion.siguiente}`
+                    : 'Indique el siguiente UPD'}
+                </p>
+              </div>
+            </div>
           </div>
-        </div>
+        )}
+      <form
+        key={racha}
+        id="fuid-form"
+        onSubmit={handleSubmit}
+        autoComplete="off"
+        className="grid grid-cols-1 gap-x-5 gap-y-4 sm:grid-cols-2 lg:grid-cols-4"
+      >
+        <SuggestionInput
+          caja={form.caja}
+          campo="entidad_productora"
+          label="Entidad Productora"
+          value={form.entidad_productora}
+          onChange={updateField('entidad_productora')}
+        />
+        <SuggestionInput
+          caja={form.caja}
+          campo="unidad_administrativa"
+          label="Unidad Administrativa"
+          value={form.unidad_administrativa}
+          onChange={updateField('unidad_administrativa')}
+        />
+        <SuggestionInput
+          caja={form.caja}
+          campo="oficina_productora"
+          label="Oficina Productora"
+          value={form.oficina_productora}
+          onChange={updateField('oficina_productora')}
+        />
+        <SuggestionInput
+          caja={form.caja}
+          campo="objeto"
+          label="Objeto"
+          value={form.objeto}
+          onChange={updateField('objeto')}
+        />
 
-        <div className="rounded-lg border border-silver-200 bg-silver-50 p-4">
-          <h3 className="text-sm font-semibold text-silver-800">Procedencia</h3>
-          <div className="mt-3 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            <EditableSuggestionInput
-              caja={form.caja}
-              campo="unidad_administrativa"
-              label="Unidad Administrativa"
-              value={form.unidad_administrativa}
-              onChange={updateField('unidad_administrativa')}
-              defaultUnlocked={false}
-            />
-            <EditableSuggestionInput
-              caja={form.caja}
-              campo="oficina_productora"
-              label="Oficina Productora"
-              value={form.oficina_productora}
-              onChange={updateField('oficina_productora')}
-              defaultUnlocked={false}
-            />
-            <EditableSuggestionInput
-              caja={form.caja}
-              campo="objeto"
-              label="Objeto"
-              value={form.objeto}
-              onChange={updateField('objeto')}
-              defaultUnlocked={false}
-            />
-            <SuggestionInput
-              caja={form.caja}
-              campo="serie"
-              label="Serie"
-              value={form.serie}
-              onChange={updateField('serie')}
-            />
-            <SuggestionInput
-              caja={form.caja}
-              campo="subserie"
-              label="Subserie"
-              value={form.subserie}
-              onChange={updateField('subserie')}
-            />
-            <Input
-              label="N° Orden Interno"
-              value={form.numero_de_orden_interno}
-              onChange={setField('numero_de_orden_interno')}
-            />
-            <Input
-              label="Accionado Procesado"
-              value={form.accionado_procesado}
-              onChange={setField('accionado_procesado')}
-            />
-            <Input
-              label="Accionado Denunciante"
-              value={form.accionado_denunciante}
-              onChange={setField('accionado_denunciante')}
-            />
-            <Input
-              label="Identificación"
-              value={form.identificacion}
-              onChange={setField('identificacion')}
-            />
-          </div>
-        </div>
+        <SuggestionInput
+          caja={form.caja}
+          campo="codigo"
+          label="Codigo"
+          value={form.codigo}
+          onChange={updateField('codigo')}
+          autoFocus
+        />
+        <SuggestionInput
+          caja={form.caja}
+          campo="serie"
+          label="Serie"
+          value={form.serie}
+          onChange={updateField('serie')}
+        />
+        <SuggestionInput
+          caja={form.caja}
+          campo="subserie"
+          label="Subserie"
+          value={form.subserie}
+          onChange={updateField('subserie')}
+        />
+        <SuggestionInput
+          caja={form.caja}
+          campo="asunto_2"
+          label="Asunto Automático"
+          value={form.asunto_2}
+          onChange={updateField('asunto_2')}
+        />
 
-        <div className="rounded-lg border border-silver-200 bg-silver-50 p-4">
-          <h3 className="text-sm font-semibold text-silver-800">Documento</h3>
-          <div className="mt-3 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            <SuggestionInput
-              caja={form.caja}
-              campo="asunto"
-              label="Asunto"
-              value={form.asunto}
-              onChange={updateField('asunto')}
-            />
-            <SuggestionInput
-              caja={form.caja}
-              campo="radicado"
-              label="Radicado"
-              value={form.radicado}
-              onChange={updateField('radicado')}
-            />
-            <SuggestionInput
-              caja={form.caja}
-              campo="numero_doc"
-              label="N° Documento"
-              value={form.numero_doc}
-              onChange={updateField('numero_doc')}
-            />
-            <SuggestionInput
-              caja={form.caja}
-              campo="numero_doc_hasta"
-              label="N° Documento Hasta"
-              value={form.numero_doc_hasta}
-              onChange={updateField('numero_doc_hasta')}
-            />
-            <DatePicker
-              label="Fecha Inicial"
-              value={form.fecha_inicial}
-              onChange={updateField('fecha_inicial')}
-            />
-            <DatePicker
-              label="Fecha Final"
-              value={form.fecha_final}
-              onChange={updateField('fecha_final')}
-            />
-          </div>
-        </div>
+        <Input label="Asunto Manual" value={form.asunto_3} onChange={setField('asunto_3')} />
+        <SuggestionInput
+          caja={form.caja}
+          campo="numero_doc"
+          label="Nro. Documento Desde"
+          value={form.numero_doc}
+          onChange={updateField('numero_doc')}
+        />
+        <SuggestionInput
+          caja={form.caja}
+          campo="numero_doc_hasta"
+          label="Nro. Documento Hasta"
+          value={form.numero_doc_hasta}
+          onChange={updateField('numero_doc_hasta')}
+        />
+        <Input label="Fecha Inicial" type="date" value={form.fecha_inicial} onChange={setField('fecha_inicial')} />
 
-        <div className="rounded-lg border border-silver-200 bg-silver-50 p-4">
-          <h3 className="text-sm font-semibold text-silver-800">Caja</h3>
-          <div className="mt-3 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            <EditableInput
-              label="Caja"
-              value={form.caja}
-              onChange={updateField('caja')}
-              error={errors.caja}
-              placeholder="000C000000"
-              defaultUnlocked={false}
-            />
-            <EditableInput
-              label="UPD"
-              value={form.upd}
-              onChange={updateField('upd')}
-              error={updFieldError}
-              defaultUnlocked={false}
-            />
-            <SuggestionInput
-              caja={form.caja}
-              campo="tomo"
-              label="Tomo"
-              value={form.tomo}
-              onChange={updateField('tomo')}
-            />
-            <Input label="Otro" value={form.otro} onChange={setField('otro')} />
-            <SuggestionInput
-              caja={form.caja}
-              campo="caja_interna"
-              label="Caja Interna"
-              value={form.caja_interna}
-              onChange={updateField('caja_interna')}
-            />
-            <Input label="Folios" type="number" value={form.folios} onChange={setField('folios')} />
-            <SuggestionInput
-              caja={form.caja}
-              campo="soporte"
-              label="Soporte"
-              value={form.soporte}
-              onChange={updateField('soporte')}
-            />
-            <SuggestionInput
-              caja={form.caja}
-              campo="frecuencia"
-              label="Frecuencia"
-              value={form.frecuencia}
-              onChange={updateField('frecuencia')}
-            />
-            <EditableInput
-              label="Elaborado Por"
-              value={form.elaborado_por}
-              onChange={updateField('elaborado_por')}
-              defaultUnlocked={false}
-            />
-            <EditableInput
-              label="N° Acta Transferible"
-              value={form.nro_acta_transferible}
-              onChange={updateField('nro_acta_transferible')}
-              defaultUnlocked={false}
-            />
-            <EditableDatePicker
-              label="Fecha Transferencia"
-              value={form.fecha_transferencia}
-              onChange={updateField('fecha_transferencia')}
-              defaultUnlocked={false}
-            />
-            <SuggestionInput
-              caja={form.caja}
-              campo="notas"
-              label="Notas"
-              value={form.notas}
-              onChange={updateField('notas')}
-            />
-            <EditableSuggestionInput
-              caja={form.caja}
-              campo="sede"
-              label="Sede"
-              value={form.sede}
-              onChange={updateField('sede')}
-              defaultUnlocked={false}
-            />
-            <SuggestionInput
-              caja={form.caja}
-              campo="tiempo"
-              label="Tiempo"
-              value={form.tiempo}
-              onChange={updateField('tiempo')}
-            />
-            <SuggestionInput
-              caja={form.caja}
-              campo="asunto_2"
-              label="Asunto 2"
-              value={form.asunto_2}
-              onChange={updateField('asunto_2')}
-            />
-            <SuggestionInput
-              caja={form.caja}
-              campo="asunto_3"
-              label="Asunto 3"
-              value={form.asunto_3}
-              onChange={updateField('asunto_3')}
-            />
-          </div>
+        <Input label="Fecha Final" type="date" value={form.fecha_final} onChange={setField('fecha_final')} />
+        <UpdInput
+          label="UPD"
+          value={updANumero(form.upd)}
+          onChange={(numero) => updateField('upd')(numero)}
+          onBlur={() => updateField('upd')(numeroAUpd(updANumero(form.upd)))}
+          error={updDuplicado}
+          hint={nextUpdQuery.data?.message}
+          defaultUnlocked
+        />
+        <Input label="Tomo" value={form.tomo} onChange={setField('tomo')} inputMode="numeric" />
+        <Select
+          label="Otro"
+          options={opcionesCon(OPCIONES_OTRO, form.otro)}
+          value={form.otro.trim().toUpperCase()}
+          onChange={updateField('otro')}
+          placeholder="—"
+        />
+
+        <SuggestionInput
+          caja={form.caja}
+          campo="caja_interna"
+          label="Caja Interna"
+          value={form.caja_interna}
+          onChange={updateField('caja_interna')}
+        />
+        <Input label="Folios" value={form.folios} onChange={setField('folios')} inputMode="numeric" />
+        <Select
+          label="Soporte"
+          options={opcionesCon(OPCIONES_SOPORTE, form.soporte)}
+          value={form.soporte.trim().toUpperCase()}
+          onChange={updateField('soporte')}
+          placeholder="—"
+        />
+        <Select
+          label="Frecuencia"
+          options={opcionesCon(OPCIONES_FRECUENCIA, form.frecuencia)}
+          value={form.frecuencia.trim().toUpperCase()}
+          onChange={updateField('frecuencia')}
+          placeholder="—"
+        />
+
+        <SuggestionInput
+          caja={form.caja}
+          campo="notas"
+          label="Notas"
+          value={form.notas}
+          onChange={updateField('notas')}
+          className="sm:col-span-2 lg:col-span-4"
+        />
+      </form>
+      </div>
+    </Modal>
+  );
+}
+
+
+interface UpdInicioDialogProps {
+  open: boolean;
+  cajaCode: string;
+  volverA: string;
+  onListo: () => void;
+  /** Motivo por el que se pide el arranque (p. ej. se alcanzó UPD9999999). */
+  mensaje?: string;
+}
+
+/**
+ * Antes de digitar el primer FUID de la caja, el técnico indica el UPD de
+ * arranque. Solo escribe el número: el prefijo lo aporta el propio control y el
+ * servidor lo normaliza a UPD + 7 dígitos. A partir de ahí el consecutivo corre
+ * solo en cada registro nuevo.
+ */
+function UpdInicioDialog({ open, cajaCode, volverA, onListo, mensaje }: UpdInicioDialogProps) {
+  const queryClient = useQueryClient();
+  const navigate = useNavigate();
+  const [numero, setNumero] = useState('');
+  const [error, setError] = useState<string | undefined>();
+
+  const guardar = useMutation({
+    mutationFn: () => modulosCajaApi.fijarUpdInicio(cajaCode, numero),
+    onSuccess: (res) => {
+      toast.success(res.data.message);
+      setError(undefined);
+      void queryClient.invalidateQueries({ queryKey: ['modulos-caja', 'next-upd', cajaCode] });
+      onListo();
+    },
+    onError: (err: unknown) => {
+      const mensaje =
+        (err as { response?: { data?: { error?: string } } }).response?.data?.error ??
+        'No se pudo guardar el UPD de inicio';
+      setError(mensaje);
+    },
+  });
+
+  const enviar = (event: FormEvent) => {
+    event.preventDefault();
+    if (!numero.trim()) {
+      setError('Escribe el número del UPD');
+      return;
+    }
+    guardar.mutate();
+  };
+
+  return (
+    <Modal
+      open={open}
+      onClose={() => undefined}
+      dismissible={false}
+      title={`Iniciar digitación — Caja ${cajaCode}`}
+    >
+      <form onSubmit={enviar} className="space-y-5">
+        <p className="text-sm text-silver-600">
+          Indica el número del UPD con el que arranca esta caja. Solo el número: las siglas{' '}
+          <span className="font-semibold text-silver-800">UPD</span> ya están puestas. A partir de
+          ahí, cada registro nuevo tomará el consecutivo automáticamente.
+        </p>
+        {mensaje && (
+          <p className="rounded-lg bg-amber-50 px-3 py-2 text-sm font-medium text-amber-800">{mensaje}</p>
+        )}
+
+        <UpdInput
+          label="Número del UPD inicial"
+          value={numero}
+          onChange={(valor) => {
+            setNumero(valor);
+            if (error) setError(undefined);
+          }}
+          error={error}
+          hint="Se completará con ceros a la izquierda hasta 7 dígitos."
+          autoFocus
+          disabled={guardar.isPending}
+        />
+
+        <div className="flex justify-between gap-2">
+          <Button type="button" variant="ghost" onClick={() => navigate(volverA)}>
+            Volver a cajas
+          </Button>
+          <Button type="submit" disabled={guardar.isPending || !numero.trim()}>
+            {guardar.isPending ? 'Guardando…' : 'Comenzar digitación'}
+          </Button>
         </div>
       </form>
     </Modal>
@@ -726,6 +797,15 @@ export default function DatosPage() {
     enabled: Boolean(cajaCode),
   });
 
+  // El técnico necesita fijar su UPD de arranque antes de digitar en esta caja.
+  const esTecnica = user?.rol === 'TECNICA';
+  const updInicioQuery = useQuery({
+    queryKey: ['modulos-caja', 'next-upd', cajaCode],
+    queryFn: () => modulosCajaApi.siguienteUpd(cajaCode).then((res) => res.data),
+    enabled: esTecnica && Boolean(cajaCode),
+  });
+  const requiereUpdInicio = esTecnica && updInicioQuery.data?.requiere_inicio === true;
+
   const cajaDuplicatesQuery = useQuery({
     queryKey: ['fuiddatosreal', 'check-caja-duplicates', cajaCode],
     queryFn: () =>
@@ -749,12 +829,23 @@ export default function DatosPage() {
     return Math.max(...registros.map((registro) => registro.n_orden ?? 0)) + 1;
   }, [registros]);
 
+  // Como en la versión anterior: el tomo sugerido es el mayor de la caja más uno.
+  const defaultTomo = useMemo(() => {
+    const tomos = registros
+      .map((registro) => parseInt(registro.tomo ?? '', 10))
+      .filter((n) => !Number.isNaN(n));
+    return String(tomos.length > 0 ? Math.max(...tomos) + 1 : 1);
+  }, [registros]);
+
   const deleteMutation = useMutation({
     mutationFn: (id: number) => fuidApi.remove(id),
     onSuccess: () => {
       toast.success('Registro FUID eliminado');
       setDeleteTarget(null);
       void invalidateDomain(queryClient, 'fuiddatosreal');
+    },
+    onError: (error) => {
+      toastApiError(error, { context: 'No se pudo eliminar el registro:' });
     },
   });
 
@@ -879,6 +970,16 @@ export default function DatosPage() {
 
   return (
     <div className="space-y-6">
+      {requiereUpdInicio && (
+        <UpdInicioDialog
+          open
+          cajaCode={cajaCode}
+          volverA={fromPath}
+          onListo={() => void updInicioQuery.refetch()}
+          mensaje={updInicioQuery.data?.message}
+        />
+      )}
+
       <PageHeader
         title={`Digitación FUID — Caja ${cajaCode}`}
         description="Clientes / Actas / Cajas / Digitación"
@@ -941,6 +1042,7 @@ export default function DatosPage() {
           cajaId={cajaCode}
           editing={editing}
           defaultNOrden={defaultNOrden}
+          defaultTomo={defaultTomo}
           caja={cajaQuery.data}
           onClose={() => setModalOpen(false)}
         />

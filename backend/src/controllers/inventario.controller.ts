@@ -1,5 +1,6 @@
 import type { Request, Response } from 'express';
 import { query, queryOne, queryResult } from '../config/db.js';
+import { audit } from '../services/audit.service.js';
 import type { FuidDato, Inventario } from '../types/db.js';
 import type { SessionUser } from '../types/index.js';
 import { buildInventarioFuidExcel, inventarioFuidFilename } from '../services/inventarioExcel.service.js';
@@ -191,7 +192,7 @@ type ClienteParaInventario = {
   id_submodulo: number;
 };
 
-/** CÃ³digos Ãºnicos de clientes con datos en mÃ³dulos, para el select del formulario de inventario. */
+/** Códigos únicos de clientes con datos en módulos, para el select del formulario de inventario. */
 export async function listClientesParaInventario(_req: Request, res: Response): Promise<void> {
   const rows = await query<{ codigo: string; entidad_remitente: string }>(
     `SELECT DISTINCT codigo, entidad_remitente FROM moduloscliente
@@ -201,7 +202,7 @@ export async function listClientesParaInventario(_req: Request, res: Response): 
   res.json(rows);
 }
 
-/** Paquete completo para autocompletar el formulario de inventario segÃºn el cÃ³digo del cliente. */
+/** Paquete completo para autocompletar el formulario de inventario según el código del cliente. */
 export async function getClienteParaInventario(req: Request, res: Response): Promise<void> {
   const { codigo } = req.params;
   const cliente = await queryOne<ClienteParaInventario>(
@@ -210,7 +211,7 @@ export async function getClienteParaInventario(req: Request, res: Response): Pro
     [codigo],
   );
   if (!cliente) {
-    res.status(404).json({ error: `No se encontrÃ³ un cliente con cÃ³digo ${codigo}` });
+    res.status(404).json({ error: `No se encontró un cliente con código ${codigo}` });
     return;
   }
   const cajas = await query<{ caja_modulo: string }>(
@@ -237,7 +238,7 @@ export async function getInventario(req: Request, res: Response): Promise<void> 
   res.json(row);
 }
 
-/** Filas FUID del cliente de un inventario, con paginaciÃ³n opcional (limit/offset). */
+/** Filas FUID del cliente de un inventario, con paginación opcional (limit/offset). */
 export async function getInventarioFuid(req: Request, res: Response): Promise<void> {
   const { id } = req.params;
   const inventario = await queryOne<Inventario>('SELECT * FROM inventario WHERE ITEMS = ?', [id]);
@@ -324,7 +325,7 @@ export async function updateInventario(req: Request, res: Response): Promise<voi
   const { id } = req.params;
   const body = req.body as Record<string, unknown>;
   if (await inventarioExistsByCode(body.CODIGO_DEL_CLIENTE, id)) {
-    res.status(409).json({ error: `Ya existe un inventario para el cliente con cÃ³digo ${body.CODIGO_DEL_CLIENTE}. No se permiten duplicados.` });
+    res.status(409).json({ error: `Ya existe un inventario para el cliente con código ${body.CODIGO_DEL_CLIENTE}. No se permiten duplicados.` });
     return;
   }
   const values = pickValues(body);
@@ -356,7 +357,22 @@ export async function syncInventarioController(req: Request, res: Response): Pro
 
 export async function deleteInventario(req: Request, res: Response): Promise<void> {
   const { id } = req.params;
+  const existente = await queryOne<{ ITEMS: number; CLIENTE: string | null; No_ACTA: string | null }>(
+    'SELECT ITEMS, CLIENTE, No_ACTA FROM inventario WHERE ITEMS = ?',
+    [id],
+  );
+  if (!existente) {
+    res.status(404).json({ message: 'El registro de inventario no existe o ya fue eliminado' });
+    return;
+  }
   await query('DELETE FROM inventario WHERE ITEMS = ?', [id]);
+  void audit({
+    entidad: 'inventario',
+    entidadId: id,
+    accion: 'ELIMINAR',
+    detalle: `Inventario ${existente.CLIENTE ?? ''} acta ${existente.No_ACTA ?? ''}`.trim(),
+    usuario: req.session.user,
+  });
   res.json({ message: `Registro con ID: ${id} eliminado` });
 }
 
