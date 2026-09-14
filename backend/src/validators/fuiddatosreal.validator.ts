@@ -245,6 +245,17 @@ export const updateFuidSchema = fuidBaseSchema
       .min(1, 'La caja no puede estar vacía')
       .optional(),
     upd: updField.optional(),
+    /**
+     * Versión del registro tal como la leyó el cliente (bloqueo optimista).
+     *
+     * Es obligatoria: sin ella no hay forma de saber si quien guarda está
+     * trabajando sobre la última versión o sobre una copia que ya quedó vieja,
+     * que es justo el caso que esto viene a detectar.
+     */
+    version: z.coerce
+      .number({ message: 'Falta la versión del registro; recargue antes de guardar' })
+      .int('La versión del registro debe ser un número entero')
+      .positive('La versión del registro debe ser un número positivo'),
   })
   .superRefine(ordenDeFechas)
   .superRefine(ordenDeNumerosDeDocumento);

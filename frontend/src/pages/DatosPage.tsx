@@ -299,6 +299,9 @@ function buildPayload(form: FuidFormValues, editing: FuidDato | null): DataRow {
     payload.historial_y_cambios = editing.historial_y_cambios;
     payload.cambio_calidad = editing.cambio_calidad;
     payload.sede_calidad = editing.sede_calidad;
+    // Versión leída al abrir el registro: el backend la exige para detectar que
+    // otra persona guardó mientras tanto (bloqueo optimista).
+    payload.version = editing.version;
   }
 
   return payload;
@@ -475,6 +478,16 @@ function FuidFormModal({ open, cajaId, editing, defaultNOrden, defaultTomo, caja
       void invalidateDomain(queryClient, 'fuiddatosreal');
     },
     onError: (error) => {
+      // Otra persona guardó este mismo registro mientras estaba abierto. No se
+      // cierra el formulario ni se borra nada: lo escrito sigue a la vista para
+      // que se pueda copiar antes de recargar.
+      if (getApiErrorCode(error) === 'VERSION_DESACTUALIZADA') {
+        toast.error(
+          'Este registro fue modificado por otro usuario. Recarga para ver los cambios más recientes.',
+          { duration: 8000 },
+        );
+        return;
+      }
       toastApiError(error, { context: 'No se pudo actualizar el registro:' });
     },
   });

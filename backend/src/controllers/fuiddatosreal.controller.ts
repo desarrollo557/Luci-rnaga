@@ -1,6 +1,6 @@
 import type { Request, Response } from 'express';
 import mysql from 'mysql2/promise';
-import { pool, query, queryOne } from '../config/db.js';
+import { pool, query, queryOne, queryResult } from '../config/db.js';
 import type { FuidDato } from '../types/db.js';
 import type { FuidCreateDto, FuidUpdateDto } from '../types/index.js';
 import { fuidValues, isSuggestionField } from '../services/fuid.service.js';
@@ -242,7 +242,10 @@ export async function updateFuid(req: Request, res: Response): Promise<void> {
     return;
   }
 
-  const values = [...fuidValues(body as FuidCreateDto), id];
+  // Bloqueo optimista: el UPDATE solo aplica si el registro sigue en la versión
+  // que el cliente leyó, y la sube en el mismo paso. Si dos personas de Calidad
+  // editan a la vez, la segunda no pisa el trabajo de la primera en silencio.
+  const values = [...fuidValues(body as FuidCreateDto), id, body.version];
   const sql = `UPDATE fuiddatosreal SET
     fecha_del_dato = ?, n_orden = ?, codigo = ?, entidad_remitente = ?, entidad_productora = ?,
     unidad_administrativa = ?, oficina_productora = ?, objeto = ?, serie = ?, subserie = ?,
@@ -251,11 +254,22 @@ export async function updateFuid(req: Request, res: Response): Promise<void> {
     fecha_inicial = ?, fecha_final = ?, caja = ?, upd = ?, tomo = ?, otro = ?, caja_interna = ?,
     folios = ?, soporte = ?, frecuencia = ?, elaborado_por = ?, nro_acta_transferible = ?,
     fecha_transferencia = ?, notas = ?, sede = ?, tiempo = ?, historial_y_cambios = ?,
-    cambio_calidad = ?, sede_calidad = ?, asunto_2 = ?, asunto_3 = ?
-    WHERE id = ?`;
+    cambio_calidad = ?, sede_calidad = ?, asunto_2 = ?, asunto_3 = ?,
+    version = version + 1
+    WHERE id = ? AND version = ?`;
 
   try {
-    await query(sql, values);
+    const resultado = await queryResult(sql, values);
+
+    // La existencia del registro ya se comprobó arriba, así que no haber tocado
+    // ninguna fila solo puede significar que la versión cambió mientras tanto.
+    if (resultado.affectedRows === 0) {
+      res.status(409).json({
+        error: 'Este registro fue modificado por otro usuario. Recarga para ver los cambios más recientes.',
+        code: 'VERSION_DESACTUALIZADA',
+      });
+      return;
+    }
 
     if (user.rol === 'TECNICA' && body.caja && body.upd) {
       await query(
@@ -277,8 +291,12 @@ export async function updateFuid(req: Request, res: Response): Promise<void> {
     }
     console.error('Error al actualizar el registro:', error);
     res.status(500).json({ error: 'Error interno del servidor' });
+    return;
   }
-  res.status(200).json({ message: 'Registro actualizado' });
+
+  // Se devuelve la versión ya incrementada para que el cliente pueda seguir
+  // editando el mismo registro sin tener que recargarlo.
+  res.status(200).json({ message: 'Registro actualizado', version: body.version + 1 });
 }
 
 export async function deleteFuid(req: Request, res: Response): Promise<void> {
@@ -395,9 +413,12 @@ export async function marcarOk(req: Request, res: Response): Promise<void> {
       }
     }
 
+    // La versión sube también aquí: marcar OK es un cambio real del registro, y
+    // si no se contara, alguien que lo tuviera abierto podría guardar encima y
+    // borrar el visto bueno de calidad sin que nadie lo detectara.
     const [result] = await conn.query(
       `UPDATE fuiddatosreal
-       SET historial_y_cambios = 'OK', cambio_calidad = ?, sede_calidad = ?
+       SET historial_y_cambios = 'OK', cambio_calidad = ?, sede_calidad = ?, version = version + 1
        WHERE id IN (?)`,
       [cambioCalidad, sedeCalidad, ids],
     );
