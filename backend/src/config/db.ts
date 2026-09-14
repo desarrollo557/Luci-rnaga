@@ -83,6 +83,21 @@ export async function queryOne<T>(sql: string, params: unknown[] = []): Promise<
   return filas[0];
 }
 
+/**
+ * Identificador de la fila recién insertada.
+ *
+ * Casi todas las tablas tienen la clave en `id`, pero no todas: `inventario` la
+ * llama `ITEMS`. Cuando la consulta pide otra columna con `RETURNING`, se toma
+ * el primer valor devuelto, que es esa clave; si no vino nada, 0, igual que
+ * hacía `mysql2` con una tabla sin autoincremento.
+ */
+function idDevuelto(fila: unknown): number {
+  if (fila == null || typeof fila !== 'object') return 0;
+  const registro = fila as Record<string, unknown>;
+  const valor = registro.id ?? Object.values(registro)[0];
+  return Number(valor ?? 0) || 0;
+}
+
 /** Lo que `mysql2` devolvía de un INSERT/UPDATE/DELETE. */
 export interface ResultadoEscritura {
   insertId: number;
@@ -106,7 +121,7 @@ export async function queryResult(sql: string, params: unknown[] = []): Promise<
   const ejecutar = async (consulta: string) => {
     const r = await pool.query(consulta, values);
     return {
-      insertId: Number((r.rows[0] as Record<string, unknown> | undefined)?.id ?? 0),
+      insertId: idDevuelto(r.rows[0]),
       affectedRows: r.rowCount ?? 0,
     };
   };
@@ -163,7 +178,7 @@ export async function getConnection(): Promise<ConexionCompat> {
       const ejecutar = async (consulta: string) => {
         const r = await client.query(consulta, values);
         const resumen = {
-          insertId: Number((r.rows[0] as Record<string, unknown> | undefined)?.id ?? 0),
+          insertId: idDevuelto(r.rows[0]),
           affectedRows: r.rowCount ?? 0,
         };
         return [resumen as T, undefined] as [T, unknown];
@@ -210,7 +225,7 @@ export async function withTransaction<T>(fn: (conn: ConexionTransaccion) => Prom
         const ejecutar = async (consulta: string) => {
           const r = await client.query(consulta, values);
           return {
-            insertId: Number((r.rows[0] as Record<string, unknown> | undefined)?.id ?? 0),
+            insertId: idDevuelto(r.rows[0]),
             affectedRows: r.rowCount ?? 0,
           };
         };
