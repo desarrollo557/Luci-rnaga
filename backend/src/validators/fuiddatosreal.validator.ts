@@ -5,6 +5,69 @@ import { fechaDocumental } from './common.validator.js';
 const optionalText = z.string().nullable().optional();
 const optionalNumber = z.union([z.number(), z.string()]).nullable().optional();
 
+/** `N/A` es el marcador de campo no diligenciado; no es un valor inválido. */
+const NO_DILIGENCIADO = 'N/A';
+
+function sinDato(valor: string): boolean {
+  const v = valor.trim().toUpperCase();
+  return v === '' || v === NO_DILIGENCIADO;
+}
+
+/**
+ * Cantidad entera que no puede ser negativa, o `N/A`.
+ *
+ * La columna sigue siendo texto en MySQL porque guarda `N/A`; esto valida la
+ * entrada, no el esquema. Sin ella, `folios` aceptaba letras y negativos por API
+ * aunque el formulario mostrara un campo numérico.
+ */
+function enteroNoNegativoOna(etiqueta: string) {
+  return z
+    .string()
+    .nullable()
+    .optional()
+    .superRefine((valor, ctx) => {
+      if (valor == null || sinDato(valor)) return;
+      if (!/^\d+$/.test(valor.trim())) {
+        ctx.addIssue({
+          code: 'custom',
+          message: `${etiqueta} debe ser un número entero de 0 o más, o ${NO_DILIGENCIADO}`,
+        });
+      }
+    });
+}
+
+/**
+ * Referencia de tomo.
+ *
+ * No se exige un entero: en producción se usan de forma habitual formatos como
+ * `1/2` y `2/2` (tomo 1 de 2) o referencias de expediente como `22 N 255`, y
+ * forzar un número obligaría a los digitadores a perder esa información. Lo que
+ * sí se rechaza es un negativo y la puntuación que solo puede venir de un error
+ * de tecleo.
+ */
+const CARACTERES_DE_TOMO = /^[A-ZÑÁÉÍÓÚ0-9/\-. ]+$/;
+
+function referenciaDeTomo(etiqueta: string) {
+  return z
+    .string()
+    .nullable()
+    .optional()
+    .superRefine((valor, ctx) => {
+      if (valor == null || sinDato(valor)) return;
+      const v = valor.trim();
+      if (/^-\d/.test(v)) {
+        ctx.addIssue({ code: 'custom', message: `${etiqueta} no puede ser un número negativo` });
+        return;
+      }
+      if (!CARACTERES_DE_TOMO.test(v.toUpperCase())) {
+        ctx.addIssue({
+          code: 'custom',
+          message: `${etiqueta} solo admite números, letras y los signos / - .`,
+        });
+      }
+    });
+}
+
 /**
  * Normaliza (trim + mayúsculas) y valida un UPD: UPD + exactamente 7 dígitos.
  * El enforcement de membresía por rango es solo para rol TECNICA y se aplica en
@@ -41,10 +104,10 @@ const fuidBaseSchema = z.object({
   fecha_final: fechaDocumental('La fecha final'),
   caja: z.string({ message: 'La caja es requerida' }).min(1, 'La caja es requerida'),
   upd: updField,
-  tomo: optionalText,
+  tomo: referenciaDeTomo('El tomo'),
   otro: optionalText,
   caja_interna: optionalText,
-  folios: optionalText,
+  folios: enteroNoNegativoOna('Los folios'),
   soporte: optionalText,
   frecuencia: optionalText,
   elaborado_por: optionalText,

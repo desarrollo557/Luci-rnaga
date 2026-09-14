@@ -24,7 +24,7 @@ import { cn } from '@/lib/cn';
 import { toastApiError } from '@/lib/feedback';
 import { invalidateDomain } from '@/lib/queryInvalidation';
 import { fechaHoyISO } from '@/lib/utils';
-import { FECHA_MINIMA_DOCUMENTAL, dateInRange, dateOrderValid, fechaHoyLocal } from '@/lib/validation';
+import { FECHA_MINIMA_DOCUMENTAL, dateInRange, dateOrderValid, fechaHoyLocal, onlyDigits } from '@/lib/validation';
 import { useAuthStore } from '@/stores/authStore';
 import {
   SUGGESTION_FIELDS,
@@ -489,7 +489,9 @@ function FuidFormModal({ open, cajaId, editing, defaultNOrden, defaultTomo, caja
   const errorFechaFinal =
     dateInRange(form.fecha_final, 'La fecha final') ??
     dateOrderValid(form.fecha_inicial, form.fecha_final);
-  const hayErrorDeFecha = Boolean(errorFechaInicial || errorFechaFinal);
+  const errorFolios = onlyDigits(form.folios, 'Los folios');
+  const primerError = errorFechaInicial ?? errorFechaFinal ?? errorFolios;
+  const hayErrorDeFormulario = Boolean(primerError);
 
   const hoy = fechaHoyLocal();
 
@@ -498,8 +500,8 @@ function FuidFormModal({ open, cajaId, editing, defaultNOrden, defaultTomo, caja
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (isSaving) return;
-    if (hayErrorDeFecha) {
-      toast.error(errorFechaInicial ?? errorFechaFinal ?? 'Revise las fechas del registro');
+    if (primerError) {
+      toast.error(primerError);
       return;
     }
     const payload = buildPayload(form, editing);
@@ -520,7 +522,7 @@ function FuidFormModal({ open, cajaId, editing, defaultNOrden, defaultTomo, caja
           <Button variant="ghost" onClick={onClose} disabled={isSaving}>
             Cancelar
           </Button>
-          <Button type="submit" form="fuid-form" loading={isSaving} disabled={isSaving || hayErrorDeFecha}>
+          <Button type="submit" form="fuid-form" loading={isSaving} disabled={isSaving || hayErrorDeFormulario}>
             Enviar
           </Button>
         </>
@@ -682,7 +684,13 @@ function FuidFormModal({ open, cajaId, editing, defaultNOrden, defaultTomo, caja
           value={form.caja_interna}
           onChange={updateField('caja_interna')}
         />
-        <Input label="Folios" value={form.folios} onChange={setField('folios')} inputMode="numeric" />
+        <Input
+          label="Folios"
+          value={form.folios}
+          onChange={setField('folios')}
+          inputMode="numeric"
+          error={onlyDigits(form.folios, 'Los folios') ?? undefined}
+        />
         <Select
           label="Soporte"
           options={opcionesCon(OPCIONES_SOPORTE, form.soporte)}
