@@ -9,7 +9,8 @@ export type AuditAccion =
   | 'ASIGNAR'
   | 'QUITAR'
   | 'MARCAR_OK'
-  | 'SUBIR';
+  | 'SUBIR'
+  | 'DESCARGAR';
 
 export interface AuditEntry {
   entidad: string;

@@ -323,6 +323,52 @@ export async function getInventarioFuid(req: Request, res: Response): Promise<vo
   });
 }
 
+/**
+ * Descarga el inventario en Excel, el mismo archivo que se sube a Zoho.
+ *
+ * Hasta ahora el inventario solo existía en la nube: para tener el archivo
+ * había que abrir Zoho y exportarlo desde allí. Se genera con el mismo servicio
+ * que usa la sincronización, así que lo que se descarga y lo que se sube son
+ * idénticos.
+ */
+export async function descargarInventarioExcel(req: Request, res: Response): Promise<void> {
+  const { id } = req.params;
+  const inventario = await queryOne<Inventario>('SELECT * FROM inventario WHERE "ITEMS" = ?', [id]);
+  if (!inventario) {
+    res.status(404).json({ error: 'Registro no encontrado' });
+    return;
+  }
+
+  const codigoCliente = inventario.CODIGO_DEL_CLIENTE;
+  const filas = await query<FuidConEstadoRow>(FUID_QUERY, [codigoCliente]);
+  if (filas.length === 0) {
+    res.status(404).json({
+      error: 'El cliente no tiene datos FUID registrados para generar el inventario',
+    });
+    return;
+  }
+
+  const buffer = await buildInventarioFuidExcel(filas);
+  const nombre = inventarioFuidFilename(inventario.CLIENTE, codigoCliente, inventario.FECHA_CREACION);
+
+  res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  // `filename*` va con el nombre codificado: el del cliente puede llevar tildes
+  // y algunos navegadores cortan la descarga si llegan sin codificar.
+  res.setHeader(
+    'Content-Disposition',
+    `attachment; filename="${nombre.replace(/[^ -~]/g, '_')}"; filename*=UTF-8''${encodeURIComponent(nombre)}`,
+  );
+  res.send(buffer);
+
+  void audit({
+    entidad: 'inventario',
+    entidadId: String(id),
+    accion: 'DESCARGAR',
+    detalle: `Descarga del inventario de ${inventario.CLIENTE ?? codigoCliente} (${filas.length} registros)`,
+    usuario: req.session.user,
+  });
+}
+
 export async function createInventario(req: Request, res: Response): Promise<void> {
   const body = req.body as Record<string, unknown>;
   const existente = await queryOne<Inventario>('SELECT * FROM inventario WHERE "CODIGO_DEL_CLIENTE" = ? LIMIT 1', [body.CODIGO_DEL_CLIENTE]);

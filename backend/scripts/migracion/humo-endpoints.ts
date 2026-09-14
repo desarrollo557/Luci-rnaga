@@ -108,6 +108,7 @@ async function main(): Promise<void> {
     ['/api/inventario/clientes', null],
     [`/api/inventario/${idInventario}`, idInventario],
     [`/api/inventario/${idInventario}/fuid`, idInventario],
+    [`/api/inventario/${idInventario}/excel`, idInventario],
     [`/api/inventario/clientes/${codigoCliente}`, codigoCliente],
     ['/api/resumen-cajas-agrupado', null],
     ['/api/fuid-con-estado-caja', null],
