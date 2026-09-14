@@ -18,7 +18,7 @@ const updField = z
     message: 'Formato de UPD inválido: debe ser UPD + 7 dígitos (ej. UPD2950001)',
   });
 
-export const createFuidSchema = z.object({
+const fuidBaseSchema = z.object({
   fecha_del_dato: fechaDocumental('La fecha del dato'),
   n_orden: optionalNumber,
   codigo: optionalText,
@@ -60,10 +60,60 @@ export const createFuidSchema = z.object({
   asunto_3: optionalText,
 });
 
-export const updateFuidSchema = createFuidSchema.partial().extend({
-  caja: z
-    .string({ message: 'La caja no puede estar vacía' })
-    .min(1, 'La caja no puede estar vacía')
-    .optional(),
-  upd: updField.optional(),
-});
+/**
+ * El rango documental no puede ir hacia atrás.
+ *
+ * La validación existía en la versión anterior del sistema (`validateDates()`) y
+ * se perdió al migrar: en el volcado de producción hay 10 registros con la fecha
+ * final anterior a la inicial.
+ *
+ * Solo corre cuando ambas fechas vienen en el cuerpo. En una edición parcial que
+ * trae una sola, la comparación contra el valor ya guardado la resuelve
+ * `validarOrdenDeFechasParcial`, que sí puede leer el registro existente.
+ */
+function ordenDeFechas(
+  datos: { fecha_inicial?: string | null; fecha_final?: string | null },
+  ctx: z.RefinementCtx,
+): void {
+  const inicial = datos.fecha_inicial?.trim();
+  const final = datos.fecha_final?.trim();
+  if (!inicial || !final) return;
+  if (final < inicial) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['fecha_final'],
+      message: 'La fecha final no puede ser anterior a la fecha inicial',
+    });
+  }
+}
+
+export const createFuidSchema = fuidBaseSchema.superRefine(ordenDeFechas);
+
+export const updateFuidSchema = fuidBaseSchema
+  .partial()
+  .extend({
+    caja: z
+      .string({ message: 'La caja no puede estar vacía' })
+      .min(1, 'La caja no puede estar vacía')
+      .optional(),
+    upd: updField.optional(),
+  })
+  .superRefine(ordenDeFechas);
+
+/**
+ * Comprueba el orden de las fechas de una edición parcial contra lo ya guardado.
+ *
+ * Sin esto, un PUT que solo trae `fecha_final` pasaría el schema —no hay con qué
+ * compararla— y dejaría el registro con el rango invertido. Devuelve el mensaje
+ * de error o `null` si el rango resultante es válido.
+ */
+export function validarOrdenDeFechasParcial(
+  cambios: { fecha_inicial?: string | null; fecha_final?: string | null },
+  guardado: { fecha_inicial?: string | null; fecha_final?: string | null },
+): string | null {
+  // `undefined` significa "no se toca este campo"; `null` significa "bórralo".
+  const inicial = (cambios.fecha_inicial === undefined ? guardado.fecha_inicial : cambios.fecha_inicial)?.trim();
+  const final = (cambios.fecha_final === undefined ? guardado.fecha_final : cambios.fecha_final)?.trim();
+  if (!inicial || !final) return null;
+  return final < inicial ? 'La fecha final no puede ser anterior a la fecha inicial' : null;
+}

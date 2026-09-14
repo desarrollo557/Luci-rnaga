@@ -6,6 +6,7 @@ import type { FuidCreateDto, FuidUpdateDto } from '../types/index.js';
 import { fuidValues, isSuggestionField } from '../services/fuid.service.js';
 import { audit } from '../services/audit.service.js';
 import { fechaHoyLocal } from '../utils/format.js';
+import { validarOrdenDeFechasParcial } from '../validators/fuiddatosreal.validator.js';
 
 // La fecha del dato la fija el navegador en hora local; aquí se compara con la
 // fecha local de Colombia para que "hoy" coincida también después de las 7 p. m.
@@ -220,6 +221,14 @@ export async function updateFuid(req: Request, res: Response): Promise<void> {
   // Esto aplica a TODOS los roles para garantizar integridad de datos
   if (registro.fecha_del_dato !== fechaActual()) {
     res.status(403).json({ error: 'Los registros de días anteriores no pueden ser modificados' });
+    return;
+  }
+
+  // Una edición que solo cambia una de las dos fechas no puede compararlas entre
+  // sí en el schema: la otra hay que leerla del registro ya guardado.
+  const errorOrden = validarOrdenDeFechasParcial(body, registro);
+  if (errorOrden) {
+    res.status(400).json({ error: 'Datos inválidos', details: [{ field: 'fecha_final', message: errorOrden }] });
     return;
   }
 
