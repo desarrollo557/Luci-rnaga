@@ -88,7 +88,9 @@ export default function TecnicaDashboardPage() {
         <Button
           variant="secondary"
           size="sm"
-          onClick={() => navigate(`/cajas/${row.id}/datos`)}
+          // Se pasa el origen para que el botón de volver de la digitación
+          // devuelva al panel, en lugar de subir al acta de la caja.
+          onClick={() => navigate(`/cajas/${row.id}/datos`, { state: { from: '/mi-panel' } })}
         >
           <Package className="size-4" /> Ir a Digitación
         </Button>
@@ -236,7 +238,7 @@ export default function TecnicaDashboardPage() {
                   <Button
                     variant="secondary"
                     size="sm"
-                    onClick={() => navigate(`/cajas/${caja.id}/datos`)}
+                    onClick={() => navigate(`/cajas/${caja.id}/datos`, { state: { from: '/mi-panel' } })}
                   >
                     <Package className="size-4" /> Continuar Digitación
                   </Button>

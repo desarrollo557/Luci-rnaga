@@ -84,7 +84,14 @@ export interface FuidCreateDto {
   asunto_3?: string | null;
 }
 
-export type FuidUpdateDto = Partial<FuidCreateDto>;
+export type FuidUpdateDto = Partial<FuidCreateDto> & {
+  /**
+   * Versión del registro tal como la leyó el cliente. Obligatoria: es lo que
+   * permite detectar que otra persona guardó mientras tanto en lugar de pisar
+   * su cambio (ver `database/bloqueo_optimista.sql`).
+   */
+  version: number;
+};
 
 export interface AssignRangeDto {
   usuario_id: number;

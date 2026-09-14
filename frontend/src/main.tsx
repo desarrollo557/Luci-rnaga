@@ -20,7 +20,14 @@ const queryClient = new QueryClient({
     onError: (error) => toastApiError(error),
   }),
   mutationCache: new MutationCache({
-    onError: (error) => toastApiError(error),
+    // Red de seguridad para las mutaciones que no manejan su propio error. Las
+    // que sí lo hacen —guardar un FUID, eliminarlo, asignar cajas— ya avisan
+    // con el mensaje que corresponde a esa acción, y llamarlo también aquí
+    // sacaba el mismo error dos veces, uno encima del otro.
+    onError: (error, _variables, _context, mutation) => {
+      if (mutation.options.onError) return;
+      toastApiError(error);
+    },
   }),
   defaultOptions: {
     queries: {

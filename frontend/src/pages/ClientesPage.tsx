@@ -290,9 +290,9 @@ export default function ClientesPage() {
   const handleModuloSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const nextErrors: Partial<Record<keyof ModuloClienteForm, string>> = {};
-    if (!moduloForm.codigo.trim()) nextErrors.codigo = 'El código es requerido';
-    if (!moduloForm.entidad_remitente.trim())
-      nextErrors.entidad_remitente = 'La entidad remitente es requerida';
+    // El código y la entidad remitente del acta se pueden dejar en blanco: son
+    // copias descriptivas de los del cliente y el servidor los guarda como N/A.
+    // El número de acta sí se pide: es lo que distingue un acta de otra.
     if (!moduloForm.acta_transferencia_modulo.trim())
       nextErrors.acta_transferencia_modulo = 'El acta de transferencia es requerida';
     setModuloErrors(nextErrors);

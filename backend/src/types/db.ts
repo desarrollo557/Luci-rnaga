@@ -89,6 +89,11 @@ export interface FuidDato {
   sede_calidad: string | null;
   asunto_2: string | null;
   asunto_3: string | null;
+  /**
+   * Contador de bloqueo optimista (`database/bloqueo_optimista.sql`). Sube en
+   * cada guardado; el PUT solo aplica si el cliente devuelve la que leyó.
+   */
+  version: number;
   created_at: string | null;
   updated_at: string | null;
 }

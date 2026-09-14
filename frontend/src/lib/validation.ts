@@ -24,6 +24,61 @@ export function validDate(value: string, label: string): string | null {
     : `${label} debe tener el formato YYYY-MM-DD`;
 }
 
+/**
+ * Fecha más antigua aceptada en cualquier campo de fecha del FUID.
+ *
+ * Debe coincidir con FECHA_MINIMA_DOCUMENTAL de `backend/src/config/constants.ts`:
+ * el backend es quien manda, esto solo adelanta el aviso al usuario.
+ */
+export const FECHA_MINIMA_DOCUMENTAL = '1920-01-01';
+
+/** Hoy en formato YYYY-MM-DD, en la zona horaria donde opera la sede. */
+export function fechaHoyLocal(): string {
+  return new Intl.DateTimeFormat('en-CA', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(new Date());
+}
+
+/** true si la cadena YYYY-MM-DD es un día que existe (descarta 2025-02-30). */
+export function esFechaReal(value: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const [anio, mes, dia] = value.split('-').map(Number);
+  const fecha = new Date(Date.UTC(anio, mes - 1, dia));
+  return (
+    fecha.getUTCFullYear() === anio &&
+    fecha.getUTCMonth() === mes - 1 &&
+    fecha.getUTCDate() === dia
+  );
+}
+
+/**
+ * Misma regla que `fechaDocumental` en el backend: formato, día real del
+ * calendario y rango entre FECHA_MINIMA_DOCUMENTAL y hoy.
+ */
+export function dateInRange(value: string, label: string): string | null {
+  const v = value.trim();
+  if (v === '') return null;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(v)) return `${label} debe tener el formato AAAA-MM-DD`;
+  if (!esFechaReal(v)) return `${label} no corresponde a un día que exista en el calendario`;
+  if (v < FECHA_MINIMA_DOCUMENTAL) return `${label} no puede ser anterior a ${FECHA_MINIMA_DOCUMENTAL}`;
+  const hoy = fechaHoyLocal();
+  if (v > hoy) return `${label} no puede ser posterior a hoy (${hoy})`;
+  return null;
+}
+
+/**
+ * Misma regla que el superRefine de `createFuidSchema`: el rango documental no
+ * puede ir hacia atrás. Devuelve el mensaje para mostrar bajo `fecha_final`.
+ */
+export function dateOrderValid(inicial: string, final: string): string | null {
+  const desde = inicial.trim();
+  const hasta = final.trim();
+  if (desde === '' || hasta === '') return null;
+  return hasta < desde ? 'La fecha final no puede ser anterior a la fecha inicial' : null;
+}
+
 export function validCaja(value: string): string | null {
   if (value.trim() === '') return null;
   return /^\d{3}C\d{6}$/.test(value.trim())
