@@ -1,6 +1,7 @@
 import type { Request, Response } from 'express';
 import bcrypt from 'bcryptjs';
 import { query, queryOne } from '../config/db.js';
+import { PERMITIR_PASSWORD_PLANO, PREFIJO_HASH_BCRYPT } from '../config/constants.js';
 import type { User } from '../types/db.js';
 import type { LoginRequest, LoginResponse } from '../types/index.js';
 import { fechaHoyLocal } from '../utils/format.js';
@@ -41,7 +42,20 @@ export async function login(req: Request, res: Response): Promise<void> {
       return;
     }
 
-    const isPasswordEncrypted = user.contrasena?.startsWith('$2b$');
+    const isPasswordEncrypted = user.contrasena?.startsWith(PREFIJO_HASH_BCRYPT);
+
+    // Una cuenta sin cifrar solo puede entrar durante una ventana de migración
+    // declarada a propósito. Fuera de ella no se compara siquiera: si alguien
+    // inserta una fila en `users` con la clave en claro, esa puerta queda cerrada.
+    if (!isPasswordEncrypted && !PERMITIR_PASSWORD_PLANO) {
+      console.warn(`Login rechazado: la cuenta ${cc} tiene la contraseña sin cifrar.`);
+      res.status(200).json({
+        success: false,
+        message: 'Su contraseña debe ser restablecida por un administrador antes de poder ingresar.',
+      } satisfies LoginResponse);
+      return;
+    }
+
     let match = false;
     if (isPasswordEncrypted) {
       match = await bcrypt.compare(contrasena, user.contrasena);
@@ -54,6 +68,8 @@ export async function login(req: Request, res: Response): Promise<void> {
       return;
     }
 
+    // Migración automática: al entrar con una clave en claro se guarda ya cifrada,
+    // de modo que la ventana de migración se va vaciando sola cuenta por cuenta.
     if (match && !isPasswordEncrypted) {
       try {
         const hashedPassword = await bcrypt.hash(contrasena, saltRounds);

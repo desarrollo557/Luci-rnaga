@@ -237,6 +237,31 @@ caja no compiten por el mismo número.
 - La sesión vive en cookie HttpOnly; en producción con dominios cruzados hay que ajustar `sameSite` y `secure` en `backend/src/app.ts`.
 - `backend/.env` no se versiona: crea el tuyo localmente (ver arriba).
 
+## Contraseñas heredadas en texto plano
+
+Las contraseñas se guardan cifradas con bcrypt. Quedan cuentas antiguas con la
+clave en texto plano, y el login las trata así:
+
+| `PERMITIR_PASSWORD_PLANO` | Qué pasa al iniciar sesión con una cuenta sin cifrar |
+| --- | --- |
+| `false` (por defecto) | Se rechaza el ingreso y se pide restablecer la contraseña a un administrador. La comparación no llega a hacerse. |
+| `true` | Se permite el ingreso y, en ese primer login, la contraseña se guarda ya cifrada. |
+
+El valor por defecto es `false` a propósito: con `true` permanente, cualquier fila
+insertada a mano en `users` con la clave sin cifrar sería una puerta abierta.
+
+Para migrar las cuentas que queden:
+
+1. Poner `PERMITIR_PASSWORD_PLANO=true` en `backend/.env` y reiniciar el backend.
+2. Avisar a esas personas para que inicien sesión una vez; cada login deja su
+   contraseña cifrada.
+3. Comprobar que no quedan pendientes:
+   `SELECT cc, nombre FROM users WHERE contrasena NOT LIKE '$2b$%';`
+4. Volver a `false` y reiniciar.
+
+Mientras la variable está en `false`, cada intento rechazado deja una advertencia
+en el log del servidor con la cédula de la cuenta, para saber a quién falta migrar.
+
 ## Reglas de eliminación (jerarquía)
 
 | Entidad | Quién puede eliminar | Condición |

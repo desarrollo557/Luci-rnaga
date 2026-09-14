@@ -36,6 +36,22 @@ export const DB_QUEUE_LIMIT = 0;
 // ── Seguridad ─────────────────────────────────────────────────────────────
 export const BCRYPT_SALT_ROUNDS = 10;
 
+/** Prefijo con el que bcrypt marca sus hashes; lo que no empiece así está en claro. */
+export const PREFIJO_HASH_BCRYPT = '$2b$';
+
+/**
+ * Permite iniciar sesión con la contraseña guardada en texto plano.
+ *
+ * Por defecto está apagado: una fila insertada a mano en `users` con la clave
+ * sin cifrar sería una puerta abierta, y el login la aceptaría sin más. Con el
+ * valor en `false` esas cuentas no entran y se les pide restablecer la clave.
+ *
+ * Se enciende solo durante una ventana de migración controlada: mientras está en
+ * `true`, el primer login de cada cuenta heredada cifra su contraseña y la deja
+ * migrada. Cuando ya no queden cuentas sin cifrar, se vuelve a apagar.
+ */
+export const PERMITIR_PASSWORD_PLANO = process.env.PERMITIR_PASSWORD_PLANO === 'true';
+
 // ── Fechas documentales ───────────────────────────────────────────────────
 /**
  * Fecha más antigua que se acepta en cualquier campo de fecha del FUID.
