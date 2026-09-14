@@ -1,5 +1,5 @@
-import { useMemo, useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useEffect, useMemo, useState } from 'react';
+import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { FilterX, Search } from 'lucide-react';
 import { Badge, Button, Card, DatePicker, Input, PageHeader, Select, Table, type Column } from '@/components/ui';
 import { historialApi } from '@/lib/api';
@@ -17,63 +17,43 @@ interface FiltrosHistorial {
 
 const FILTROS_VACIOS: FiltrosHistorial = { q: '', tipo: '', sede: '', desde: '', hasta: '' };
 
-function normalize(value: unknown): string {
-  return String(value ?? '').toLowerCase();
-}
-
 export default function HistorialPage() {
   const [filtros, setFiltros] = useState<FiltrosHistorial>(FILTROS_VACIOS);
   const [page, setPage] = useState(0);
 
-  const { data: rows = [], isLoading } = useQuery({
-    queryKey: ['historial'],
-    queryFn: async () => (await historialApi.list()).data,
+  // El historial supera las 46.000 filas, así que filtrado y paginación viven en
+  // SQL. El texto se retrasa 300 ms para no lanzar una consulta por tecla.
+  const [qDiferido, setQDiferido] = useState('');
+  useEffect(() => {
+    const id = setTimeout(() => setQDiferido(filtros.q.trim()), 300);
+    return () => clearTimeout(id);
+  }, [filtros.q]);
+
+  const { data, isLoading, isFetching } = useQuery({
+    queryKey: ['historial', qDiferido, filtros.tipo, filtros.sede, filtros.desde, filtros.hasta, page],
+    queryFn: async () =>
+      (
+        await historialApi.list({
+          page,
+          pageSize: PAGE_SIZE,
+          q: qDiferido || undefined,
+          tipo: filtros.tipo || undefined,
+          sede: filtros.sede || undefined,
+          desde: filtros.desde || undefined,
+          hasta: filtros.hasta || undefined,
+        })
+      ).data,
+    placeholderData: keepPreviousData,
   });
 
-  const tipos = useMemo(
-    () => Array.from(new Set(rows.map((row) => row.tipo_cambio).filter(Boolean))) as string[],
-    [rows],
-  );
-  const sedes = useMemo(
-    () => Array.from(new Set(rows.map((row) => row.sede_calidad).filter(Boolean))) as string[],
-    [rows],
-  );
+  const rows = data?.data ?? [];
+  const total = data?.total ?? 0;
+  const tipos = useMemo(() => data?.tipos ?? [], [data]);
+  const sedes = useMemo(() => data?.sedes ?? [], [data]);
 
   const hayFiltros = Boolean(filtros.q || filtros.tipo || filtros.sede || filtros.desde || filtros.hasta);
 
-  const filtered = useMemo(() => {
-    const q = filtros.q.trim().toLowerCase();
-    const desde = filtros.desde ? new Date(`${filtros.desde}T00:00:00`).getTime() : null;
-    const hasta = filtros.hasta ? new Date(`${filtros.hasta}T23:59:59.999`).getTime() : null;
-
-    return rows.filter((row) => {
-      if (q) {
-        const campos = [
-          row.caja,
-          row.upd,
-          row.id_dato,
-          row.historial_cambios,
-          row.cambio_calidad,
-          row.sede_calidad,
-          row.tipo_cambio,
-          row.fecha_cambio ? new Date(row.fecha_cambio).toLocaleString('es-CO') : '',
-        ];
-        if (!campos.some((campo) => normalize(campo).includes(q))) return false;
-      }
-      if (filtros.tipo && row.tipo_cambio !== filtros.tipo) return false;
-      if (filtros.sede && row.sede_calidad !== filtros.sede) return false;
-      if (filtros.desde || filtros.hasta) {
-        const fecha = row.fecha_cambio ? new Date(row.fecha_cambio).getTime() : null;
-        if (fecha === null) return false;
-        if (desde !== null && fecha < desde) return false;
-        if (hasta !== null && fecha > hasta) return false;
-      }
-      return true;
-    });
-  }, [rows, filtros]);
-
-  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
-  const pageRows = filtered.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
   const updateFiltro = (patch: Partial<FiltrosHistorial>) => {
     setFiltros((prev) => ({ ...prev, ...patch }));
@@ -171,7 +151,7 @@ export default function HistorialPage() {
 
         <div className="mt-4 flex items-center justify-between border-t border-silver-100 pt-3 text-sm">
           <span className="text-silver-500">
-            {filtered.length.toLocaleString('es-CO')} {filtered.length === 1 ? 'registro' : 'registros'}
+            {total.toLocaleString('es-CO')} {total === 1 ? 'registro' : 'registros'}
             {hayFiltros && ' filtrados'}
           </span>
           {hayFiltros && (
@@ -180,18 +160,20 @@ export default function HistorialPage() {
         </div>
       </Card>
 
-      <Table
+      <div className={isFetching && !isLoading ? 'opacity-60 transition-opacity' : 'transition-opacity'}>
+        <Table
         columns={columns}
-        data={pageRows}
+        data={rows}
         rowKey={(row) => row.id_historial}
         loading={isLoading}
         emptyMessage={hayFiltros ? 'No se encontraron registros con esos filtros' : 'No hay historial registrado'}
-      />
+        />
+      </div>
 
       {totalPages > 1 && (
         <div className="flex items-center justify-between">
           <span className="text-sm text-silver-500">
-            Página {page + 1} de {totalPages} ({filtered.length} registros)
+            Página {page + 1} de {totalPages} ({total.toLocaleString('es-CO')} registros)
           </span>
           <div className="flex gap-2">
             <Button variant="secondary" size="sm" disabled={page === 0} onClick={() => setPage((p) => p - 1)}>

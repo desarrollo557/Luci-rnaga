@@ -13,11 +13,11 @@ export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 
 const variantClasses: Record<Variant, string> = {
   primary:
-    'bg-gradient-to-b from-primary-600 to-primary-700 text-white shadow-sm shadow-primary-600/30 hover:from-primary-500 hover:to-primary-600 hover:shadow-md hover:shadow-primary-600/30 focus-visible:ring-primary-500',
+    'bg-gradient-to-b from-brand to-brand-strong text-white shadow-sm shadow-brand/30 hover:from-brand-soft hover:to-brand hover:shadow-md hover:shadow-brand/30 focus-visible:ring-primary-500',
   secondary:
-    'border border-silver-300 bg-white text-silver-700 shadow-sm hover:border-silver-400 hover:bg-silver-50 hover:text-silver-900 focus-visible:ring-silver-400',
+    'border border-silver-300 bg-surface text-silver-700 shadow-sm hover:border-silver-400 hover:bg-silver-50 hover:text-silver-900 focus-visible:ring-silver-400',
   danger:
-    'bg-gradient-to-b from-red-600 to-red-700 text-white shadow-sm shadow-red-600/30 hover:from-red-500 hover:to-red-600 hover:shadow-md hover:shadow-red-600/30 focus-visible:ring-red-500',
+    'bg-gradient-to-b from-brand to-brand-strong text-white shadow-sm shadow-brand/30 hover:from-brand-soft hover:to-brand hover:shadow-md hover:shadow-brand/30 focus-visible:ring-red-500',
   ghost:
     'text-silver-600 hover:bg-silver-100 hover:text-silver-900 focus-visible:ring-silver-400',
 };

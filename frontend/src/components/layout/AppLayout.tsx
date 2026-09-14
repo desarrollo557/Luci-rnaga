@@ -14,7 +14,7 @@ import {
   X,
   type LucideIcon,
 } from 'lucide-react';
-import { Badge } from '@/components/ui';
+import { Badge, ThemeToggle } from '@/components/ui';
 import { cn } from '@/lib/cn';
 import { useAuthStore } from '@/stores/authStore';
 import type { Role } from '@/types';
@@ -70,13 +70,13 @@ export default function AppLayout() {
     <div className="flex h-screen overflow-hidden bg-silver-100">
       <aside
         className={cn(
-          'fixed inset-y-0 left-0 z-40 flex w-64 flex-col bg-silver-900 transition-transform duration-200 md:static',
+          'fixed inset-y-0 left-0 z-40 flex w-64 flex-col bg-sidebar transition-transform duration-200 md:static',
           sidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0',
           sidebarCollapsed && 'md:hidden',
         )}
       >
-        <div className="flex h-16 shrink-0 items-center gap-3 border-b border-silver-800 px-5">
-          <div className="relative flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-full bg-gradient-to-br from-primary-500 to-primary-700 shadow-md shadow-primary-950/40 ring-1 ring-white/10">
+        <div className="flex h-16 shrink-0 items-center gap-3 border-b border-sidebar-border px-5">
+          <div className="relative flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-full bg-gradient-to-br from-brand-soft to-brand-strong shadow-md shadow-primary-950/40 ring-1 ring-white/10">
             <img
               src="/images/siar.png"
               alt="Logo SIAR"
@@ -87,14 +87,14 @@ export default function AppLayout() {
             <span className="block truncate text-base font-bold leading-tight tracking-tight text-white">
               Luci
             </span>
-            <span className="block truncate text-[10px] font-semibold uppercase tracking-widest text-primary-300">
+            <span className="block truncate text-[10px] font-semibold uppercase tracking-widest text-sidebar-accent">
               Gestión FUID
             </span>
           </div>
           <button
             type="button"
             onClick={() => setSidebarOpen(false)}
-            className="ml-auto rounded-lg p-1.5 text-silver-400 transition-colors hover:bg-silver-800 hover:text-white md:hidden"
+            className="ml-auto rounded-lg p-1.5 text-sidebar-muted transition-colors hover:bg-sidebar-hover hover:text-sidebar-fg md:hidden"
             aria-label="Cerrar menú"
           >
             <X className="size-5" />
@@ -113,8 +113,8 @@ export default function AppLayout() {
                   cn(
                     'flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors',
                     isActive
-                      ? 'bg-primary-600 text-white shadow-sm'
-                      : 'text-silver-300 hover:bg-silver-800 hover:text-white',
+                      ? 'bg-brand text-white shadow-sm'
+                      : 'text-sidebar-muted hover:bg-sidebar-hover hover:text-sidebar-fg',
                   )
                 }
               >
@@ -126,13 +126,13 @@ export default function AppLayout() {
         </nav>
 
         {/* Logout en la parte inferior del sidebar */}
-        <div className="shrink-0 p-3 border-t border-silver-800">
+        <div className="shrink-0 p-3 border-t border-sidebar-border">
           <button
             type="button"
             onClick={handleLogout}
             className={cn(
               'flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors',
-              'text-silver-300 hover:bg-silver-800 hover:text-white'
+              'text-sidebar-muted hover:bg-sidebar-hover hover:text-sidebar-fg'
             )}
           >
             <LogOut className="size-5 shrink-0" />
@@ -143,14 +143,14 @@ export default function AppLayout() {
 
       {sidebarOpen && (
         <div
-          className="fixed inset-0 z-30 bg-silver-900/60 md:hidden"
+          className="fixed inset-0 z-30 bg-overlay md:hidden"
           onClick={() => setSidebarOpen(false)}
           aria-hidden="true"
         />
       )}
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="flex h-16 shrink-0 items-center justify-between gap-3 border-b border-silver-200 bg-white px-4 md:px-6">
+        <header className="flex h-16 shrink-0 items-center justify-between gap-3 border-b border-silver-200 bg-surface px-4 md:px-6">
           <div className="flex items-center gap-2">
             <button
               type="button"
@@ -173,6 +173,8 @@ export default function AppLayout() {
           </div>
 
           <div className="ml-auto flex items-center gap-3">
+            <ThemeToggle />
+            <span aria-hidden="true" className="hidden h-6 w-px bg-silver-200 sm:block" />
             <div className="hidden text-right sm:block">
               <p className="text-sm font-medium leading-tight text-silver-800">{user.nombre}</p>
               <p className="text-xs leading-tight text-silver-500">C.C. {user.cc}</p>
