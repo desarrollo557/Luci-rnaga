@@ -14,6 +14,7 @@
     "test:watch": "vitest"
   },
   "dependencies": {
+    "@types/pg": "^8.23.1",
     "bcryptjs": "^3.0.3",
     "cors": "^2.8.5",
     "dotenv": "^16.6.1",
@@ -24,6 +25,7 @@
     "helmet": "^8.1.0",
     "luci-host": "file:..",
     "mysql2": "^3.14.3",
+    "pg": "^8.23.0",
     "zod": "^4.4.3"
   },
   "devDependencies": {
