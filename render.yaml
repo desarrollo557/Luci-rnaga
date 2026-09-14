@@ -18,9 +18,12 @@ services:
     # Ohio (us-east) es la región del proyecto de Supabase: cuanto más cerca,
     # menos latencia en cada consulta.
     region: ohio
-    # El plan gratuito duerme el servicio tras 15 minutos sin tráfico y tarda
-    # casi un minuto en despertar, que con gente digitando se nota.
-    plan: starter
+    # Plan gratuito: no pide tarjeta, pero el servicio se duerme tras 15 minutos
+    # sin tráfico y la primera petición después tarda cerca de un minuto en
+    # responder. Con gente digitando de corrido eso se nota, así que cuando el
+    # sistema entre en uso real conviene pasar a `starter`: es cambiar esta
+    # palabra y volver a desplegar.
+    plan: free
     branch: production
     buildCommand: npm --prefix frontend install && npm --prefix frontend run build && npm --prefix backend install && npm --prefix backend run build
     startCommand: node backend/dist/server.js
