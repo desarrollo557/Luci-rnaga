@@ -1,15 +1,6 @@
 import { useEffect, useState } from 'react';
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
-import {
-  ArrowRight,
-  ClipboardCheck,
-  FilterX,
-  History,
-  Pencil,
-  Search,
-  Trash2,
-  Users,
-} from 'lucide-react';
+import { ArrowRight, FilterX, Pencil, Search, Trash2 } from 'lucide-react';
 import {
   Badge,
   Button,
@@ -21,13 +12,6 @@ import {
   PageHeader,
   Select,
 } from '@/components/ui';
-import {
-  BarrasHorizontales,
-  ChartCard,
-  SERIES,
-  SerieTemporal,
-  StatTile,
-} from '@/components/charts';
 import { historialApi } from '@/lib/api';
 import type { CambioCampo, MovimientoHistorial } from '@/lib/api';
 
@@ -169,12 +153,6 @@ export default function HistorialPage() {
     placeholderData: keepPreviousData,
   });
 
-  // El resumen no depende de los filtros: describe el historial completo.
-  const { data: resumen } = useQuery({
-    queryKey: ['historial', 'resumen'],
-    queryFn: async () => (await historialApi.resumen()).data,
-  });
-
   const movimientos = data?.data ?? [];
   const total = data?.total ?? 0;
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
@@ -191,75 +169,6 @@ export default function HistorialPage() {
         title="Historial de Cambios"
         description="Cada edición y cada borrado de un registro FUID, con el detalle de qué cambió"
       />
-
-      {resumen && (
-        <>
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <StatTile
-              label="Movimientos"
-              value={resumen.total_movimientos}
-              icon={History}
-              tono="marca"
-              detalle={
-                resumen.ultimo_movimiento ? `El último, ${fechaHora(resumen.ultimo_movimiento)}` : undefined
-              }
-            />
-            <StatTile label="Ediciones" value={resumen.ediciones} icon={Pencil} tono="azul" />
-            <StatTile label="Eliminaciones" value={resumen.eliminaciones} icon={Trash2} tono="ambar" />
-            <StatTile
-              label="Registros afectados"
-              value={resumen.registros_afectados}
-              icon={ClipboardCheck}
-              tono="aqua"
-              detalle={`En ${resumen.cajas_afectadas} caja(s)`}
-            />
-          </div>
-
-          {resumen.por_dia.length > 0 && (
-            <ChartCard title="Actividad por día" subtitle="Ediciones y eliminaciones registradas">
-              <SerieTemporal
-                datos={resumen.por_dia.map((d) => ({
-                  etiqueta: d.dia.slice(5),
-                  Ediciones: d.ediciones,
-                  Eliminaciones: d.eliminaciones,
-                }))}
-                series={[
-                  { clave: 'Ediciones', nombre: 'Ediciones', color: SERIES.uno, area: true },
-                  { clave: 'Eliminaciones', nombre: 'Eliminaciones', color: SERIES.dos },
-                ]}
-              />
-            </ChartCard>
-          )}
-
-          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-            {resumen.campos_mas_editados.length > 0 && (
-              <ChartCard
-                title="Qué se corrige más"
-                subtitle="Campos con más modificaciones en las últimas 300 ediciones"
-              >
-                <BarrasHorizontales
-                  datos={resumen.campos_mas_editados.map((c) => ({ etiqueta: c.etiqueta, valor: c.total }))}
-                  color={SERIES.uno}
-                />
-              </ChartCard>
-            )}
-
-            {resumen.por_persona.length > 0 && (
-              <ChartCard
-                title="Quién hace los cambios"
-                subtitle="Personas con más movimientos"
-                icon={<Users className="size-4" />}
-              >
-                <BarrasHorizontales
-                  datos={resumen.por_persona.map((p) => ({ etiqueta: p.persona, valor: p.total }))}
-                  color={SERIES.tres}
-                  anchoEtiqueta={170}
-                />
-              </ChartCard>
-            )}
-          </div>
-        </>
-      )}
 
       <Card>
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
