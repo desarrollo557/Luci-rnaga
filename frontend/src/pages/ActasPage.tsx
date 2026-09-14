@@ -273,20 +273,12 @@ export default function ActasPage() {
     event.preventDefault();
     const nextErrors: Partial<Record<keyof CajaForm, string>> = {};
 
+    // Entidad productora, unidad administrativa, oficina productora y objeto se
+    // pueden dejar en blanco: no siempre se conocen al crear la caja y el
+    // servidor los guarda como N/A. Lo que sigue siendo obligatorio es lo que
+    // identifica la caja y que MySQL declara NOT NULL.
     if (!cajaForm.entidad_remitente_caja?.trim()) {
       nextErrors.entidad_remitente_caja = 'La entidad remitente es requerida';
-    }
-    if (!cajaForm.entidad_productora_caja?.trim()) {
-      nextErrors.entidad_productora_caja = 'La entidad productora es requerida';
-    }
-    if (!cajaForm.unidad_administrativa_caja?.trim()) {
-      nextErrors.unidad_administrativa_caja = 'La unidad administrativa es requerida';
-    }
-    if (!cajaForm.oficina_productora_caja?.trim()) {
-      nextErrors.oficina_productora_caja = 'La oficina productora es requerida';
-    }
-    if (!cajaForm.objeto_caja?.trim()) {
-      nextErrors.objeto_caja = 'El objeto es requerido';
     }
     if (!cajaForm.acta_trans_caja?.trim()) {
       nextErrors.acta_trans_caja = 'El acta de transferencia es requerida';

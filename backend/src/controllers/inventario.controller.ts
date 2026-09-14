@@ -3,6 +3,7 @@ import { query, queryOne, queryResult } from '../config/db.js';
 import { audit } from '../services/audit.service.js';
 import type { FuidDato, Inventario } from '../types/db.js';
 import type { SessionUser } from '../types/index.js';
+import { valorParaGuardar } from '../utils/noDiligenciado.js';
 import { buildInventarioFuidExcel, inventarioFuidFilename } from '../services/inventarioExcel.service.js';
 import { subirOActualizarZohoSheetFromExcel, isZohoSheetConfigured, ZohoSheetError } from '../services/zohoSheet.service.js';
 
@@ -33,8 +34,30 @@ const FIELDS = [
 
 type InventarioField = (typeof FIELDS)[number];
 
+/**
+ * Columnas de texto del inventario que se guardan como `N/A` cuando el
+ * formulario las deja en blanco, igual que en el FUID y en la caja.
+ *
+ * Quedan fuera las columnas `date` e `int`, que no admiten el literal, y
+ * `CODIGO_DEL_CLIENTE`: el controlador lo usa para decidir si el inventario de
+ * ese cliente ya existe (`WHERE CODIGO_DEL_CLIENTE = ?`), así que un `N/A`
+ * haría que dos inventarios sin código se tomaran por el mismo y el segundo
+ * sobrescribiera al primero.
+ */
+const TEXTO_NO_DILIGENCIADO: ReadonlySet<string> = new Set<InventarioField>([
+  'CLIENTE',
+  'No_ACTA',
+  'ANEXOS',
+  'FUNCIONARIO',
+  'ESTADO_DEL_INVENTARIO',
+  'CAJA_INICIAR',
+  'CAJ_FIN',
+  'ESTADO_ENTREGA',
+  'MES_ENTREGA_PACA',
+]);
+
 function pickValues(body: Record<string, unknown>): unknown[] {
-  return FIELDS.map((f) => (body[f] == null || body[f] === '' ? null : body[f]));
+  return FIELDS.map((campo) => valorParaGuardar(body[campo], TEXTO_NO_DILIGENCIADO.has(campo)));
 }
 
 type SyncOutcome = {

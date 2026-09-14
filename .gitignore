@@ -30,3 +30,6 @@ backend/temp/
 Thumbs.db
 # Respaldos locales de la base generados por database/limpiar_bd.ps1 y reinstalar_bd.ps1
 database/respaldos/
+
+# Puertos asignados por scripts/port-checker.ts en cada arranque local
+.port-config/

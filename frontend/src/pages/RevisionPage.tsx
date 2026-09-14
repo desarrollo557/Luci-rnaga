@@ -17,6 +17,7 @@ import {
 } from '@/components/ui';
 import { fuidApi, modulosCajaApi, plantillaApi, reportesApi } from '@/lib/api';
 import { invalidateDomain } from '@/lib/queryInvalidation';
+import { retornoDeCaja } from '@/lib/navegacion';
 import { useAuthStore } from '@/stores/authStore';
 import { descargarBlob, exportExcel } from '@/lib/utils';
 import type { FuidDato } from '@/types';
@@ -191,7 +192,7 @@ export default function RevisionPage() {
   const { cajaId } = useParams<{ cajaId: string }>();
   const user = useAuthStore((state) => state.user);
   const canMarcarOk = EDITABLE_ROLES.some((rol) => rol === user?.rol);
-  const fromPath = (location.state as { from?: string } | null)?.from ?? `/clientes`;
+  // El retorno se resuelve más abajo, cuando ya se conoce la caja.
 
   const [revisionTarget, setRevisionTarget] = useState<FuidDato | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
@@ -207,6 +208,11 @@ export default function RevisionPage() {
   });
 
   const cajaCode = cajaQuery.data?.caja_modulo ?? cajaId ?? '';
+
+  // Botón de volver: la vista de la que se vino si consta, y si no el acta de
+  // la caja. Nunca salta directamente a la lista de clientes salvo que la caja
+  // no tenga acta.
+  const retorno = retornoDeCaja(location.state, cajaQuery.data);
 
   const fuidQuery = useQuery({
     queryKey: ['fuiddatosreal', 'list', cajaCode],
@@ -422,8 +428,8 @@ export default function RevisionPage() {
       <PageHeader
         title={`Revisión de Calidad — Caja ${cajaCode}`}
         description="Clientes / Actas / Cajas / Revisión"
-        backTo={fromPath}
-        backLabel="Volver a Cajas"
+        backTo={retorno.to}
+        backLabel={retorno.label}
         actions={
           <>
             <Input

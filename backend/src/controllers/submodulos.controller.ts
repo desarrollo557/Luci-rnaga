@@ -4,6 +4,30 @@ import { audit } from '../services/audit.service.js';
 import { fueraDeSuSede } from '../services/jerarquia.service.js';
 import type { SubModulo } from '../types/db.js';
 
+/** Nombre del índice de `database/submodulo_codigo_unico.sql`. */
+const INDICE_CODIGO_SEDE = 'uq_sub_modulos_codigo_sede';
+
+/**
+ * Distingue el choque con el código de cliente de cualquier otro duplicado.
+ *
+ * Sin esto, el error caía en el manejador global y el usuario recibía el 409
+ * genérico "Ya existe un elemento con esos datos", que no dice ni qué campo
+ * repitió ni por qué el mismo código sí vale en otra sede.
+ */
+function esCodigoRepetido(error: unknown): boolean {
+  const e = error as { code?: string; errno?: number; sqlMessage?: string };
+  const esDuplicado = e?.code === 'ER_DUP_ENTRY' || e?.errno === 1062;
+  return esDuplicado && (e.sqlMessage ?? '').includes(INDICE_CODIGO_SEDE);
+}
+
+function respuestaCodigoRepetido(codigo: string, sede: string | null | undefined) {
+  const donde = sede ? `en la sede ${sede}` : 'en esta sede';
+  return {
+    error: `Ya existe un cliente con el código ${codigo} ${donde}. Use otro código o edite el cliente existente.`,
+    code: 'CODIGO_CLIENTE_REPETIDO',
+  };
+}
+
 export async function listSubModulos(req: Request, res: Response): Promise<void> {
   const user = req.session.user;
   if (!user) {
@@ -48,11 +72,19 @@ export async function createSubModulo(req: Request, res: Response): Promise<void
     return;
   }
 
-  await query('INSERT INTO sub_modulos (codigo, entidad_remitente, sede_submodulos) VALUES (?, ?, ?)', [
-    codigo,
-    entidad_remitente,
-    sede_submodulos,
-  ]);
+  try {
+    await query('INSERT INTO sub_modulos (codigo, entidad_remitente, sede_submodulos) VALUES (?, ?, ?)', [
+      codigo,
+      entidad_remitente,
+      sede_submodulos,
+    ]);
+  } catch (error) {
+    if (esCodigoRepetido(error)) {
+      res.status(409).json(respuestaCodigoRepetido(codigo, sede_submodulos));
+      return;
+    }
+    throw error;
+  }
   res.status(201).send('Sub-módulo creado correctamente');
 }
 
@@ -79,7 +111,15 @@ export async function updateSubModulo(req: Request, res: Response): Promise<void
     return;
   }
 
-  await query('UPDATE sub_modulos SET codigo = ?, entidad_remitente = ? WHERE id = ?', [codigo, entidad_remitente, id]);
+  try {
+    await query('UPDATE sub_modulos SET codigo = ?, entidad_remitente = ? WHERE id = ?', [codigo, entidad_remitente, id]);
+  } catch (error) {
+    if (esCodigoRepetido(error)) {
+      res.status(409).json(respuestaCodigoRepetido(codigo, cliente.sede_submodulos));
+      return;
+    }
+    throw error;
+  }
   res.send('Cliente actualizado correctamente');
 }
 

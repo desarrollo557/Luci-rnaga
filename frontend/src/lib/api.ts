@@ -91,10 +91,15 @@ export function getApiErrorMessage(error: unknown): string {
     if (typeof data === 'object' && data !== null) {
       const body = data as ApiErrorBody;
       if (Array.isArray(body.details) && body.details.length > 0) {
+        // Solo el mensaje: los del backend ya son frases completas que nombran
+        // el campo como se ve en pantalla ("El asunto automático es
+        // requerido"). Anteponerles la columna dejaba avisos como
+        // "asunto_2: El asunto automático es requerido", que le dice al
+        // digitador un nombre técnico que no aparece en ningún formulario.
         const parts = body.details
-          .map((detail) => (detail?.field ? `${detail.field}: ${detail.message}` : detail?.message))
+          .map((detail) => detail?.message)
           .filter((part): part is string => Boolean(part));
-        if (parts.length > 0) return parts.join(', ');
+        if (parts.length > 0) return parts.join(' · ');
       }
       if (body.error) return body.error;
       if (body.message) return body.message;

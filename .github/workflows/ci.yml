@@ -35,6 +35,30 @@ jobs:
       - name: Build
         run: npm run build
 
+  backend-test:
+    name: Backend — pruebas
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      # Sin sparse-checkout: las pruebas de espejos comparan los catálogos y los
+      # límites del backend con sus copias en frontend/src/lib, así que necesitan
+      # el repositorio completo.
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Instalar dependencias
+        run: npm ci
+
+      - name: Pruebas de validadores
+        run: npm test
+
   frontend-validate:
     name: Frontend — typecheck + build
     runs-on: ubuntu-latest
@@ -61,7 +85,7 @@ jobs:
 
   orchestrator:
     name: Orquestador — gate final
-    needs: [backend-validate, frontend-validate]
+    needs: [backend-validate, backend-test, frontend-validate]
     runs-on: ubuntu-latest
     steps:
       - name: Confirmar validaciones

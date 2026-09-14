@@ -23,7 +23,11 @@ import { fuidApi, getApiErrorCode, modulosCajaApi } from '@/lib/api';
 import { cn } from '@/lib/cn';
 import { toastApiError } from '@/lib/feedback';
 import { invalidateDomain } from '@/lib/queryInvalidation';
+import { retornoDeCaja } from '@/lib/navegacion';
+import { OPCIONES_FRECUENCIA, OPCIONES_OTRO, OPCIONES_SOPORTE } from '@/lib/catalogos';
+import { limiteDe } from '@/lib/limites';
 import { fechaHoyISO } from '@/lib/utils';
+import { FECHA_MINIMA_DOCUMENTAL, dateInRange, dateOrderValid, fechaHoyLocal, onlyDigits } from '@/lib/validation';
 import { useAuthStore } from '@/stores/authStore';
 import {
   SUGGESTION_FIELDS,
@@ -244,7 +248,13 @@ function emptyFormFor(
 
 function buildPayload(form: FuidFormValues, editing: FuidDato | null): DataRow {
   // Los textos se guardan en mayúsculas, como hacía la versión anterior y como
-  // están los registros históricos; lo vacío viaja como NULL (nunca "N/A").
+  // están los registros históricos.
+  //
+  // Lo vacío viaja como NULL y es el servidor quien decide con qué se guarda:
+  // las columnas de texto del FUID quedan en "N/A" y las de fecha, número y
+  // tiempo en NULL (`CAMPOS_NO_DILIGENCIADOS` en el backend). No se manda "N/A"
+  // desde aquí a propósito: el formulario debe verse vacío mientras se digita,
+  // el marcador es cosa de cómo se guarda.
   const text = (value: string): string | null => (value.trim() === '' ? null : value.trim().toUpperCase());
   const numero = (value: string): number | null => {
     const trimmed = value.trim();
@@ -296,6 +306,9 @@ function buildPayload(form: FuidFormValues, editing: FuidDato | null): DataRow {
     payload.historial_y_cambios = editing.historial_y_cambios;
     payload.cambio_calidad = editing.cambio_calidad;
     payload.sede_calidad = editing.sede_calidad;
+    // Versión leída al abrir el registro: el backend la exige para detectar que
+    // otra persona guardó mientras tanto (bloqueo optimista).
+    payload.version = editing.version;
   }
 
   return payload;
@@ -311,6 +324,7 @@ interface SuggestionInputProps {
   readOnly?: boolean;
   autoFocus?: boolean;
   className?: string;
+  error?: string;
 }
 
 function SuggestionInput({
@@ -323,6 +337,7 @@ function SuggestionInput({
   readOnly,
   autoFocus,
   className,
+  error,
 }: SuggestionInputProps) {
   const debouncedQuery = useDebouncedValue(value, 300);
   const suggestionsQuery = useQuery({
@@ -342,6 +357,10 @@ function SuggestionInput({
         disabled={disabled}
         readOnly={readOnly}
         autoFocus={autoFocus}
+        error={error}
+        // El componente ya recibe el nombre de la columna, así que el tope sale
+        // del mapa sin tener que repetirlo en cada uno de los campos del FUID.
+        maxLength={limiteDe(campo)}
       />
       <datalist id={`sug-${campo}`}>
         {(suggestionsQuery.data ?? []).map((suggestion) => (
@@ -352,12 +371,9 @@ function SuggestionInput({
   );
 }
 
-const OPCIONES_OTRO = ['N/A', 'A-Z', 'LIBROS', 'BOLSA'];
-const OPCIONES_SOPORTE = ['N/A', 'CD', 'PLANOS'];
-const OPCIONES_FRECUENCIA = ['N/A', 'ALTA', 'MEDIA', 'BAJA'];
 
 /** Opciones fijas de la lista más el valor guardado cuando quedó fuera de ella (registros antiguos). */
-function opcionesCon(lista: string[], actual: string) {
+function opcionesCon(lista: readonly string[], actual: string) {
   const valor = actual.trim().toUpperCase();
   const base = lista.map((v) => ({ value: v, label: v }));
   return valor && !lista.includes(valor) ? [...base, { value: valor, label: valor }] : base;
@@ -390,6 +406,10 @@ function FuidFormModal({ open, cajaId, editing, defaultNOrden, defaultTomo, caja
   );
   /** Registros guardados sin cerrar el formulario; remonta el formulario para volver a enfocar Codigo. */
   const [racha, setRacha] = useState(0);
+  // Los campos obligatorios no se marcan en rojo hasta el primer intento de
+  // guardar: un formulario recién abierto está vacío por definición y teñirlo
+  // de avisos desde el principio solo estorba a quien digita de corrido.
+  const [faltantesALaVista, setFaltantesALaVista] = useState(false);
   /** Confirmación animada del último registro guardado; se apaga sola a los ~2,4 s. */
   const [confirmacion, setConfirmacion] = useState<{ id: number; upd: string; siguiente: string } | null>(null);
 
@@ -444,6 +464,7 @@ function FuidFormModal({ open, cajaId, editing, defaultNOrden, defaultTomo, caja
         upd: siguienteUpd,
       });
       setRacha((r) => r + 1);
+      setFaltantesALaVista(false);
       setConfirmacion({ id: Date.now(), upd: guardado, siguiente: siguienteUpd });
       // El servidor confirma el consecutivo libre (salta UPD ya usados); solo se
       // reemplaza si la persona todavía no lo cambió.
@@ -472,17 +493,63 @@ function FuidFormModal({ open, cajaId, editing, defaultNOrden, defaultTomo, caja
       void invalidateDomain(queryClient, 'fuiddatosreal');
     },
     onError: (error) => {
+      // Otra persona guardó este mismo registro mientras estaba abierto. No se
+      // cierra el formulario ni se borra nada: lo escrito sigue a la vista para
+      // que se pueda copiar antes de recargar.
+      if (getApiErrorCode(error) === 'VERSION_DESACTUALIZADA') {
+        toast.error(
+          'Este registro fue modificado por otro usuario. Recarga para ver los cambios más recientes.',
+          { duration: 8000 },
+        );
+        return;
+      }
       toastApiError(error, { context: 'No se pudo actualizar el registro:' });
     },
   });
 
   const isSaving = createMutation.isPending || updateMutation.isPending;
 
-  // Sin validación en el cliente: se envía tal cual y el servidor responde si
-  // falta la caja o el UPD. Menos pasos entre un registro y el siguiente.
+  /**
+   * Las dos fechas son lo único que se valida en el cliente: el resto se envía
+   * tal cual y el servidor responde, para no meter pasos entre un registro y el
+   * siguiente. Se calcula al vuelo en lugar de al enviar, para que el aviso
+   * aparezca mientras se escribe y no después de intentar guardar.
+   */
+  const errorFechaInicial = dateInRange(form.fecha_inicial, 'La fecha inicial');
+  const errorFechaFinal =
+    dateInRange(form.fecha_final, 'La fecha final') ??
+    dateOrderValid(form.fecha_inicial, form.fecha_final);
+  const errorFolios = onlyDigits(form.folios, 'Los folios');
+
+  /**
+   * Los dos asuntos son lo único obligatorio además de la caja y el UPD: son lo
+   * que permite saber qué contiene el documento sin abrir la caja. El resto
+   * puede quedar vacío y el servidor lo guarda como N/A.
+   *
+   * Van aparte de los errores de formato a propósito. Un formato inválido
+   * deshabilita el botón Enviar; un obligatorio vacío no, porque el formulario
+   * arranca vacío y el botón quedaría apagado desde el principio sin decir por
+   * qué. Estos se comprueban al enviar y ahí sí se marcan.
+   */
+  const faltaAsuntoAutomatico = form.asunto_2.trim() === '' ? 'El asunto automático es requerido' : null;
+  const faltaAsuntoManual = form.asunto_3.trim() === '' ? 'El asunto manual es requerido' : null;
+
+  const errorDeFormato = errorFechaInicial ?? errorFechaFinal ?? errorFolios;
+  const primerError = errorDeFormato ?? faltaAsuntoAutomatico ?? faltaAsuntoManual;
+  const hayErrorDeFormulario = Boolean(errorDeFormato);
+
+  const hoy = fechaHoyLocal();
+
+  // El submit se bloquea, pero el formulario no se toca: lo escrito sigue ahí
+  // para que la persona corrija solo la fecha.
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (isSaving) return;
+    if (primerError) {
+      setFaltantesALaVista(true);
+      toast.error(primerError);
+      return;
+    }
     const payload = buildPayload(form, editing);
     if (editing) updateMutation.mutate({ id: editing.id, data: payload });
     else createMutation.mutate(payload);
@@ -501,7 +568,7 @@ function FuidFormModal({ open, cajaId, editing, defaultNOrden, defaultTomo, caja
           <Button variant="ghost" onClick={onClose} disabled={isSaving}>
             Cancelar
           </Button>
-          <Button type="submit" form="fuid-form" loading={isSaving} disabled={isSaving}>
+          <Button type="submit" form="fuid-form" loading={isSaving} disabled={isSaving || hayErrorDeFormulario}>
             Enviar
           </Button>
         </>
@@ -599,12 +666,19 @@ function FuidFormModal({ open, cajaId, editing, defaultNOrden, defaultTomo, caja
         <SuggestionInput
           caja={form.caja}
           campo="asunto_2"
-          label="Asunto Automático"
+          label="Asunto Automático *"
           value={form.asunto_2}
           onChange={updateField('asunto_2')}
+          error={(faltantesALaVista && faltaAsuntoAutomatico) || undefined}
         />
 
-        <Input label="Asunto Manual" value={form.asunto_3} onChange={setField('asunto_3')} />
+        <Input
+          label="Asunto Manual *"
+          value={form.asunto_3}
+          onChange={setField('asunto_3')}
+          maxLength={limiteDe('asunto_3')}
+          error={(faltantesALaVista && faltaAsuntoManual) || undefined}
+        />
         <SuggestionInput
           caja={form.caja}
           campo="numero_doc"
@@ -619,9 +693,25 @@ function FuidFormModal({ open, cajaId, editing, defaultNOrden, defaultTomo, caja
           value={form.numero_doc_hasta}
           onChange={updateField('numero_doc_hasta')}
         />
-        <Input label="Fecha Inicial" type="date" value={form.fecha_inicial} onChange={setField('fecha_inicial')} />
+        <Input
+          label="Fecha Inicial"
+          type="date"
+          value={form.fecha_inicial}
+          onChange={setField('fecha_inicial')}
+          min={FECHA_MINIMA_DOCUMENTAL}
+          max={hoy}
+          error={errorFechaInicial ?? undefined}
+        />
 
-        <Input label="Fecha Final" type="date" value={form.fecha_final} onChange={setField('fecha_final')} />
+        <Input
+          label="Fecha Final"
+          type="date"
+          value={form.fecha_final}
+          onChange={setField('fecha_final')}
+          min={form.fecha_inicial || FECHA_MINIMA_DOCUMENTAL}
+          max={hoy}
+          error={errorFechaFinal ?? undefined}
+        />
         <UpdInput
           label="UPD"
           value={updANumero(form.upd)}
@@ -631,7 +721,7 @@ function FuidFormModal({ open, cajaId, editing, defaultNOrden, defaultTomo, caja
           hint={nextUpdQuery.data?.message}
           defaultUnlocked
         />
-        <Input label="Tomo" value={form.tomo} onChange={setField('tomo')} inputMode="numeric" />
+        <Input label="Tomo" value={form.tomo} onChange={setField('tomo')} inputMode="numeric" maxLength={limiteDe('tomo')} />
         <Select
           label="Otro"
           options={opcionesCon(OPCIONES_OTRO, form.otro)}
@@ -647,7 +737,13 @@ function FuidFormModal({ open, cajaId, editing, defaultNOrden, defaultTomo, caja
           value={form.caja_interna}
           onChange={updateField('caja_interna')}
         />
-        <Input label="Folios" value={form.folios} onChange={setField('folios')} inputMode="numeric" />
+        <Input
+          label="Folios"
+          value={form.folios}
+          onChange={setField('folios')}
+          inputMode="numeric"
+          error={onlyDigits(form.folios, 'Los folios') ?? undefined}
+        />
         <Select
           label="Soporte"
           options={opcionesCon(OPCIONES_SOPORTE, form.soporte)}
@@ -775,7 +871,9 @@ export default function DatosPage() {
   const canMarcarOk = user?.rol === 'LIDER' || user?.rol === 'ADMIN' || user?.rol === 'TECNICA' || user?.rol === 'CALIDAD';
   const canCrear = user?.rol !== 'CALIDAD';
   const canEliminar = user?.rol !== 'CALIDAD';
-  const fromPath = (location.state as { from?: string } | null)?.from ?? `/clientes`;
+  // El retorno se resuelve más abajo, cuando ya se conoce la caja: necesita
+  // saber de qué acta cuelga para poder subir un nivel sin depender del
+  // historial de navegación.
 
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<FuidDato | null>(null);
@@ -790,6 +888,11 @@ export default function DatosPage() {
   });
 
   const cajaCode = cajaQuery.data?.caja_modulo ?? cajaId ?? '';
+
+  // Botón de volver: la vista de la que se vino si consta, y si no el acta de
+  // la caja. Nunca salta directamente a la lista de clientes salvo que la caja
+  // no tenga acta.
+  const retorno = retornoDeCaja(location.state, cajaQuery.data);
 
   const fuidQuery = useQuery({
     queryKey: ['fuiddatosreal', 'list', cajaCode],
@@ -974,7 +1077,7 @@ export default function DatosPage() {
         <UpdInicioDialog
           open
           cajaCode={cajaCode}
-          volverA={fromPath}
+          volverA={retorno.to}
           onListo={() => void updInicioQuery.refetch()}
           mensaje={updInicioQuery.data?.message}
         />
@@ -983,8 +1086,8 @@ export default function DatosPage() {
       <PageHeader
         title={`Digitación FUID — Caja ${cajaCode}`}
         description="Clientes / Actas / Cajas / Digitación"
-        backTo={fromPath}
-        backLabel="Volver a Cajas"
+        backTo={retorno.to}
+        backLabel={retorno.label}
         actions={
           <>
             {canCrear && (

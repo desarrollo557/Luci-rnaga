@@ -113,6 +113,12 @@ export interface FuidDato {
   sede_calidad: string | null;
   asunto_2: string | null;
   asunto_3: string | null;
+  /**
+   * Versión del registro para el bloqueo optimista. Se lee al abrir el
+   * formulario y se devuelve al guardar; si entretanto otra persona guardó, el
+   * backend responde 409 en vez de pisar su cambio.
+   */
+  version: number;
   created_at?: string | null;
   updated_at?: string | null;
 }
