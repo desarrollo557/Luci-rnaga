@@ -87,7 +87,34 @@ function ordenDeFechas(
   }
 }
 
-export const createFuidSchema = fuidBaseSchema.superRefine(ordenDeFechas);
+/**
+ * El número de documento "hasta" no puede quedar por debajo del "desde".
+ *
+ * Solo se compara cuando ambos son enteros. Estos campos guardan también
+ * radicados y referencias con letras, y `N/A` cuando el digitador marca el campo
+ * como no diligenciado: en esos casos no hay un orden que comprobar y la regla
+ * no aplica, igual que hace `onlyDigits` en el frontend.
+ */
+function ordenDeNumerosDeDocumento(
+  datos: { numero_doc?: string | null; numero_doc_hasta?: string | null },
+  ctx: z.RefinementCtx,
+): void {
+  const desde = datos.numero_doc?.trim();
+  const hasta = datos.numero_doc_hasta?.trim();
+  if (!desde || !hasta) return;
+  if (!/^\d+$/.test(desde) || !/^\d+$/.test(hasta)) return;
+  if (BigInt(hasta) < BigInt(desde)) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['numero_doc_hasta'],
+      message: 'El número de documento final no puede ser menor que el inicial',
+    });
+  }
+}
+
+export const createFuidSchema = fuidBaseSchema
+  .superRefine(ordenDeFechas)
+  .superRefine(ordenDeNumerosDeDocumento);
 
 export const updateFuidSchema = fuidBaseSchema
   .partial()
@@ -98,7 +125,8 @@ export const updateFuidSchema = fuidBaseSchema
       .optional(),
     upd: updField.optional(),
   })
-  .superRefine(ordenDeFechas);
+  .superRefine(ordenDeFechas)
+  .superRefine(ordenDeNumerosDeDocumento);
 
 /**
  * Comprueba el orden de las fechas de una edición parcial contra lo ya guardado.
