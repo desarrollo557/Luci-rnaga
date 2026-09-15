@@ -520,7 +520,7 @@ export interface ClienteConDetalle {
 export const reportesApi = {
   fuidConEstadoCaja: () => api.get<FuidConEstado[]>('/fuid-con-estado-caja'),
   /** Quién digitó, en qué caja y qué día, dentro de cada cliente. */
-  produccionDetallada: (filtros: { desde?: string; hasta?: string } = {}) =>
+  produccionDetallada: (filtros: { desde?: string; hasta?: string; persona?: string } = {}) =>
     api.get<ClienteConDetalle[]>('/estadisticas/detalle', { params: filtros }),
   resumenCajasAgrupado: () => api.get<Array<{
     caja_inicial: string;

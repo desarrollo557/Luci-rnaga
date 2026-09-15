@@ -6,13 +6,25 @@ import {
   CheckCircle2,
   FileStack,
   FileText,
+  FilterX,
   Layers,
   MapPin,
   Search,
   TrendingUp,
   Users,
 } from 'lucide-react';
-import { Badge, Card, DatePicker, Input, LoadingState, PageHeader, Table, type Column } from '@/components/ui';
+import {
+  Badge,
+  Button,
+  Card,
+  DatePicker,
+  Input,
+  LoadingState,
+  PageHeader,
+  Select,
+  Table,
+  type Column,
+} from '@/components/ui';
 import {
   BarrasHorizontales,
   ChartCard,
@@ -391,7 +403,7 @@ export default function ProduccionPage() {
         </div>
       </div>
 
-      <DetallePorCliente />
+      <DetallePorCliente personas={(stats?.digitadores ?? []).map((d) => d.nombre)} />
     </div>
   );
 }
@@ -414,9 +426,17 @@ function fecha(valor: string | null): string {
 }
 
 /** Lo que se ha hecho en un cliente: sus cajas, su avance y quién trabaja en él. */
-function PanelDelCliente({ cliente }: { cliente: ClienteConDetalle }) {
+function PanelDelCliente({ cliente, estadoCaja }: { cliente: ClienteConDetalle; estadoCaja: string }) {
   const avance = cliente.registros > 0 ? Math.round((cliente.aprobados / cliente.registros) * 100) : 0;
   const cajasHechas = cliente.cajas > 0 ? Math.round((cliente.cajas_finalizadas / cliente.cajas) * 100) : 0;
+
+  // "Sin empezar" no es un estado de la caja, sino no haber digitado nada en
+  // ella: se resuelve por los registros, no por la columna de estado.
+  const cajas = cliente.detalle_cajas.filter((caja) => {
+    if (!estadoCaja) return true;
+    if (estadoCaja === 'SIN_REGISTROS') return caja.registros === 0;
+    return (caja.estado ?? '').toUpperCase() === estadoCaja;
+  });
 
   return (
     <div className="space-y-4">
@@ -441,7 +461,7 @@ function PanelDelCliente({ cliente }: { cliente: ClienteConDetalle }) {
       </div>
 
       <div>
-        <h3 className="mb-2 text-sm font-semibold text-silver-700">Cajas ({cliente.detalle_cajas.length})</h3>
+        <h3 className="mb-2 text-sm font-semibold text-silver-700">Cajas ({cajas.length})</h3>
         <div className="overflow-x-auto">
           <table className="w-full min-w-[640px] text-sm">
             <thead>
@@ -456,7 +476,7 @@ function PanelDelCliente({ cliente }: { cliente: ClienteConDetalle }) {
               </tr>
             </thead>
             <tbody>
-              {cliente.detalle_cajas.map((caja) => (
+              {cajas.map((caja) => (
                 <tr key={caja.caja} className="border-b border-silver-100 last:border-b-0">
                   <td className="py-2 pr-3 font-medium text-silver-800">{caja.caja}</td>
                   <td className="py-2 pr-3 text-silver-600">{caja.acta ?? '—'}</td>
@@ -510,18 +530,36 @@ function PanelDelCliente({ cliente }: { cliente: ClienteConDetalle }) {
  * suyo: cuántas actas y cajas tiene, cuántas están terminadas, cuánto se ha
  * digitado y revisado, y quién está trabajando en cada caja.
  */
-function DetallePorCliente() {
+function DetallePorCliente({ personas }: { personas: string[] }) {
   const [desde, setDesde] = useState('');
   const [hasta, setHasta] = useState('');
+  const [persona, setPersona] = useState('');
+  const [estadoCaja, setEstadoCaja] = useState('');
+  const [busqueda, setBusqueda] = useState('');
   const [seleccionado, setSeleccionado] = useState<string>('');
 
+  // Persona y fechas se envían al servidor para que las cifras sean las de ese
+  // recorte; el buscador y el estado de la caja solo afinan lo que ya llegó.
   const { data, isLoading } = useQuery({
-    queryKey: ['estadisticas', 'detalle', desde, hasta],
+    queryKey: ['estadisticas', 'detalle', desde, hasta, persona],
     queryFn: async () =>
-      (await reportesApi.produccionDetallada({ desde: desde || undefined, hasta: hasta || undefined })).data,
+      (
+        await reportesApi.produccionDetallada({
+          desde: desde || undefined,
+          hasta: hasta || undefined,
+          persona: persona || undefined,
+        })
+      ).data,
   });
 
-  const clientes = useMemo(() => data ?? [], [data]);
+  const clientes = useMemo(() => {
+    const lista = data ?? [];
+    const texto = busqueda.trim().toLowerCase();
+    if (!texto) return lista;
+    return lista.filter(
+      (c) => c.cliente.toLowerCase().includes(texto) || c.codigo.toLowerCase().includes(texto),
+    );
+  }, [data, busqueda]);
   // Al entrar se muestra el cliente con más producción, para no dejar el panel
   // vacío esperando un clic.
   const actual = clientes.find((c) => c.codigo === seleccionado) ?? clientes[0];
@@ -535,15 +573,52 @@ function DetallePorCliente() {
             Elija un cliente para ver sus cajas, su avance y quién trabaja en él
           </p>
         </div>
-        {/* Ancho acotado: con el del formulario, los dos selectores se iban al
-            otro extremo de la tarjeta y dejaban el título descolgado. */}
+        {/* Ancho acotado: con el del formulario, los selectores se iban al otro
+            extremo de la tarjeta y dejaban el título descolgado. */}
         <div className="flex flex-wrap items-end gap-3">
+          <div className="w-52">
+            <Select
+              label="Persona"
+              placeholder="Todas"
+              options={personas.map((p) => ({ value: p, label: p }))}
+              value={persona}
+              onChange={setPersona}
+            />
+          </div>
+          <div className="w-44">
+            <Select
+              label="Estado de la caja"
+              placeholder="Todos"
+              options={[
+                { value: 'FINALIZADO', label: 'Finalizadas' },
+                { value: 'EN PROCESO', label: 'En proceso' },
+                { value: 'SIN_REGISTROS', label: 'Sin empezar' },
+              ]}
+              value={estadoCaja}
+              onChange={setEstadoCaja}
+            />
+          </div>
           <div className="w-40">
             <DatePicker label="Desde" value={desde} onChange={setDesde} />
           </div>
           <div className="w-40">
             <DatePicker label="Hasta" value={hasta} onChange={setHasta} />
           </div>
+          {(persona || estadoCaja || desde || hasta || busqueda) && (
+            <Button
+              variant="ghost"
+              onClick={() => {
+                setPersona('');
+                setEstadoCaja('');
+                setDesde('');
+                setHasta('');
+                setBusqueda('');
+              }}
+            >
+              <FilterX className="mr-1.5 size-4" />
+              Limpiar
+            </Button>
+          )}
         </div>
       </div>
 
@@ -555,7 +630,17 @@ function DetallePorCliente() {
         </p>
       ) : (
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-[260px_1fr]">
-          <ul className="max-h-[460px] space-y-1 overflow-y-auto pr-1">
+          <div className="space-y-2">
+            <div className="relative">
+              <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-silver-400" />
+              <Input
+                className="pl-9"
+                placeholder="Buscar cliente…"
+                value={busqueda}
+                onChange={(e) => setBusqueda(e.target.value)}
+              />
+            </div>
+            <ul className="max-h-[420px] space-y-1 overflow-y-auto pr-1">
             {clientes.map((c) => {
               const activo = actual?.codigo === c.codigo;
               return (
@@ -580,9 +665,17 @@ function DetallePorCliente() {
                 </li>
               );
             })}
-          </ul>
+            </ul>
+            {clientes.length === 0 && (
+              <p className="px-1 text-sm text-silver-500">Ningún cliente coincide con la búsqueda.</p>
+            )}
+          </div>
 
-          {actual ? <PanelDelCliente cliente={actual} /> : <p className="text-sm text-silver-500">Seleccione un cliente.</p>}
+          {actual ? (
+            <PanelDelCliente cliente={actual} estadoCaja={estadoCaja} />
+          ) : (
+            <p className="text-sm text-silver-500">Seleccione un cliente.</p>
+          )}
         </div>
       )}
     </Card>
