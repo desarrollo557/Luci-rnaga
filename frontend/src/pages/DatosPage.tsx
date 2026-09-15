@@ -213,15 +213,28 @@ function sinNA(valor?: string | null): string {
   return limpio.toUpperCase() === 'N/A' ? '' : limpio;
 }
 
+/** Asuntos que se arrastran dentro de una misma caja. */
+interface AsuntosDeLaCaja {
+  asunto_2: string;
+  asunto_3: string;
+}
+
 function emptyFormFor(
   cajaId: string,
   user: SessionUser | null,
   defaultNOrden: number,
   caja?: ModuloCaja | null,
+  asuntos?: AsuntosDeLaCaja,
 ): FuidFormValues {
   return {
     ...EMPTY_FORM,
     caja: cajaId,
+    // Los asuntos del último registro de la caja. Una caja suele contener
+    // documentos del mismo asunto, así que se traen ya escritos y quien
+    // necesite otro los cambia; volver a teclearlos en cada registro era el
+    // trabajo repetido más caro de la digitación.
+    asunto_2: asuntos?.asunto_2 ?? '',
+    asunto_3: asuntos?.asunto_3 ?? '',
     n_orden: String(defaultNOrden),
     // El tomo queda en blanco a propósito. Antes se sugería el siguiente de la
     // caja y se iba sumando en cada registro, así que el campo llegaba con un
@@ -385,6 +398,8 @@ interface FuidFormModalProps {
   cajaId: string;
   editing: FuidDato | null;
   defaultNOrden: number;
+  /** Asuntos del último registro de la caja, para no reescribirlos. */
+  asuntosDeLaCaja: AsuntosDeLaCaja;
   caja?: ModuloCaja | null;
   onClose: () => void;
 }
@@ -397,12 +412,12 @@ interface FuidFormModalProps {
  * derivados (caja, fecha del dato, N° orden, elaborado por, sede, acta y fecha
  * de transferencia) viajan sin mostrarse.
  */
-function FuidFormModal({ open, cajaId, editing, defaultNOrden, caja, onClose }: FuidFormModalProps) {
+function FuidFormModal({ open, cajaId, editing, defaultNOrden, asuntosDeLaCaja, caja, onClose }: FuidFormModalProps) {
   const queryClient = useQueryClient();
   const user = useAuthStore((state) => state.user);
 
   const [form, setForm] = useState<FuidFormValues>(() =>
-    editing ? formFromRecord(editing) : emptyFormFor(cajaId, user, defaultNOrden, caja),
+    editing ? formFromRecord(editing) : emptyFormFor(cajaId, user, defaultNOrden, caja, asuntosDeLaCaja),
   );
   /** Registros guardados sin cerrar el formulario; remonta el formulario para volver a enfocar Codigo. */
   const [racha, setRacha] = useState(0);
@@ -462,10 +477,11 @@ function FuidFormModal({ open, cajaId, editing, defaultNOrden, caja, onClose }: 
       const guardado = form.upd.trim().toUpperCase();
       const siguienteUpd = siguienteUpdLocal(guardado);
       setForm({
-        ...emptyFormFor(cajaId, user, defaultNOrden + racha + 1, caja),
+        ...emptyFormFor(cajaId, user, defaultNOrden + racha + 1, caja, {
+          asunto_2: form.asunto_2,
+          asunto_3: form.asunto_3,
+        }),
         upd: siguienteUpd,
-        asunto_2: form.asunto_2,
-        asunto_3: form.asunto_3,
       });
       setRacha((r) => r + 1);
       setFaltantesALaVista(false);
@@ -936,6 +952,22 @@ export default function DatosPage() {
     return Math.max(...registros.map((registro) => registro.n_orden ?? 0)) + 1;
   }, [registros]);
 
+  /*
+   * Asuntos con los que se abre un registro nuevo: los del último que se digitó
+   * en la caja. Se toma el de mayor número de orden, no el último que devuelva
+   * la consulta, porque el orden de las filas no está garantizado.
+   */
+  const asuntosDeLaCaja = useMemo<AsuntosDeLaCaja>(() => {
+    const ultimo = registros.reduce<FuidDato | null>(
+      (mayor, registro) => ((registro.n_orden ?? 0) >= (mayor?.n_orden ?? -1) ? registro : mayor),
+      null,
+    );
+    return {
+      asunto_2: sinNA(ultimo?.asunto_2),
+      asunto_3: sinNA(ultimo?.asunto_3),
+    };
+  }, [registros]);
+
 
   const deleteMutation = useMutation({
     mutationFn: (id: number) => fuidApi.remove(id),
@@ -1142,6 +1174,7 @@ export default function DatosPage() {
           cajaId={cajaCode}
           editing={editing}
           defaultNOrden={defaultNOrden}
+          asuntosDeLaCaja={asuntosDeLaCaja}
           caja={cajaQuery.data}
           onClose={() => setModalOpen(false)}
         />
