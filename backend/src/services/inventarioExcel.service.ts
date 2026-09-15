@@ -1,5 +1,5 @@
 import ExcelJS from 'exceljs';
-import { FUID_COLUMNS } from './zohoSheet.service.js';
+import { construirInventarioFuid } from './plantillaFuid.service.js';
 
 const LABELS: Record<string, string> = {
   ITEMS: 'ID',
@@ -79,54 +79,16 @@ export function inventarioFilename(cliente: unknown, codigoCliente: unknown, fec
   return `Inventario_${clienteName}_${codigo}_${fecha}.xlsx`;
 }
 
-const FUID_COLUMN_WIDTHS: Record<string, number> = {
-  'ENTIDAD REMITENTE': 22,
-  'ENTIDAD PRODUCTORA': 22,
-  'ASUNTOS': 22,
-};
-
-/** Builds an .xlsx buffer with the 27 official FUID headers and one row per record. */
-export async function buildInventarioFuidExcel<T extends object>(
-  filas: T[],
-  nombreHoja = 'INVENTARIO',
-): Promise<Buffer> {
-  const wb = new ExcelJS.Workbook();
-  const ws = wb.addWorksheet(nombreHoja);
-
-  const headers = FUID_COLUMNS.map(([header]) => header);
-  ws.columns = headers.map((header) => ({
-    header,
-    key: header,
-    width: FUID_COLUMN_WIDTHS[header] ?? 14,
-  }));
-
-  for (const fila of filas) {
-    const row = FUID_COLUMNS.map(([, campo]) => (fila as Record<string, unknown>)[campo] ?? '');
-    ws.addRow(row);
-  }
-
-  const headerRow = ws.getRow(1);
-  headerRow.font = { bold: true, color: { argb: 'FFFFFFFF' } };
-  headerRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFDC2626' } };
-  headerRow.alignment = { vertical: 'middle', horizontal: 'center' };
-  headerRow.height = 22;
-  headerRow.eachCell((cell) => {
-    cell.border = { bottom: { style: 'thin', color: { argb: 'FFB91C1C' } } };
-  });
-
-  for (let r = 2; r <= filas.length + 1; r++) {
-    const dataRow = ws.getRow(r);
-    dataRow.alignment = { vertical: 'middle' };
-    dataRow.eachCell((cell) => {
-      cell.border = { bottom: { style: 'hair', color: { argb: 'FFE5E7EB' } } };
-    });
-  }
-
-  ws.autoFilter = { from: { row: 1, column: 1 }, to: { row: 1, column: FUID_COLUMNS.length } };
-  ws.views = [{ state: 'frozen', ySplit: 1 }];
-
-  const buf = await wb.xlsx.writeBuffer();
-  return Buffer.from(buf);
+/**
+ * Inventario de un cliente en el formato oficial F-PSD-001.
+ *
+ * Antes se armaba una hoja desde cero, con una fila de encabezados en rojo y
+ * nada más: servía para revisar, pero no era el formato que se entrega. Ahora
+ * sale del mismo archivo que el resto del inventario, con membrete, código de
+ * formato y control de cambios, y los registros a partir de la fila 8.
+ */
+export async function buildInventarioFuidExcel<T extends object>(filas: T[]): Promise<Buffer> {
+  return construirInventarioFuid(filas);
 }
 
 /** Safe filename: Inventario_FUID_<cliente>_<codigo>_<YYYY-MM-DD>.xlsx (no invalid chars, spaces -> _). */
