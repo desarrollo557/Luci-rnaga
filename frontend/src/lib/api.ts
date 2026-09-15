@@ -471,8 +471,39 @@ export interface HistorialFiltros {
   hasta?: string;
 }
 
+/** Un día de trabajo de una persona dentro de un cliente. */
+export interface DiaDeDigitador {
+  dia: string;
+  registros: number;
+  cajas: number;
+}
+
+export interface DigitadorDeCliente {
+  nombre: string;
+  cc: string | null;
+  rol: string | null;
+  sede: string | null;
+  registros: number;
+  cajas: string[];
+  primer_dia: string;
+  ultimo_dia: string;
+  por_dia: DiaDeDigitador[];
+}
+
+/** Producción de un cliente, abierta por persona y por día. */
+export interface ClienteConDetalle {
+  codigo: string;
+  cliente: string;
+  registros: number;
+  cajas: number;
+  digitadores: DigitadorDeCliente[];
+}
+
 export const reportesApi = {
   fuidConEstadoCaja: () => api.get<FuidConEstado[]>('/fuid-con-estado-caja'),
+  /** Quién digitó, en qué caja y qué día, dentro de cada cliente. */
+  produccionDetallada: (filtros: { desde?: string; hasta?: string } = {}) =>
+    api.get<ClienteConDetalle[]>('/estadisticas/detalle', { params: filtros }),
   resumenCajasAgrupado: () => api.get<Array<{
     caja_inicial: string;
     caja_fin: string;
