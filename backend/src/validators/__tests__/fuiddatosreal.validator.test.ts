@@ -149,31 +149,19 @@ describe('punto 2 — fecha_final no puede ser anterior a fecha_inicial', () => 
   });
 });
 
-describe('punto 4 — numero_doc_hasta no puede ser menor que numero_doc', () => {
-  it('acepta un rango en orden', () => {
+describe('los dos números de documento son independientes', () => {
+  it('acepta cualquier combinación, en el orden que sea', () => {
+    // La regla que exigía que el segundo no fuera menor que el primero se
+    // retiró: son dos campos distintos, no los extremos de un rango, y cada uno
+    // puede llevar un radicado o una referencia propia.
     expect(erroresDe({ numero_doc: '80432620', numero_doc_hasta: '80432630' })).toBeNull();
-  });
-
-  it('acepta que ambos sean iguales', () => {
+    expect(erroresDe({ numero_doc: '80432620', numero_doc_hasta: '80432610' })).toBeNull();
     expect(erroresDe({ numero_doc: '80432620', numero_doc_hasta: '80432620' })).toBeNull();
   });
 
-  it('rechaza un rango invertido', () => {
-    expect(erroresDe({ numero_doc: '80432620', numero_doc_hasta: '80432610' })).toEqual([
-      'El número de documento final no puede ser menor que el inicial',
-    ]);
-  });
-
-  it('no compara cuando alguno es N/A o texto libre', () => {
+  it('acepta texto libre y N/A en cualquiera de los dos', () => {
     expect(erroresDe({ numero_doc: 'N/A', numero_doc_hasta: '80432610' })).toBeNull();
     expect(erroresDe({ numero_doc: 'RAD-2024-B', numero_doc_hasta: 'RAD-2024-A' })).toBeNull();
-  });
-
-  it('compara con precisión por encima del entero seguro de JavaScript', () => {
-    // Con Number, estos dos valores serían iguales y el rango invertido pasaría.
-    expect(
-      erroresDe({ numero_doc: '9007199254740993', numero_doc_hasta: '9007199254740992' }),
-    ).toEqual(['El número de documento final no puede ser menor que el inicial']);
   });
 });
 

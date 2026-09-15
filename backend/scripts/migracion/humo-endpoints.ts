@@ -101,6 +101,7 @@ async function main(): Promise<void> {
     [`/api/fuiddatosreal/check-caja-duplicates?caja=${codigoCaja}`, codigoCaja],
     [`/api/fuiddatosreal/${codigoCaja}/suggestions/serie?q=A`, codigoCaja],
     ['/api/estadisticas', null],
+    ['/api/estadisticas/detalle', null],
     ['/api/historial', null],
     ['/api/historial?q=UPD', null],
     [`/api/historial/registro/${idFuid}`, idFuid],
