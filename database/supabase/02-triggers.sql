@@ -37,7 +37,13 @@ CREATE TRIGGER fuid_asunto_automatico
 -- 2. Cada edición y cada borrado dejan copia en el historial
 -- ─────────────────────────────────────────────────────────────────────────────
 -- Se guarda el registro tal como estaba ANTES del cambio (OLD), que es lo que
--- permite reconstruir qué decía y quién lo modificó. `tipo_cambio` distingue
+-- permite reconstruir qué decía y quién lo modificó.
+--
+-- Se copian TODAS las columnas que el historial puede guardar. El trigger que
+-- venía de MySQL se dejaba cinco fuera —sede, tiempo y los tres campos de la
+-- revisión de calidad—, y al quedar vacías el historial las mostraba como si
+-- hubieran cambiado en cada edición: "Sede: — → BARRANQUILLA" aparecía en todos
+-- los movimientos aunque nadie tocara ese campo. `tipo_cambio` distingue
 -- una edición de un borrado; ambos casos comparten función porque lo único que
 -- cambia entre ellos es esa etiqueta.
 --
@@ -53,7 +59,8 @@ BEGIN
     unidad_administrativa, oficina_productora, objeto, serie, subserie, asunto, radicado,
     numero_doc, numero_doc_hasta, fecha_inicial, fecha_final, caja, upd, tomo, otro,
     caja_interna, folios, soporte, frecuencia, elaborado_por, nro_acta_transferible,
-    fecha_transferencia, notas, tipo_cambio, fecha_cambio
+    fecha_transferencia, notas, sede, tiempo, historial_cambios, cambio_calidad, sede_calidad,
+    tipo_cambio, fecha_cambio
   ) VALUES (
     OLD.id, OLD.fecha_del_dato, OLD.n_orden, OLD.codigo, OLD.entidad_remitente,
     OLD.entidad_productora, OLD.unidad_administrativa, OLD.oficina_productora, OLD.objeto,
@@ -61,6 +68,7 @@ BEGIN
     OLD.fecha_inicial, OLD.fecha_final, OLD.caja, OLD.upd, OLD.tomo, OLD.otro,
     OLD.caja_interna, OLD.folios, OLD.soporte, OLD.frecuencia, OLD.elaborado_por,
     OLD.nro_acta_transferible, OLD.fecha_transferencia, OLD.notas,
+    OLD.sede, OLD.tiempo, OLD.historial_y_cambios, OLD.cambio_calidad, OLD.sede_calidad,
     CASE TG_OP WHEN 'DELETE' THEN 'ELIMINADO' ELSE 'ACTUALIZADO' END,
     now()
   );
