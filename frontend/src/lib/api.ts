@@ -490,13 +490,31 @@ export interface DigitadorDeCliente {
   por_dia: DiaDeDigitador[];
 }
 
-/** Producción de un cliente, abierta por persona y por día. */
+/** Una caja del cliente, con lo que se ha digitado en ella. */
+export interface CajaDeCliente {
+  caja: string;
+  estado: string | null;
+  acta: string | null;
+  registros: number;
+  aprobados: number;
+  ultimo_dia: string | null;
+  personas: string[];
+}
+
+/** Producción de un cliente, abierta por caja, por persona y por día. */
 export interface ClienteConDetalle {
   codigo: string;
   cliente: string;
-  registros: number;
+  actas: number;
   cajas: number;
+  cajas_finalizadas: number;
+  cajas_en_proceso: number;
+  cajas_sin_registros: number;
+  registros: number;
+  aprobados: number;
+  pendientes: number;
   digitadores: DigitadorDeCliente[];
+  detalle_cajas: CajaDeCliente[];
 }
 
 export const reportesApi = {
