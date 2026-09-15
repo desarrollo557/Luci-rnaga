@@ -8,11 +8,13 @@ import {
   FileText,
   Layers,
   MapPin,
+  ChevronDown,
+  ChevronRight,
   Search,
   TrendingUp,
   Users,
 } from 'lucide-react';
-import { Badge, Input, LoadingState, PageHeader, Table, type Column } from '@/components/ui';
+import { Badge, Card, DatePicker, Input, LoadingState, PageHeader, Table, type Column } from '@/components/ui';
 import {
   BarrasHorizontales,
   ChartCard,
@@ -27,7 +29,12 @@ import {
   conSeparador,
   etiquetaMes,
 } from '@/components/charts';
-import { reportesApi, type Digitador } from '@/lib/api';
+import {
+  reportesApi,
+  type ClienteConDetalle,
+  type Digitador,
+  type DigitadorDeCliente,
+} from '@/lib/api';
 
 /** El estado de la caja es una escala reservada, no una serie más. */
 const COLOR_ESTADO_CAJA: Record<string, string> = {
@@ -386,6 +393,146 @@ export default function ProduccionPage() {
           </ChartCard>
         </div>
       </div>
+
+      <DetallePorCliente />
     </div>
+  );
+}
+
+/** Un día de trabajo de una persona. */
+function FilaDia({ dia, registros, cajas }: { dia: string; registros: number; cajas: number }) {
+  const [a, m, d] = dia.split('-');
+  return (
+    <div className="flex items-center justify-between py-1 text-sm">
+      <span className="text-silver-500">{`${d}/${m}/${a}`}</span>
+      <span className="text-silver-700">
+        <span className="font-medium">{registros}</span> registro(s) · {cajas} caja(s)
+      </span>
+    </div>
+  );
+}
+
+/** Una persona dentro de un cliente, con sus cajas y sus días. */
+function FilaDigitador({ digitador }: { digitador: DigitadorDeCliente }) {
+  const [abierto, setAbierto] = useState(false);
+  return (
+    <li className="border-t border-silver-100 py-2 first:border-t-0">
+      <button
+        type="button"
+        onClick={() => setAbierto((v) => !v)}
+        className="flex w-full items-center gap-2 text-left"
+      >
+        {abierto ? (
+          <ChevronDown className="size-4 shrink-0 text-silver-400" />
+        ) : (
+          <ChevronRight className="size-4 shrink-0 text-silver-400" />
+        )}
+        <span className="font-medium text-silver-800">{digitador.nombre}</span>
+        {digitador.rol && <Badge color="gray">{digitador.rol}</Badge>}
+        <span className="ml-auto text-sm text-silver-600">
+          <span className="font-semibold text-silver-800">{digitador.registros}</span> registro(s) ·{' '}
+          {digitador.cajas.length} caja(s)
+        </span>
+      </button>
+
+      {abierto && (
+        <div className="mt-2 space-y-3 pl-6">
+          <div className="flex flex-wrap gap-1.5">
+            {digitador.cajas.map((caja) => (
+              <span key={caja} className="rounded-md bg-silver-100 px-2 py-0.5 text-xs font-medium text-silver-700">
+                {caja}
+              </span>
+            ))}
+          </div>
+          <div className="divide-y divide-silver-100 rounded-lg bg-silver-50 px-3 py-1">
+            {digitador.por_dia.map((d) => (
+              <FilaDia key={d.dia} dia={d.dia} registros={d.registros} cajas={d.cajas} />
+            ))}
+          </div>
+        </div>
+      )}
+    </li>
+  );
+}
+
+/** Un cliente, con las personas que están digitando en él. */
+function FilaCliente({ cliente }: { cliente: ClienteConDetalle }) {
+  const [abierto, setAbierto] = useState(false);
+  return (
+    <li className="border-b border-silver-100 py-3 last:border-b-0">
+      <button type="button" onClick={() => setAbierto((v) => !v)} className="flex w-full items-center gap-2 text-left">
+        {abierto ? (
+          <ChevronDown className="size-4 shrink-0 text-silver-400" />
+        ) : (
+          <ChevronRight className="size-4 shrink-0 text-silver-400" />
+        )}
+        <span className="rounded bg-silver-100 px-1.5 py-0.5 text-xs font-semibold text-silver-700">
+          {cliente.codigo}
+        </span>
+        <span className="font-semibold text-silver-900">{cliente.cliente}</span>
+        <span className="ml-auto text-sm text-silver-600">
+          <span className="font-semibold text-silver-900">{cliente.registros}</span> registro(s) ·{' '}
+          {cliente.cajas} caja(s) · {cliente.digitadores.length} persona(s)
+        </span>
+      </button>
+
+      {abierto && (
+        <ul className="mt-2 pl-6">
+          {cliente.digitadores.map((d) => (
+            <FilaDigitador key={d.nombre} digitador={d} />
+          ))}
+        </ul>
+      )}
+    </li>
+  );
+}
+
+/**
+ * Producción abierta por cliente, persona y día.
+ *
+ * El resumen de arriba dice cuánto se produjo; esto deja ver lo que pasa dentro
+ * de cada cliente, que es donde está el detalle que hace falta para seguir el
+ * trabajo: dos personas digitando a la vez en cajas distintas, o una que lleva
+ * días sin tocar la suya.
+ */
+function DetallePorCliente() {
+  const [desde, setDesde] = useState('');
+  const [hasta, setHasta] = useState('');
+
+  const { data, isLoading } = useQuery({
+    queryKey: ['estadisticas', 'detalle', desde, hasta],
+    queryFn: async () =>
+      (await reportesApi.produccionDetallada({ desde: desde || undefined, hasta: hasta || undefined })).data,
+  });
+
+  const clientes = data ?? [];
+
+  return (
+    <Card>
+      <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h2 className="text-lg font-semibold text-silver-900">Detalle por cliente</h2>
+          <p className="text-sm text-silver-500">Quién digitó, en qué caja y qué día</p>
+        </div>
+        <div className="flex flex-wrap items-end gap-3">
+          <DatePicker label="Desde" value={desde} onChange={setDesde} />
+          <DatePicker label="Hasta" value={hasta} onChange={setHasta} />
+        </div>
+      </div>
+
+      {isLoading ? (
+        <LoadingState />
+      ) : clientes.length === 0 ? (
+        <p className="py-6 text-center text-sm text-silver-500">
+          No hay producción registrada en ese rango de fechas.
+        </p>
+      ) : (
+        <ul>
+          {clientes.map((c) => (
+            <FilaCliente key={c.codigo} cliente={c} />
+          ))}
+        </ul>
+      )}
+    </Card>
   );
 }
