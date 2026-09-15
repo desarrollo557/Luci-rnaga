@@ -217,14 +217,15 @@ function emptyFormFor(
   cajaId: string,
   user: SessionUser | null,
   defaultNOrden: number,
-  defaultTomo: string,
   caja?: ModuloCaja | null,
 ): FuidFormValues {
   return {
     ...EMPTY_FORM,
     caja: cajaId,
     n_orden: String(defaultNOrden),
-    tomo: defaultTomo,
+    // El tomo queda en blanco a propósito. Antes se sugería el siguiente de la
+    // caja y se iba sumando en cada registro, así que el campo llegaba con un
+    // número que casi nunca era el del documento y había que borrarlo a mano.
     caja_interna: leerCajaInternaRecordada(),
     // La fecha del dato es el día en que se digita (hora local del navegador).
     fecha_del_dato: fechaHoyISO(),
@@ -384,7 +385,6 @@ interface FuidFormModalProps {
   cajaId: string;
   editing: FuidDato | null;
   defaultNOrden: number;
-  defaultTomo: string;
   caja?: ModuloCaja | null;
   onClose: () => void;
 }
@@ -397,12 +397,12 @@ interface FuidFormModalProps {
  * derivados (caja, fecha del dato, N° orden, elaborado por, sede, acta y fecha
  * de transferencia) viajan sin mostrarse.
  */
-function FuidFormModal({ open, cajaId, editing, defaultNOrden, defaultTomo, caja, onClose }: FuidFormModalProps) {
+function FuidFormModal({ open, cajaId, editing, defaultNOrden, caja, onClose }: FuidFormModalProps) {
   const queryClient = useQueryClient();
   const user = useAuthStore((state) => state.user);
 
   const [form, setForm] = useState<FuidFormValues>(() =>
-    editing ? formFromRecord(editing) : emptyFormFor(cajaId, user, defaultNOrden, defaultTomo, caja),
+    editing ? formFromRecord(editing) : emptyFormFor(cajaId, user, defaultNOrden, caja),
   );
   /** Registros guardados sin cerrar el formulario; remonta el formulario para volver a enfocar Codigo. */
   const [racha, setRacha] = useState(0);
@@ -453,15 +453,19 @@ function FuidFormModal({ open, cajaId, editing, defaultNOrden, defaultTomo, caja
       void invalidateDomain(queryClient, 'fuiddatosreal');
 
       // Producción: no se cierra el formulario. Queda listo el siguiente registro
-      // con el UPD consecutivo, el N° de orden y el tomo siguientes, y los datos
-      // de la caja precargados; el cursor vuelve a Codigo.
+      // con el UPD consecutivo, el N° de orden y los datos de la caja
+      // precargados; el cursor vuelve a Codigo.
+      //
+      // Los dos asuntos se arrastran del registro que se acaba de guardar: lo
+      // habitual es encadenar varios documentos del mismo asunto, y volver a
+      // escribirlo cada vez cuesta más que corregirlo cuando cambia.
       const guardado = form.upd.trim().toUpperCase();
       const siguienteUpd = siguienteUpdLocal(guardado);
-      const tomoActual = parseInt(form.tomo, 10);
-      const siguienteTomo = Number.isNaN(tomoActual) ? defaultTomo : String(tomoActual + 1);
       setForm({
-        ...emptyFormFor(cajaId, user, defaultNOrden + racha + 1, siguienteTomo, caja),
+        ...emptyFormFor(cajaId, user, defaultNOrden + racha + 1, caja),
         upd: siguienteUpd,
+        asunto_2: form.asunto_2,
+        asunto_3: form.asunto_3,
       });
       setRacha((r) => r + 1);
       setFaltantesALaVista(false);
@@ -932,13 +936,6 @@ export default function DatosPage() {
     return Math.max(...registros.map((registro) => registro.n_orden ?? 0)) + 1;
   }, [registros]);
 
-  // Como en la versión anterior: el tomo sugerido es el mayor de la caja más uno.
-  const defaultTomo = useMemo(() => {
-    const tomos = registros
-      .map((registro) => parseInt(registro.tomo ?? '', 10))
-      .filter((n) => !Number.isNaN(n));
-    return String(tomos.length > 0 ? Math.max(...tomos) + 1 : 1);
-  }, [registros]);
 
   const deleteMutation = useMutation({
     mutationFn: (id: number) => fuidApi.remove(id),
@@ -1145,7 +1142,6 @@ export default function DatosPage() {
           cajaId={cajaCode}
           editing={editing}
           defaultNOrden={defaultNOrden}
-          defaultTomo={defaultTomo}
           caja={cajaQuery.data}
           onClose={() => setModalOpen(false)}
         />
