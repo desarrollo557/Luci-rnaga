@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import ExcelJS from 'exceljs';
 import { FUID_COLUMNS } from './zohoSheet.service.js';
 
@@ -20,7 +21,23 @@ import { FUID_COLUMNS } from './zohoSheet.service.js';
  * abrirse en cada descarga. Se conserva la fila 8 como modelo de estilo y cada
  * fila que se escribe copia sus bordes, así que el resultado se ve igual.
  */
-const RUTA_PLANTILLA = path.resolve(process.cwd(), 'assets', 'plantilla', 'F-PSD-001.xlsx');
+/**
+ * Raíz de `backend/`, deducida de la ubicación de este archivo.
+ *
+ * No se usa `process.cwd()`: en producción el servidor arranca con
+ * `node backend/dist/server.js` **desde la raíz del repositorio**, así que el
+ * directorio de trabajo no es `backend/` y la plantilla se buscaba donde no
+ * está. El síntoma no se parecía a la causa: al sincronizar el inventario, la
+ * excepción no era un error de Zoho, así que el módulo la reportaba como
+ * "Error desconocido al subir a Zoho Sheet".
+ *
+ * Este archivo vive en `src/services/` al ejecutar con tsx y en
+ * `dist/services/` una vez compilado; en los dos casos, dos niveles arriba es
+ * `backend/`.
+ */
+export const RAIZ_BACKEND = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
+
+const RUTA_PLANTILLA = path.join(RAIZ_BACKEND, 'assets', 'plantilla', 'F-PSD-001.xlsx');
 
 /** Nombre de la hoja del formato. La segunda hoja es el control de cambios. */
 export const HOJA_FORMATO = 'F-PSD-001';
