@@ -16,3 +16,11 @@
 export const OPCIONES_SOPORTE = ['N/A', 'CD', 'PLANOS'] as const;
 export const OPCIONES_FRECUENCIA = ['N/A', 'ALTA', 'MEDIA', 'BAJA'] as const;
 export const OPCIONES_OTRO = ['N/A', 'A-Z', 'LIBROS', 'BOLSA'] as const;
+
+/**
+ * Objeto de la caja, en el formulario de caja.
+ *
+ * A diferencia de los tres de arriba, aquí `N/A` no es una opción del
+ * desplegable: dejarlo sin elegir es lo que lo guarda como no diligenciado.
+ */
+export const OPCIONES_OBJETO_CAJA = ['TRANSFERENCIA PRIMARIA', 'VALORACION DOCUMENTAL'] as const;

@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { createModuloCajaSchema } from '../modulosCaja.validator.js';
+import {
+  createModuloCajaSchema,
+  createSerieCajasSchema,
+  updateModuloCajaSchema,
+} from '../modulosCaja.validator.js';
 import { VALOR_NO_DILIGENCIADO } from '../../config/constants.js';
 
 /**
@@ -41,13 +45,82 @@ describe('campos descriptivos de la caja', () => {
   });
 
   it('respeta el valor cuando sí se diligenció', () => {
-    const resultado = createModuloCajaSchema.safeParse({ ...base, objeto_caja: 'HISTORIAS CLINICAS' });
-    expect(resultado.success && resultado.data.objeto_caja).toBe('HISTORIAS CLINICAS');
+    const resultado = createModuloCajaSchema.safeParse({
+      ...base,
+      oficina_productora_caja: 'ARCHIVO CENTRAL',
+    });
+    expect(resultado.success && resultado.data.oficina_productora_caja).toBe('ARCHIVO CENTRAL');
   });
 
   it('rechaza un texto más largo que su columna', () => {
-    const resultado = createModuloCajaSchema.safeParse({ ...base, objeto_caja: 'A'.repeat(256) });
+    const resultado = createModuloCajaSchema.safeParse({
+      ...base,
+      oficina_productora_caja: 'A'.repeat(256),
+    });
     expect(resultado.success).toBe(false);
+  });
+});
+
+describe('objeto de la caja', () => {
+  it('acepta los dos valores del catálogo', () => {
+    for (const objeto of ['TRANSFERENCIA PRIMARIA', 'VALORACION DOCUMENTAL']) {
+      const resultado = createModuloCajaSchema.safeParse({ ...base, objeto_caja: objeto });
+      expect(resultado.success && resultado.data.objeto_caja, objeto).toBe(objeto);
+    }
+  });
+
+  it('rechaza al crear cualquier otro texto', () => {
+    const resultado = createModuloCajaSchema.safeParse({ ...base, objeto_caja: 'HISTORIAS CLINICAS' });
+    expect(resultado.success).toBe(false);
+  });
+
+  it('lo admite al editar, porque las cajas antiguas lo tienen guardado', () => {
+    const { id_modulo_caja: _omitido, ...paraEditar } = base;
+    const resultado = updateModuloCajaSchema.safeParse({
+      ...paraEditar,
+      objeto_caja: 'ORGANIZACION Y DESCRIPCION DOCUMENTAL',
+    });
+    expect(resultado.success && resultado.data.objeto_caja).toBe(
+      'ORGANIZACION Y DESCRIPCION DOCUMENTAL',
+    );
+  });
+});
+
+/**
+ * El formulario "Nueva caja" no usa `POST /modulos_caja`, sino el de la serie.
+ * Ahí es donde el usuario veía "Faltan campos requeridos" al dejar en blanco la
+ * oficina productora o el objeto, así que la regla del N/A se comprueba también
+ * sobre este esquema y no solo sobre el de la caja suelta.
+ */
+describe('serie de cajas del formulario', () => {
+  const serie = (() => {
+    const { caja_modulo: _omitido, ...resto } = base;
+    return { ...resto, numero_inicial: '000456', numero_final: '000460' };
+  })();
+
+  it('deja crear la serie sin los campos descriptivos y los guarda como N/A', () => {
+    const resultado = createSerieCajasSchema.safeParse(serie);
+    expect(resultado.success).toBe(true);
+    if (resultado.success) {
+      for (const campo of DESCRIPTIVOS) {
+        expect(resultado.data[campo], campo).toBe(VALOR_NO_DILIGENCIADO);
+      }
+    }
+  });
+
+  it('sigue exigiendo los dos números de seis dígitos', () => {
+    expect(createSerieCajasSchema.safeParse({ ...serie, numero_inicial: '456' }).success).toBe(false);
+    expect(createSerieCajasSchema.safeParse({ ...serie, numero_final: undefined }).success).toBe(false);
+  });
+
+  it('conserva los usuarios que se asignan a toda la serie', () => {
+    const resultado = createSerieCajasSchema.safeParse({
+      ...serie,
+      usuarios_tecnica: [4, 7],
+      usuarios_calidad: [9],
+    });
+    expect(resultado.success && resultado.data.usuarios_tecnica).toEqual([4, 7]);
+    expect(resultado.success && resultado.data.usuarios_calidad).toEqual([9]);
   });
 });
 
