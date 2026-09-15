@@ -70,6 +70,11 @@ async function consultarDatos(filtros: PlantillaFiltros): Promise<FuidDato[]> {
     params.push(`%${filtros.entidad_remitente}%`);
   }
 
+  // Sin orden explícito, el motor devuelve las filas como le conviene y el
+  // inventario salía descolocado: los registros van por el número de orden de
+  // la caja, que es como se leen en el papel.
+  sql += ' ORDER BY caja, n_orden NULLS LAST, upd';
+
   const rows = await query<FuidDato>(sql, params);
   if (!rows || rows.length === 0) {
     throw new Error('No se encontraron datos en la base de datos.');
