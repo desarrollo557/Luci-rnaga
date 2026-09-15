@@ -364,10 +364,16 @@ export async function produccionDetallada(req: Request, res: Response): Promise<
   const desde = String(req.query.desde ?? '').trim();
   const hasta = String(req.query.hasta ?? '').trim();
 
+  const persona = String(req.query.persona ?? '').trim();
+
   const where: string[] = ["f.elaborado_por IS NOT NULL", "f.elaborado_por <> ''"];
   const params: unknown[] = [];
   if (desde) { where.push('f.fecha_del_dato >= ?'); params.push(desde); }
   if (hasta) { where.push('f.fecha_del_dato <= ?'); params.push(hasta); }
+  // El filtro por persona se aplica en la consulta y no al pintar: así las
+  // cifras del cliente son las de esa persona, no las del total con la lista
+  // recortada.
+  if (persona) { where.push('f.elaborado_por = ?'); params.push(persona); }
 
   const filas = await query<{
     codigo: string | null;
@@ -477,6 +483,18 @@ export async function produccionDetallada(req: Request, res: Response): Promise<
    * registros todavía, no aparece en la consulta de digitación, y es justo la
    * que hay que ver para saber cuánto falta.
    */
+  /*
+   * Los filtros van dentro del LEFT JOIN, no en un WHERE: en el WHERE
+   * descartarían las cajas sin registros, que son precisamente las que hay que
+   * seguir viendo para saber lo que falta.
+   */
+  const condicionesCaja = [
+    desde ? 'AND f.fecha_del_dato >= ?' : '',
+    hasta ? 'AND f.fecha_del_dato <= ?' : '',
+    persona ? 'AND f.elaborado_por = ?' : '',
+  ].filter(Boolean).join(' ');
+  const paramsCaja = [desde, hasta, persona].filter(Boolean);
+
   const cajas = await query<{
     codigo: string | null;
     cliente: string | null;
@@ -501,8 +519,10 @@ export async function produccionDetallada(req: Request, res: Response): Promise<
      JOIN moduloscliente m ON m.id = mc.id_modulo_caja
      JOIN sub_modulos s ON s.id = m.id_submodulo
      LEFT JOIN fuiddatosreal f ON f.caja = mc.caja_modulo
+       ${condicionesCaja}
      GROUP BY s.codigo, s.entidad_remitente, mc.caja_modulo, mc.estado_caja, m.acta_transferencia_modulo
      ORDER BY s.codigo, mc.caja_modulo`,
+    paramsCaja,
   );
 
   const actasPorCliente = await query<{ codigo: string | null; actas: number }>(
