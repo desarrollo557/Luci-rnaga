@@ -1,5 +1,6 @@
-import { describe, expect, it } from 'vitest';
-import { comoFecha } from '../plantillaFuid.service.js';
+import path from 'node:path';
+import { afterEach, describe, expect, it } from 'vitest';
+import { abrirPlantillaFuid, comoFecha } from '../plantillaFuid.service.js';
 
 /**
  * Las fechas del inventario oficial.
@@ -82,5 +83,26 @@ describe('lo que no es una fecha se deja pasar sin inventar una', () => {
 
   it('una fecha inválida', () => {
     expect(comoFecha(new Date('vaya'))).toBeNull();
+  });
+});
+
+describe('el formato se encuentra desde cualquier directorio de arranque', () => {
+  const directorioOriginal = process.cwd();
+  afterEach(() => process.chdir(directorioOriginal));
+
+  it('lo abre aunque el proceso arranque fuera de backend/', async () => {
+    // Es lo que hace producción: `node backend/dist/server.js` desde la raíz
+    // del repositorio. Con la ruta atada a `process.cwd()`, el formato se
+    // buscaba en `<raíz>/assets` en vez de `<raíz>/backend/assets`, y el
+    // inventario fallaba al descargarse y al subirse a Zoho Sheet.
+    process.chdir(path.resolve(directorioOriginal, '..'));
+    const { hoja } = await abrirPlantillaFuid();
+    expect(hoja.name).toBe('F-PSD-001');
+  });
+
+  it('conserva la cabecera y los 27 encabezados', async () => {
+    const { hoja } = await abrirPlantillaFuid();
+    expect(hoja.getRow(7).getCell(1).value).toBe('N° Orden');
+    expect(hoja.getRow(7).getCell(27).value).toBe('FECHA DE TRANSFERENCIA');
   });
 });
