@@ -218,9 +218,20 @@ export async function updateFuid(req: Request, res: Response): Promise<void> {
 
   const { cc, rol } = user;
 
-  // RESTRICCIÓN DE SEGURIDAD: Los registros del día actual no se pueden modificar al día siguiente
-  // Esto aplica a TODOS los roles para garantizar integridad de datos
-  if (registro.fecha_del_dato !== fechaActual()) {
+  /**
+   * El líder edita sin restricciones, por decisión de negocio: es quien responde
+   * por el inventario del cliente y tiene que poder corregir cualquier registro,
+   * lo haya digitado quien lo haya digitado y sea de la fecha que sea. El
+   * administrador va con él porque administra el sistema entero.
+   *
+   * Todo cambio queda registrado en el historial con su autor, así que levantar
+   * el bloqueo no deja el dato sin rastro.
+   */
+  const editaSinRestriccion = rol === 'LIDER' || rol === 'ADMIN';
+
+  // Para el resto, un registro solo se corrige el mismo día en que se digitó:
+  // así el trabajo cerrado de días anteriores no se toca por descuido.
+  if (!editaSinRestriccion && registro.fecha_del_dato !== fechaActual()) {
     res.status(403).json({ error: 'Los registros de días anteriores no pueden ser modificados' });
     return;
   }
@@ -234,15 +245,14 @@ export async function updateFuid(req: Request, res: Response): Promise<void> {
   }
 
   /**
-   * Quién puede editar un registro ya guardado.
+   * Quién puede editar el registro de otra persona.
    *
-   * Solo lo edita quien lo digitó. El líder entra en esa regla: antes podía
-   * corregir cualquier registro de su sede, y eso borraba el rastro de quién
-   * hizo realmente el dato. ADMIN queda fuera porque administra el sistema, y
-   * CALIDAD porque su trabajo es justamente revisar lo que otros digitaron.
+   * El líder y el administrador, porque responden por el inventario; y calidad,
+   * porque su trabajo es justamente revisar lo que otros digitaron. La técnica
+   * solo corrige lo suyo.
    */
   const nombreCompletoMayus = `${user.nombre.toUpperCase()} (${cc})`;
-  const revisaLoDeOtros = rol === 'ADMIN' || rol === 'CALIDAD';
+  const revisaLoDeOtros = editaSinRestriccion || rol === 'CALIDAD';
   const loDigitoEstaPersona = registro.elaborado_por?.toUpperCase() === nombreCompletoMayus;
 
   if (!revisaLoDeOtros && !loDigitoEstaPersona) {
