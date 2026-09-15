@@ -319,12 +319,32 @@ export interface DigitadorDeCliente {
   por_dia: DiaDeDigitador[];
 }
 
+/** Una caja del cliente, con lo que se ha digitado en ella. */
+export interface CajaDeCliente {
+  caja: string;
+  estado: string | null;
+  acta: string | null;
+  registros: number;
+  aprobados: number;
+  ultimo_dia: string | null;
+  personas: string[];
+}
+
 export interface ClienteConDetalle {
   codigo: string;
   cliente: string;
-  registros: number;
+  /** Actas de transferencia registradas al cliente. */
+  actas: number;
   cajas: number;
+  cajas_finalizadas: number;
+  cajas_en_proceso: number;
+  /** Cajas creadas en las que todavía no se ha digitado nada. */
+  cajas_sin_registros: number;
+  registros: number;
+  aprobados: number;
+  pendientes: number;
   digitadores: DigitadorDeCliente[];
+  detalle_cajas: CajaDeCliente[];
 }
 
 /**
@@ -395,9 +415,16 @@ export async function produccionDetallada(req: Request, res: Response): Promise<
       clientes.set(codigo, {
         codigo,
         cliente: f.cliente ?? 'Sin nombre',
-        registros: 0,
+        actas: 0,
         cajas: 0,
+        cajas_finalizadas: 0,
+        cajas_en_proceso: 0,
+        cajas_sin_registros: 0,
+        registros: 0,
+        aprobados: 0,
+        pendientes: 0,
         digitadores: [],
+        detalle_cajas: [],
       });
       cajasPorCliente.set(codigo, new Set());
     }
@@ -441,9 +468,97 @@ export async function produccionDetallada(req: Request, res: Response): Promise<
       .map(([dia, v]) => ({ dia, registros: v.registros, cajas: v.cajas.size }))
       .sort((a, b) => b.dia.localeCompare(a.dia));
   }
-  for (const [codigo, cliente] of clientes) {
-    cliente.cajas = cajasPorCliente.get(codigo)?.size ?? 0;
+  for (const [, cliente] of clientes) {
     cliente.digitadores.sort((a, b) => b.registros - a.registros);
+  }
+
+  /*
+   * Las cajas se piden aparte y con LEFT JOIN: una caja recién creada, sin
+   * registros todavía, no aparece en la consulta de digitación, y es justo la
+   * que hay que ver para saber cuánto falta.
+   */
+  const cajas = await query<{
+    codigo: string | null;
+    cliente: string | null;
+    caja: string;
+    estado: string | null;
+    acta: string | null;
+    registros: number;
+    aprobados: number;
+    ultimo_dia: string | null;
+    personas: string | null;
+  }>(
+    `SELECT s.codigo AS codigo,
+            s.entidad_remitente AS cliente,
+            mc.caja_modulo AS caja,
+            mc.estado_caja AS estado,
+            m.acta_transferencia_modulo AS acta,
+            COUNT(f.id) AS registros,
+            SUM(CASE WHEN f.historial_y_cambios = 'OK' THEN 1 ELSE 0 END) AS aprobados,
+            MAX(f.fecha_del_dato) AS ultimo_dia,
+            string_agg(DISTINCT f.elaborado_por, ' | ') AS personas
+     FROM modulos_caja mc
+     JOIN moduloscliente m ON m.id = mc.id_modulo_caja
+     JOIN sub_modulos s ON s.id = m.id_submodulo
+     LEFT JOIN fuiddatosreal f ON f.caja = mc.caja_modulo
+     GROUP BY s.codigo, s.entidad_remitente, mc.caja_modulo, mc.estado_caja, m.acta_transferencia_modulo
+     ORDER BY s.codigo, mc.caja_modulo`,
+  );
+
+  const actasPorCliente = await query<{ codigo: string | null; actas: number }>(
+    `SELECT s.codigo AS codigo, COUNT(DISTINCT m.id) AS actas
+     FROM moduloscliente m
+     JOIN sub_modulos s ON s.id = m.id_submodulo
+     GROUP BY s.codigo`,
+  );
+
+  for (const c of cajas) {
+    const codigo = c.codigo ?? 'Sin código';
+    if (!clientes.has(codigo)) {
+      // Cliente con cajas pero sin digitación todavía: también cuenta.
+      clientes.set(codigo, {
+        codigo,
+        cliente: c.cliente ?? 'Sin nombre',
+        actas: 0,
+        cajas: 0,
+        cajas_finalizadas: 0,
+        cajas_en_proceso: 0,
+        cajas_sin_registros: 0,
+        registros: 0,
+        aprobados: 0,
+        pendientes: 0,
+        digitadores: [],
+        detalle_cajas: [],
+      });
+    }
+    const cliente = clientes.get(codigo)!;
+    const registros = Number(c.registros);
+    const aprobados = Number(c.aprobados ?? 0);
+
+    cliente.cajas += 1;
+    if ((c.estado ?? '').toUpperCase() === 'FINALIZADO') cliente.cajas_finalizadas += 1;
+    else cliente.cajas_en_proceso += 1;
+    if (registros === 0) cliente.cajas_sin_registros += 1;
+    cliente.aprobados += aprobados;
+
+    cliente.detalle_cajas.push({
+      caja: c.caja,
+      estado: c.estado,
+      acta: c.acta,
+      registros,
+      aprobados,
+      ultimo_dia: c.ultimo_dia,
+      personas: (c.personas ?? '').split(' | ').filter(Boolean),
+    });
+  }
+
+  for (const acta of actasPorCliente) {
+    const cliente = clientes.get(acta.codigo ?? 'Sin código');
+    if (cliente) cliente.actas = Number(acta.actas);
+  }
+
+  for (const [, cliente] of clientes) {
+    cliente.pendientes = cliente.registros - cliente.aprobados;
   }
 
   res.json([...clientes.values()].sort((a, b) => b.registros - a.registros));
