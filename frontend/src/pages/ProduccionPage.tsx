@@ -8,8 +8,6 @@ import {
   FileText,
   Layers,
   MapPin,
-  ChevronDown,
-  ChevronRight,
   Search,
   TrendingUp,
   Users,
@@ -33,7 +31,6 @@ import {
   reportesApi,
   type ClienteConDetalle,
   type Digitador,
-  type DigitadorDeCliente,
 } from '@/lib/api';
 
 /** El estado de la caja es una escala reservada, no una serie más. */
@@ -399,105 +396,124 @@ export default function ProduccionPage() {
   );
 }
 
-/** Un día de trabajo de una persona. */
-function FilaDia({ dia, registros, cajas }: { dia: string; registros: number; cajas: number }) {
-  const [a, m, d] = dia.split('-');
+/** Cifra suelta del panel del cliente. */
+function Cifra({ etiqueta, valor, detalle }: { etiqueta: string; valor: number | string; detalle?: string }) {
   return (
-    <div className="flex items-center justify-between py-1 text-sm">
-      <span className="text-silver-500">{`${d}/${m}/${a}`}</span>
-      <span className="text-silver-700">
-        <span className="font-medium">{registros}</span> registro(s) · {cajas} caja(s)
-      </span>
+    <div className="rounded-lg border border-silver-200 px-3 py-2">
+      <p className="text-xs uppercase tracking-wide text-silver-500">{etiqueta}</p>
+      <p className="text-xl font-bold text-silver-900">{valor}</p>
+      {detalle && <p className="text-xs text-silver-500">{detalle}</p>}
     </div>
   );
 }
 
-/** Una persona dentro de un cliente, con sus cajas y sus días. */
-function FilaDigitador({ digitador }: { digitador: DigitadorDeCliente }) {
-  const [abierto, setAbierto] = useState(false);
-  return (
-    <li className="border-t border-silver-100 py-2 first:border-t-0">
-      <button
-        type="button"
-        onClick={() => setAbierto((v) => !v)}
-        className="flex w-full items-center gap-2 text-left"
-      >
-        {abierto ? (
-          <ChevronDown className="size-4 shrink-0 text-silver-400" />
-        ) : (
-          <ChevronRight className="size-4 shrink-0 text-silver-400" />
-        )}
-        <span className="font-medium text-silver-800">{digitador.nombre}</span>
-        {digitador.rol && <Badge color="gray">{digitador.rol}</Badge>}
-        <span className="ml-auto text-sm text-silver-600">
-          <span className="font-semibold text-silver-800">{digitador.registros}</span> registro(s) ·{' '}
-          {digitador.cajas.length} caja(s)
-        </span>
-      </button>
-
-      {abierto && (
-        <div className="mt-2 space-y-3 pl-6">
-          <div className="flex flex-wrap gap-1.5">
-            {digitador.cajas.map((caja) => (
-              <span key={caja} className="rounded-md bg-silver-100 px-2 py-0.5 text-xs font-medium text-silver-700">
-                {caja}
-              </span>
-            ))}
-          </div>
-          <div className="divide-y divide-silver-100 rounded-lg bg-silver-50 px-3 py-1">
-            {digitador.por_dia.map((d) => (
-              <FilaDia key={d.dia} dia={d.dia} registros={d.registros} cajas={d.cajas} />
-            ))}
-          </div>
-        </div>
-      )}
-    </li>
-  );
+function fecha(valor: string | null): string {
+  if (!valor) return '—';
+  const [a, m, d] = valor.slice(0, 10).split('-');
+  return `${d}/${m}/${a}`;
 }
 
-/** Un cliente, con las personas que están digitando en él. */
-function FilaCliente({ cliente }: { cliente: ClienteConDetalle }) {
-  const [abierto, setAbierto] = useState(false);
-  return (
-    <li className="border-b border-silver-100 py-3 last:border-b-0">
-      <button type="button" onClick={() => setAbierto((v) => !v)} className="flex w-full items-center gap-2 text-left">
-        {abierto ? (
-          <ChevronDown className="size-4 shrink-0 text-silver-400" />
-        ) : (
-          <ChevronRight className="size-4 shrink-0 text-silver-400" />
-        )}
-        <span className="rounded bg-silver-100 px-1.5 py-0.5 text-xs font-semibold text-silver-700">
-          {cliente.codigo}
-        </span>
-        <span className="font-semibold text-silver-900">{cliente.cliente}</span>
-        <span className="ml-auto text-sm text-silver-600">
-          <span className="font-semibold text-silver-900">{cliente.registros}</span> registro(s) ·{' '}
-          {cliente.cajas} caja(s) · {cliente.digitadores.length} persona(s)
-        </span>
-      </button>
+/** Lo que se ha hecho en un cliente: sus cajas, su avance y quién trabaja en él. */
+function PanelDelCliente({ cliente }: { cliente: ClienteConDetalle }) {
+  const avance = cliente.registros > 0 ? Math.round((cliente.aprobados / cliente.registros) * 100) : 0;
+  const cajasHechas = cliente.cajas > 0 ? Math.round((cliente.cajas_finalizadas / cliente.cajas) * 100) : 0;
 
-      {abierto && (
-        <ul className="mt-2 pl-6">
-          {cliente.digitadores.map((d) => (
-            <FilaDigitador key={d.nombre} digitador={d} />
-          ))}
-        </ul>
+  return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+        <Cifra etiqueta="Actas" valor={cliente.actas} />
+        <Cifra
+          etiqueta="Cajas"
+          valor={cliente.cajas}
+          detalle={`${cliente.cajas_finalizadas} terminadas · ${cliente.cajas_en_proceso} en proceso`}
+        />
+        <Cifra
+          etiqueta="Cajas terminadas"
+          valor={`${cajasHechas}%`}
+          detalle={`${cliente.cajas_sin_registros} sin empezar`}
+        />
+        <Cifra etiqueta="Registros" valor={cliente.registros} detalle={`${cliente.pendientes} sin revisar`} />
+        <Cifra
+          etiqueta="Aprobados por calidad"
+          valor={`${avance}%`}
+          detalle={`${cliente.aprobados} de ${cliente.registros}`}
+        />
+      </div>
+
+      <div>
+        <h3 className="mb-2 text-sm font-semibold text-silver-700">Cajas ({cliente.detalle_cajas.length})</h3>
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[640px] text-sm">
+            <thead>
+              <tr className="border-b border-silver-200 text-left text-xs uppercase tracking-wide text-silver-500">
+                <th className="py-2 pr-3">Caja</th>
+                <th className="py-2 pr-3">Acta</th>
+                <th className="py-2 pr-3">Estado</th>
+                <th className="py-2 pr-3 text-right">Registros</th>
+                <th className="py-2 pr-3 text-right">Aprobados</th>
+                <th className="py-2 pr-3">Último registro</th>
+                <th className="py-2">Quién digita</th>
+              </tr>
+            </thead>
+            <tbody>
+              {cliente.detalle_cajas.map((caja) => (
+                <tr key={caja.caja} className="border-b border-silver-100 last:border-b-0">
+                  <td className="py-2 pr-3 font-medium text-silver-800">{caja.caja}</td>
+                  <td className="py-2 pr-3 text-silver-600">{caja.acta ?? '—'}</td>
+                  <td className="py-2 pr-3">
+                    <Badge color={caja.estado === 'FINALIZADO' ? 'green' : 'amber'}>
+                      {caja.estado ?? 'Sin estado'}
+                    </Badge>
+                  </td>
+                  <td className="py-2 pr-3 text-right font-medium text-silver-800">{caja.registros}</td>
+                  <td className="py-2 pr-3 text-right text-silver-600">{caja.aprobados}</td>
+                  <td className="py-2 pr-3 text-silver-600">{fecha(caja.ultimo_dia)}</td>
+                  <td className="py-2 text-silver-600">
+                    {caja.personas.length > 0 ? caja.personas.join(', ') : 'Sin digitar'}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {cliente.digitadores.length > 0 && (
+        <div>
+          <h3 className="mb-2 text-sm font-semibold text-silver-700">
+            Personas trabajando en este cliente ({cliente.digitadores.length})
+          </h3>
+          <ul className="divide-y divide-silver-100 rounded-lg border border-silver-200">
+            {cliente.digitadores.map((d) => (
+              <li key={d.nombre} className="flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2 text-sm">
+                <span className="font-medium text-silver-800">{d.nombre}</span>
+                {d.rol && <Badge color="gray">{d.rol}</Badge>}
+                <span className="text-silver-600">
+                  {d.registros} registro(s) en {d.cajas.length} caja(s)
+                </span>
+                <span className="ml-auto text-silver-500">
+                  del {fecha(d.primer_dia)} al {fecha(d.ultimo_dia)}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
       )}
-    </li>
+    </div>
   );
 }
 
 /**
- * Producción abierta por cliente, persona y día.
+ * Producción de un cliente concreto.
  *
- * El resumen de arriba dice cuánto se produjo; esto deja ver lo que pasa dentro
- * de cada cliente, que es donde está el detalle que hace falta para seguir el
- * trabajo: dos personas digitando a la vez en cajas distintas, o una que lleva
- * días sin tocar la suya.
+ * El resumen de arriba mira el conjunto; aquí se elige un cliente y se ve lo
+ * suyo: cuántas actas y cajas tiene, cuántas están terminadas, cuánto se ha
+ * digitado y revisado, y quién está trabajando en cada caja.
  */
 function DetallePorCliente() {
   const [desde, setDesde] = useState('');
   const [hasta, setHasta] = useState('');
+  const [seleccionado, setSeleccionado] = useState<string>('');
 
   const { data, isLoading } = useQuery({
     queryKey: ['estadisticas', 'detalle', desde, hasta],
@@ -505,18 +521,29 @@ function DetallePorCliente() {
       (await reportesApi.produccionDetallada({ desde: desde || undefined, hasta: hasta || undefined })).data,
   });
 
-  const clientes = data ?? [];
+  const clientes = useMemo(() => data ?? [], [data]);
+  // Al entrar se muestra el cliente con más producción, para no dejar el panel
+  // vacío esperando un clic.
+  const actual = clientes.find((c) => c.codigo === seleccionado) ?? clientes[0];
 
   return (
     <Card>
       <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h2 className="text-lg font-semibold text-silver-900">Detalle por cliente</h2>
-          <p className="text-sm text-silver-500">Quién digitó, en qué caja y qué día</p>
+          <h2 className="text-lg font-semibold text-silver-900">Productividad por cliente</h2>
+          <p className="text-sm text-silver-500">
+            Elija un cliente para ver sus cajas, su avance y quién trabaja en él
+          </p>
         </div>
+        {/* Ancho acotado: con el del formulario, los dos selectores se iban al
+            otro extremo de la tarjeta y dejaban el título descolgado. */}
         <div className="flex flex-wrap items-end gap-3">
-          <DatePicker label="Desde" value={desde} onChange={setDesde} />
-          <DatePicker label="Hasta" value={hasta} onChange={setHasta} />
+          <div className="w-40">
+            <DatePicker label="Desde" value={desde} onChange={setDesde} />
+          </div>
+          <div className="w-40">
+            <DatePicker label="Hasta" value={hasta} onChange={setHasta} />
+          </div>
         </div>
       </div>
 
@@ -524,14 +551,39 @@ function DetallePorCliente() {
         <LoadingState />
       ) : clientes.length === 0 ? (
         <p className="py-6 text-center text-sm text-silver-500">
-          No hay producción registrada en ese rango de fechas.
+          No hay clientes con cajas registradas en ese rango de fechas.
         </p>
       ) : (
-        <ul>
-          {clientes.map((c) => (
-            <FilaCliente key={c.codigo} cliente={c} />
-          ))}
-        </ul>
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-[260px_1fr]">
+          <ul className="max-h-[460px] space-y-1 overflow-y-auto pr-1">
+            {clientes.map((c) => {
+              const activo = actual?.codigo === c.codigo;
+              return (
+                <li key={c.codigo}>
+                  <button
+                    type="button"
+                    onClick={() => setSeleccionado(c.codigo)}
+                    className={`w-full rounded-lg border px-3 py-2 text-left transition-colors ${
+                      activo ? 'border-primary-300 bg-primary-50' : 'border-silver-200 hover:bg-silver-50'
+                    }`}
+                  >
+                    <span className="flex items-center gap-2">
+                      <span className="rounded bg-silver-100 px-1.5 py-0.5 text-xs font-semibold text-silver-700">
+                        {c.codigo}
+                      </span>
+                      <span className="truncate text-sm font-medium text-silver-900">{c.cliente}</span>
+                    </span>
+                    <span className="mt-0.5 block text-xs text-silver-500">
+                      {c.registros} registro(s) · {c.cajas} caja(s)
+                    </span>
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+
+          {actual ? <PanelDelCliente cliente={actual} /> : <p className="text-sm text-silver-500">Seleccione un cliente.</p>}
+        </div>
       )}
     </Card>
   );
