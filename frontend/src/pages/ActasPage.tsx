@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react';
+import { useMemo, useState, type FormEvent } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ClipboardList, FileText, Pencil, Plus, Search, Trash2, Users } from 'lucide-react';
@@ -17,6 +17,7 @@ import {
   Select,
   Table,
   type Column,
+  type SelectOption,
 } from '@/components/ui';
 import {
   asignacionCajaCalidadApi,
@@ -27,11 +28,17 @@ import {
   usersApi,
   type SerieCajasInput,
 } from '@/lib/api';
+import { OPCIONES_OBJETO_CAJA } from '@/lib/catalogos';
 import { invalidateDomain } from '@/lib/queryInvalidation';
 import { useAuthStore } from '@/stores/authStore';
 import type { ModuloCaja } from '@/types';
 
 const ESTADOS_CAJA = ['EN PROCESO', 'FINALIZADO'] as const;
+
+/** ¿El objeto guardado está en el catálogo actual? */
+function objetoEnCatalogo(valor: string | null | undefined): boolean {
+  return (OPCIONES_OBJETO_CAJA as readonly string[]).includes((valor ?? '').trim());
+}
 
 interface CajaForm {
   numero_inicial: string;
@@ -134,6 +141,24 @@ export default function ActasPage() {
   const [asignacion, setAsignacion] = useState<AsignacionCaja>(sinAsignacion);
   const [asignacionOriginal, setAsignacionOriginal] = useState<AsignacionCaja>(sinAsignacion);
   const [cargandoAsignacion, setCargandoAsignacion] = useState(false);
+
+  /*
+   * Opciones de "Objeto de la Caja": las dos del catálogo y, cuando se edita
+   * una caja creada antes de que el campo fuera una lista, también la que
+   * tiene guardada. Sin ese añadido el desplegable aparecería vacío y guardar
+   * cualquier otro dato de la caja borraría el objeto sin que nadie lo pidiera.
+   */
+  const opcionesObjetoCaja = useMemo(() => {
+    const opciones: SelectOption[] = OPCIONES_OBJETO_CAJA.map((objeto) => ({
+      value: objeto,
+      label: objeto,
+    }));
+    const actual = cajaForm.objeto_caja.trim();
+    if (actual && actual !== 'N/A' && !objetoEnCatalogo(actual)) {
+      opciones.push({ value: actual, label: `${actual} (valor anterior)` });
+    }
+    return opciones;
+  }, [cajaForm.objeto_caja]);
 
   const cajasQuery = useQuery({
     queryKey: ['modulos-caja', 'list', id],
@@ -283,6 +308,11 @@ export default function ActasPage() {
     if (!cajaForm.acta_trans_caja?.trim()) {
       nextErrors.acta_trans_caja = 'El acta de transferencia es requerida';
     }
+    // La columna no admite nulos: sin esta comprobación el servidor respondía
+    // con un error genérico y el modal se quedaba sin decir qué faltaba.
+    if (!cajaForm.fecha_trans_caja) {
+      nextErrors.fecha_trans_caja = 'La fecha de transferencia es requerida';
+    }
 
     setCajaErrors(nextErrors);
     if (Object.keys(nextErrors).length > 0) return;
@@ -411,7 +441,10 @@ export default function ActasPage() {
       entidad_productora_caja: cajaReferencia?.entidad_productora_caja ?? '',
       unidad_administrativa_caja: cajaReferencia?.unidad_administrativa_caja ?? '',
       oficina_productora_caja: cajaReferencia?.oficina_productora_caja ?? '',
-      objeto_caja: cajaReferencia?.objeto_caja ?? '',
+      // El objeto solo se hereda si sigue siendo uno de los del catálogo: las
+      // cajas antiguas guardan textos libres que el servidor ya no acepta al
+      // crear, y precargarlos dejaría el formulario sin poder enviarse.
+      objeto_caja: objetoEnCatalogo(cajaReferencia?.objeto_caja) ? cajaReferencia!.objeto_caja : '',
       fecha_trans_caja: moduloQuery.data?.fecha_trans_modulo?.slice(0, 10) ?? '',
     });
     setCajaErrors({});
@@ -642,6 +675,7 @@ export default function ActasPage() {
             label="Fecha de Transferencia"
             value={cajaForm.fecha_trans_caja}
             onChange={(value) => setCajaForm({ ...cajaForm, fecha_trans_caja: value })}
+            error={cajaErrors.fecha_trans_caja}
             defaultUnlocked={false}
           />
           <Input
@@ -662,10 +696,12 @@ export default function ActasPage() {
             onChange={(event) => setCajaForm({ ...cajaForm, oficina_productora_caja: event.target.value })}
             error={cajaErrors.oficina_productora_caja}
           />
-          <Input
+          <Select
             label="Objeto de la Caja"
+            placeholder="Sin especificar"
+            options={opcionesObjetoCaja}
             value={cajaForm.objeto_caja}
-            onChange={(event) => setCajaForm({ ...cajaForm, objeto_caja: event.target.value })}
+            onChange={(value) => setCajaForm({ ...cajaForm, objeto_caja: value })}
             error={cajaErrors.objeto_caja}
           />
           <Select

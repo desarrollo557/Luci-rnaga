@@ -79,6 +79,16 @@ export const SOPORTES_VALIDOS = ['N/A', 'CD', 'PLANOS'] as const;
 export const FRECUENCIAS_VALIDAS = ['N/A', 'ALTA', 'MEDIA', 'BAJA'] as const;
 export const OTROS_VALIDOS = ['N/A', 'A-Z', 'LIBROS', 'BOLSA'] as const;
 
+/**
+ * Objeto de la caja: para qué se abrió el trabajo sobre ella.
+ *
+ * Es una lista cerrada porque solo hay dos procesos y escribirlos a mano dejaba
+ * una entrada distinta por caja. Las cajas ya creadas guardan textos libres
+ * ("ORGANIZACION Y DESCRIPCION DOCUMENTAL" y otros), así que el catálogo se
+ * exige al crear y no al editar: ver `modulosCaja.validator.ts`.
+ */
+export const OBJETOS_CAJA_VALIDOS = ['TRANSFERENCIA PRIMARIA', 'VALORACION DOCUMENTAL'] as const;
+
 // ── Longitud de las columnas de texto del FUID ────────────────────────────
 /**
  * Tamaño declarado en MySQL de cada columna de texto de `fuiddatosreal`, leído
