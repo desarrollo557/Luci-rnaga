@@ -3,6 +3,7 @@ import { isAuthenticated, isLiderOrAdmin, isTecnicaOnly } from '../middlewares/a
 import { validate } from '../middlewares/validate.js';
 import {
   createModuloCajaSchema,
+  createSerieCajasSchema,
   updateModuloCajaSchema,
 } from '../validators/modulosCaja.validator.js';
 import {
@@ -54,6 +55,7 @@ router.post(
   '/modulos_caja/serie',
   isAuthenticated,
   isLiderOrAdmin,
+  validate(createSerieCajasSchema),
   asyncHandler(createCajasSerie),
 );
 router.put(

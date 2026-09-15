@@ -392,28 +392,10 @@ export async function createCajasSerie(req: Request, res: Response): Promise<voi
     usuarios_calidad,
   } = body;
 
-  // Validaciones
-  if (
-    !id_modulo_caja ||
-    !numero_inicial ||
-    !numero_final ||
-    !entidad_remitente_caja ||
-    !acta_trans_caja ||
-    !entidad_productora_caja ||
-    !unidad_administrativa_caja ||
-    !oficina_productora_caja ||
-    !objeto_caja ||
-    !estado_caja
-  ) {
-    res.status(400).send('Faltan campos requeridos');
-    return;
-  }
-
-  if (!/^\d{6}$/.test(numero_inicial) || !/^\d{6}$/.test(numero_final)) {
-    res.status(400).json({ message: 'Número inicial y final deben tener 6 dígitos numéricos' });
-    return;
-  }
-
+  // El cuerpo ya viene validado por `createSerieCajasSchema`: los campos
+  // obligatorios están, los descriptivos en blanco llegan como `N/A` y los dos
+  // números tienen seis dígitos. Aquí solo queda lo que depende de comparar el
+  // rango consigo mismo.
   const ini = parseInt(numero_inicial, 10);
   const fin = parseInt(numero_final, 10);
   if (ini > fin) {
