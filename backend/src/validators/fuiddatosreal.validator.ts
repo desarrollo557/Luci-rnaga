@@ -228,34 +228,17 @@ function ordenDeFechas(
   }
 }
 
-/**
- * El número de documento "hasta" no puede quedar por debajo del "desde".
+/*
+ * `numero_doc` y `numero_doc_hasta` no guardan relación entre sí.
  *
- * Solo se compara cuando ambos son enteros. Estos campos guardan también
- * radicados y referencias con letras, y `N/A` cuando el digitador marca el campo
- * como no diligenciado: en esos casos no hay un orden que comprobar y la regla
- * no aplica, igual que hace `onlyDigits` en el frontend.
+ * Hubo una regla que exigía que el segundo no fuera menor que el primero,
+ * pensando en un rango de documentos. En la práctica son dos campos
+ * independientes —cada uno puede llevar un radicado o una referencia distinta—,
+ * así que la comparación rechazaba registros correctos. Se retiró a propósito:
+ * no volver a añadirla.
  */
-function ordenDeNumerosDeDocumento(
-  datos: { numero_doc?: string | null; numero_doc_hasta?: string | null },
-  ctx: z.RefinementCtx,
-): void {
-  const desde = datos.numero_doc?.trim();
-  const hasta = datos.numero_doc_hasta?.trim();
-  if (!desde || !hasta) return;
-  if (!/^\d+$/.test(desde) || !/^\d+$/.test(hasta)) return;
-  if (BigInt(hasta) < BigInt(desde)) {
-    ctx.addIssue({
-      code: 'custom',
-      path: ['numero_doc_hasta'],
-      message: 'El número de documento final no puede ser menor que el inicial',
-    });
-  }
-}
 
-export const createFuidSchema = fuidBaseSchema
-  .superRefine(ordenDeFechas)
-  .superRefine(ordenDeNumerosDeDocumento);
+export const createFuidSchema = fuidBaseSchema.superRefine(ordenDeFechas);
 
 export const updateFuidSchema = fuidBaseSchema
   .partial()
@@ -277,8 +260,7 @@ export const updateFuidSchema = fuidBaseSchema
       .int('La versión del registro debe ser un número entero')
       .positive('La versión del registro debe ser un número positivo'),
   })
-  .superRefine(ordenDeFechas)
-  .superRefine(ordenDeNumerosDeDocumento);
+  .superRefine(ordenDeFechas);
 
 /**
  * Comprueba el orden de las fechas de una edición parcial contra lo ya guardado.

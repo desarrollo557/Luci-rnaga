@@ -300,3 +300,151 @@ export async function estadisticasProduccion(_req: Request, res: Response): Prom
     generado_en: new Date().toISOString(),
   } satisfies EstadisticasProduccion);
 }
+
+export interface DiaDeDigitador {
+  dia: string;
+  registros: number;
+  cajas: number;
+}
+
+export interface DigitadorDeCliente {
+  nombre: string;
+  cc: string | null;
+  rol: string | null;
+  sede: string | null;
+  registros: number;
+  cajas: string[];
+  primer_dia: string;
+  ultimo_dia: string;
+  por_dia: DiaDeDigitador[];
+}
+
+export interface ClienteConDetalle {
+  codigo: string;
+  cliente: string;
+  registros: number;
+  cajas: number;
+  digitadores: DigitadorDeCliente[];
+}
+
+/**
+ * Producción con nombre y apellido: quién digitó, en qué caja y qué día, dentro
+ * de cada cliente.
+ *
+ * El resumen general dice cuánto se produjo, pero no deja ver lo que pasa de
+ * verdad en un cliente: dos personas trabajando a la vez en cajas distintas, o
+ * una que lleva tres días sin tocar la suya. Eso solo se ve bajando al detalle,
+ * y es lo que devuelve esto.
+ *
+ * Una sola consulta trae las filas al nivel más fino —cliente, digitador, día y
+ * caja— y el agrupado se arma aquí: agregarlo en SQL obligaría a tres consultas
+ * y a repetir los mismos JOIN.
+ */
+export async function produccionDetallada(req: Request, res: Response): Promise<void> {
+  const desde = String(req.query.desde ?? '').trim();
+  const hasta = String(req.query.hasta ?? '').trim();
+
+  const where: string[] = ["f.elaborado_por IS NOT NULL", "f.elaborado_por <> ''"];
+  const params: unknown[] = [];
+  if (desde) { where.push('f.fecha_del_dato >= ?'); params.push(desde); }
+  if (hasta) { where.push('f.fecha_del_dato <= ?'); params.push(hasta); }
+
+  const filas = await query<{
+    codigo: string | null;
+    cliente: string | null;
+    digitador: string;
+    cc: string | null;
+    rol: string | null;
+    sede: string | null;
+    dia: string | null;
+    caja: string | null;
+    registros: number;
+  }>(
+    `SELECT s.codigo AS codigo,
+            s.entidad_remitente AS cliente,
+            f.elaborado_por AS digitador,
+            substring(f.elaborado_por from '[(]([^)]*)[)]') AS cc,
+            MAX(u.rol) AS rol,
+            MAX(u.sede) AS sede,
+            f.fecha_del_dato AS dia,
+            f.caja AS caja,
+            COUNT(*) AS registros
+     FROM fuiddatosreal f
+     JOIN modulos_caja mc ON mc.caja_modulo = f.caja
+     JOIN moduloscliente m ON m.id = mc.id_modulo_caja
+     JOIN sub_modulos s ON s.id = m.id_submodulo
+     LEFT JOIN users u ON u.cc = substring(f.elaborado_por from '[(]([^)]*)[)]')
+     WHERE ${where.join(' AND ')}
+     GROUP BY s.codigo, s.entidad_remitente, f.elaborado_por, f.fecha_del_dato, f.caja
+     ORDER BY s.codigo, f.elaborado_por, f.fecha_del_dato DESC`,
+    params,
+  );
+
+  const clientes = new Map<string, ClienteConDetalle>();
+  const digitadores = new Map<string, DigitadorDeCliente>();
+  const dias = new Map<string, Map<string, { registros: number; cajas: Set<string> }>>();
+  const cajasPorCliente = new Map<string, Set<string>>();
+  const cajasPorDigitador = new Map<string, Set<string>>();
+
+  for (const f of filas) {
+    const codigo = f.codigo ?? 'Sin código';
+    const claveDigitador = `${codigo}|${f.digitador}`;
+    const registros = Number(f.registros);
+
+    if (!clientes.has(codigo)) {
+      clientes.set(codigo, {
+        codigo,
+        cliente: f.cliente ?? 'Sin nombre',
+        registros: 0,
+        cajas: 0,
+        digitadores: [],
+      });
+      cajasPorCliente.set(codigo, new Set());
+    }
+    const cliente = clientes.get(codigo)!;
+    cliente.registros += registros;
+    if (f.caja) cajasPorCliente.get(codigo)!.add(f.caja);
+
+    if (!digitadores.has(claveDigitador)) {
+      digitadores.set(claveDigitador, {
+        nombre: f.digitador,
+        cc: f.cc,
+        rol: f.rol,
+        sede: f.sede,
+        registros: 0,
+        cajas: [],
+        primer_dia: f.dia ?? '',
+        ultimo_dia: f.dia ?? '',
+        por_dia: [],
+      });
+      cajasPorDigitador.set(claveDigitador, new Set());
+      dias.set(claveDigitador, new Map());
+      cliente.digitadores.push(digitadores.get(claveDigitador)!);
+    }
+    const digitador = digitadores.get(claveDigitador)!;
+    digitador.registros += registros;
+    if (f.caja) cajasPorDigitador.get(claveDigitador)!.add(f.caja);
+    if (f.dia) {
+      if (!digitador.primer_dia || f.dia < digitador.primer_dia) digitador.primer_dia = f.dia;
+      if (!digitador.ultimo_dia || f.dia > digitador.ultimo_dia) digitador.ultimo_dia = f.dia;
+      const porDia = dias.get(claveDigitador)!;
+      const actual = porDia.get(f.dia) ?? { registros: 0, cajas: new Set<string>() };
+      actual.registros += registros;
+      if (f.caja) actual.cajas.add(f.caja);
+      porDia.set(f.dia, actual);
+    }
+  }
+
+  for (const [clave, digitador] of digitadores) {
+    digitador.cajas = [...(cajasPorDigitador.get(clave) ?? [])].sort();
+    digitador.por_dia = [...(dias.get(clave) ?? [])]
+      .map(([dia, v]) => ({ dia, registros: v.registros, cajas: v.cajas.size }))
+      .sort((a, b) => b.dia.localeCompare(a.dia));
+  }
+  for (const [codigo, cliente] of clientes) {
+    cliente.cajas = cajasPorCliente.get(codigo)?.size ?? 0;
+    cliente.digitadores.sort((a, b) => b.registros - a.registros);
+  }
+
+  res.json([...clientes.values()].sort((a, b) => b.registros - a.registros));
+}

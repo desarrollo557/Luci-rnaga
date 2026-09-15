@@ -233,13 +233,22 @@ export async function updateFuid(req: Request, res: Response): Promise<void> {
     return;
   }
 
+  /**
+   * Quién puede editar un registro ya guardado.
+   *
+   * Solo lo edita quien lo digitó. El líder entra en esa regla: antes podía
+   * corregir cualquier registro de su sede, y eso borraba el rastro de quién
+   * hizo realmente el dato. ADMIN queda fuera porque administra el sistema, y
+   * CALIDAD porque su trabajo es justamente revisar lo que otros digitaron.
+   */
   const nombreCompletoMayus = `${user.nombre.toUpperCase()} (${cc})`;
-  const isCreator =
-    rol !== 'LIDER' && rol !== 'ADMIN' && rol !== 'CALIDAD' &&
-    (registro.elaborado_por?.toUpperCase() !== nombreCompletoMayus);
+  const revisaLoDeOtros = rol === 'ADMIN' || rol === 'CALIDAD';
+  const loDigitoEstaPersona = registro.elaborado_por?.toUpperCase() === nombreCompletoMayus;
 
-  if (isCreator) {
-    res.status(403).json({ error: 'No autorizado para actualizar este registro' });
+  if (!revisaLoDeOtros && !loDigitoEstaPersona) {
+    res.status(403).json({
+      error: 'Solo puede modificar los registros que usted digitó',
+    });
     return;
   }
 
