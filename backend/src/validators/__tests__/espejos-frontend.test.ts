@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 import {
   FRECUENCIAS_VALIDAS,
   LONGITUD_MAXIMA_FUID,
+  OBJETOS_CAJA_VALIDOS,
   OTROS_VALIDOS,
   SOPORTES_VALIDOS,
 } from '../../config/constants.js';
@@ -66,6 +67,10 @@ describe('los catálogos del frontend coinciden con los del backend', () => {
 
   it('otro', () => {
     expect(listaExportada(fuente, 'OPCIONES_OTRO')).toEqual([...OTROS_VALIDOS]);
+  });
+
+  it('objeto de la caja', () => {
+    expect(listaExportada(fuente, 'OPCIONES_OBJETO_CAJA')).toEqual([...OBJETOS_CAJA_VALIDOS]);
   });
 });
 
