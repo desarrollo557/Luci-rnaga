@@ -192,3 +192,67 @@ describe('el nombre del archivo dice de qué periodo es', () => {
     expect(seguimientoFilename(null, null, '2026-09-16')).toBe('Seguimiento_Inventario_2026-09-16.xlsx');
   });
 });
+
+/**
+ * Que el documento se vea.
+ *
+ * El archivo que entregó el cliente traía un autofiltro con un criterio aplicado
+ * y 2.346 filas ocultas desde la novena, justo donde van los datos, y la vista
+ * guardada en la fila 8760. La plantilla heredó las tres cosas: el seguimiento se
+ * generaba con todo dentro y Excel lo enseñaba vacío.
+ *
+ * Es el peor tipo de fallo de los que se pueden tener aquí, porque **ninguna
+ * comprobación de contenido lo detecta**: las celdas tienen sus valores y
+ * cualquier librería los lee. Solo se nota al abrir el archivo. De ahí que estas
+ * pruebas miren el estado de presentación y no lo escrito.
+ */
+describe('el documento se abre mostrando los datos', () => {
+  it('ninguna fila escrita queda oculta', async () => {
+    const hoja = await generarYAbrir([FILA, { ...FILA, codigo_cliente: '901' }]);
+    expect(hoja.getRow(9).hidden).toBeFalsy();
+    expect(hoja.getRow(10).hidden).toBeFalsy();
+  });
+
+  it('no queda ninguna fila oculta en toda la hoja', async () => {
+    const hoja = await generarYAbrir([FILA]);
+    const ocultas: number[] = [];
+    hoja.eachRow({ includeEmpty: true }, (fila, numero) => {
+      if (fila.hidden) ocultas.push(numero);
+    });
+    expect(ocultas).toEqual([]);
+  });
+
+  it('no queda autofiltro: un criterio guardado esconde lo que se acaba de escribir', async () => {
+    const hoja = await generarYAbrir([FILA]);
+    expect(hoja.autoFilter).toBeFalsy();
+  });
+
+  it('la vista abre arriba, no desplazada a una zona vacía', async () => {
+    const hoja = await generarYAbrir([FILA]);
+    const vista = hoja.views?.[0] as { topLeftCell?: string } | undefined;
+    expect(vista?.topLeftCell).toBe('A1');
+  });
+
+  it('los encabezados quedan congelados donde el formato los tiene', async () => {
+    const hoja = await generarYAbrir([FILA]);
+    const vista = hoja.views?.[0] as { state?: string; ySplit?: number } | undefined;
+    expect(vista?.state).toBe('frozen');
+    expect(vista?.ySplit).toBe(8);
+  });
+});
+
+describe('la plantilla de la que se parte ya viene limpia', () => {
+  it('sin filas ocultas', async () => {
+    const { hoja } = await abrirFormatoSeguimiento();
+    const ocultas: number[] = [];
+    hoja.eachRow({ includeEmpty: true }, (fila, numero) => {
+      if (fila.hidden) ocultas.push(numero);
+    });
+    expect(ocultas).toEqual([]);
+  });
+
+  it('sin autofiltro', async () => {
+    const { hoja } = await abrirFormatoSeguimiento();
+    expect(hoja.autoFilter).toBeFalsy();
+  });
+});
