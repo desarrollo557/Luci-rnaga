@@ -9,6 +9,7 @@ export * from './EditableDatePicker';
 export * from './EditableSuggestionInput';
 export * from './Input';
 export * from './LoadingState';
+export * from './MenuDeAcciones';
 export * from './Modal';
 export * from './PageHeader';
 export * from './Select';

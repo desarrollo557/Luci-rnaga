@@ -157,12 +157,15 @@ export interface Inventario {
   ZOHO_SYNC_STATE: string | null;
   ZOHO_SYNC_AT: string | null;
   ZOHO_SYNC_ERROR: string | null;
-  /**
-   * Cuántas actas de transferencia tiene el cliente de este inventario. No es una
-   * columna de la tabla: la calcula el listado para que la pantalla sepa qué
-   * filas se pueden desplegar sin preguntar por cada una.
+  /*
+   * Cifras vivas del cliente: lo que hay en el sistema ahora mismo, no lo que el
+   * inventario tiene guardado. No son columnas de la tabla, las calcula el
+   * listado. La pantalla las compara con las guardadas para decir si el
+   * inventario está al día y cuántos registros entraron sin reflejar.
    */
   total_actas?: number;
+  cajas_vivas?: number;
+  registros_vivos?: number;
 }
 
 export interface InventarioFuidResponse {

@@ -352,6 +352,8 @@ export interface ActaDelCliente {
   totalCajas: number;
   cajaIniciar: string | null;
   cajaFin: string | null;
+  /** Registros FUID digitados en las cajas de esta acta. */
+  registros: number;
 }
 
 export interface ClienteParaInventarioResponse {

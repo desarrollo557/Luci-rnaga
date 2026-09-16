@@ -281,18 +281,37 @@ async function inventarioExistsByCode(codigo: unknown, excludeItems?: number | s
 /**
  * Listado de inventarios, uno por cliente.
  *
- * Trae además cuántas actas de transferencia tiene ese cliente. La pantalla lo
- * usa para saber qué filas se pueden desplegar en árbol sin tener que preguntar
- * por cada una: con una sola acta no hay nada que desplegar.
+ * Además de lo guardado, trae lo que hay **ahora mismo** en el sistema: cuántas
+ * actas, cuántas cajas y cuántos registros. La pantalla compara esas cifras vivas
+ * con las que el inventario tiene guardadas y así puede decir si está al día o
+ * cuántos registros entraron sin reflejar. Sin esa comparación, el botón de
+ * actualizar es una acción a ciegas: no hay forma de saber si hace falta.
+ *
+ * `total_actas` sirve además para saber qué filas se pueden desplegar en árbol
+ * sin preguntar por cada una: con una sola acta no hay nada que desplegar.
+ *
+ * Va por `LATERAL` y no por tres subconsultas sueltas para recorrer las cajas y
+ * los registros del cliente una vez en lugar de tres. La tabla `inventario` tiene
+ * una fila por cliente, así que el recorrido es corto.
  */
 export async function listInventario(_req: Request, res: Response): Promise<void> {
   const rows = await query<Inventario>(`
     SELECT i.*,
-           (SELECT COUNT(*) FROM moduloscliente mcl
-            WHERE mcl.id_submodulo = (
-              SELECT id_submodulo FROM moduloscliente WHERE codigo = i."CODIGO_DEL_CLIENTE" ORDER BY id LIMIT 1
-            )) AS total_actas
+           COALESCE(v.total_actas, 0) AS total_actas,
+           COALESCE(v.cajas_vivas, 0) AS cajas_vivas,
+           COALESCE(v.registros_vivos, 0) AS registros_vivos
     FROM inventario i
+    LEFT JOIN LATERAL (
+      SELECT COUNT(DISTINCT mcl.id) AS total_actas,
+             COUNT(DISTINCT mc.id) AS cajas_vivas,
+             COUNT(f.id) AS registros_vivos
+      FROM moduloscliente mcl
+      LEFT JOIN modulos_caja mc ON mc.id_modulo_caja = mcl.id
+      LEFT JOIN fuiddatosreal f ON f.caja = mc.caja_modulo
+      WHERE mcl.id_submodulo = (
+        SELECT id_submodulo FROM moduloscliente WHERE codigo = i."CODIGO_DEL_CLIENTE" ORDER BY id LIMIT 1
+      )
+    ) v ON true
   `);
   res.json(rows);
 }
@@ -324,6 +343,8 @@ type ActaDelCliente = {
   totalCajas: number;
   cajaIniciar: string | null;
   cajaFin: string | null;
+  /** Registros FUID digitados en las cajas de esta acta. */
+  registros: number;
 };
 
 /**
@@ -384,11 +405,13 @@ const ACTAS_SELECT = `
   SELECT mcl.id,
          mcl.acta_transferencia_modulo AS acta,
          mcl.fecha_trans_modulo AS fecha,
-         COUNT(mc.id) AS "totalCajas",
+         COUNT(DISTINCT mc.id) AS "totalCajas",
          MIN(mc.caja_modulo) AS "cajaIniciar",
-         MAX(mc.caja_modulo) AS "cajaFin"
+         MAX(mc.caja_modulo) AS "cajaFin",
+         COUNT(f.id) AS registros
   FROM moduloscliente mcl
   LEFT JOIN modulos_caja mc ON mc.id_modulo_caja = mcl.id
+  LEFT JOIN fuiddatosreal f ON f.caja = mc.caja_modulo
 `;
 
 const ACTAS_AGRUPACION = `
