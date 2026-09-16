@@ -80,6 +80,12 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
+      # Las reglas de los hooks de React. Un hook declarado despues de un
+      # `return` se ejecuta solo en algunos renders: React aborta y la pantalla
+      # queda en blanco. Ni el typecheck, ni las pruebas, ni el build lo ven.
+      - name: Lint — reglas de los hooks
+        run: npm run lint
+
       - name: Pruebas de interfaz
         run: npm test
 
