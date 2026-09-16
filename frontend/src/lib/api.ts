@@ -332,9 +332,22 @@ export interface ClienteParaInventario {
   fecha_trans_modulo: string | null;
 }
 
+/** Un acta de transferencia del cliente, con el recuento y el rango de sus cajas. */
+export interface ActaDelCliente {
+  id: number;
+  acta: string | null;
+  fecha: string | null;
+  totalCajas: number;
+  cajaIniciar: string | null;
+  cajaFin: string | null;
+}
+
 export interface ClienteParaInventarioResponse {
   cliente: ClienteParaInventario;
+  /** Todas las actas del cliente. Un cliente puede tener más de una. */
+  actas: ActaDelCliente[];
   cajas: Array<{ caja_modulo: string }>;
+  /** Totales del cliente completo, sin acotar a un acta. */
   totalCajas: number;
   cajaIniciar: string | null;
   cajaFin: string | null;
@@ -352,9 +365,17 @@ export const inventarioApi = {
   update: (id: string | number, data: DataRow) => api.put<InventarioSaveResponse>(`/inventario/${id}`, data),
   remove: (id: string | number) => api.delete(`/inventario/${id}`),
   sync: (id: string | number) => api.post<InventarioSaveResponse>(`/inventario/${id}/sync`),
-  /** El mismo Excel que se sube a Zoho, para guardarlo en el equipo. */
-  descargarExcel: (id: string | number) =>
-    api.get(`/inventario/${id}/excel`, { responseType: 'blob' }),
+  /**
+   * El mismo Excel que se sube a Zoho, para guardarlo en el equipo.
+   *
+   * Con `acta` se baja solo el FUID de esa acta de transferencia; sin ella, el
+   * del cliente completo.
+   */
+  descargarExcel: (id: string | number, acta?: string | null) =>
+    api.get(`/inventario/${id}/excel`, {
+      responseType: 'blob',
+      params: acta ? { acta } : undefined,
+    }),
   clientesParaInventario: () =>
     api.get<Array<Pick<ClienteParaInventario, 'codigo' | 'entidad_remitente'>>>('/inventario/clientes'),
   clienteParaInventario: (codigo: string) =>
