@@ -75,6 +75,33 @@ entre en uso real conviene pasar a `starter`.
 
 ---
 
+## Esquema de la base al desplegar
+
+Los cambios de esquema **aditivos** —una columna, un índice, una restricción— los
+asegura el propio servidor al arrancar, antes de atender la primera petición
+(`backend/src/config/esquema.ts`). No hay que acordarse de ejecutar nada.
+
+Esto existe por un incidente: se desplegó una versión que leía una columna nueva
+antes de que nadie ejecutara su migración, y la pantalla de Administración se
+quedó respondiendo 500 hasta que alguien se acordó del SQL pendiente. El
+despliegue y la migración eran dos pasos y solo se dio uno.
+
+Lo que **no** entra ahí, y se sigue aplicando a mano desde `database/supabase/`:
+
+| Qué | Por qué a mano |
+| --- | --- |
+| Volcados y cargas de datos | No son repetibles: ejecutarlos dos veces duplica |
+| Cambios de tipo de columna | Reescriben la tabla entera y pueden tardar |
+| Limpiezas y correcciones de datos | No se pueden deshacer si salen mal |
+| Borrados de columnas o tablas | Un `DROP` que corre en cada arranque es una bomba |
+
+Si un ajuste del arranque falla —por ejemplo, porque el usuario de la base no
+tiene permiso—, queda registrado en el log con el nombre de lo que no pudo hacer
+y **el servidor arranca igual**. Quedarse sin servicio entero por no haber podido
+añadir una columna sería peor que el problema que se está evitando.
+
+---
+
 ## Hora
 
 Todo el software trabaja en la **hora de Colombia** (`America/Bogota`, UTC-5),
