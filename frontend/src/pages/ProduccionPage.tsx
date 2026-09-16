@@ -97,7 +97,14 @@ export default function ProduccionPage() {
       const respuesta = await reportesApi.descargarSeguimiento({ desde: segDesde, hasta: segHasta });
       const periodo = segDesde && segHasta ? `_${segDesde}_a_${segHasta}` : segDesde ? `_desde_${segDesde}` : segHasta ? `_hasta_${segHasta}` : `_${fechaHoyLocal()}`;
       descargarBlob(respuesta.data as Blob, `Seguimiento_Inventario${periodo}.xlsx`);
-      toast.success('Seguimiento de inventario descargado');
+      // El servidor dice cuántas jornadas trae: así se sabe si el documento salió
+      // con lo que se esperaba sin tener que abrirlo.
+      const jornadas = Number(respuesta.headers['x-total-jornadas'] ?? 0);
+      toast.success(
+        jornadas > 0
+          ? `Seguimiento descargado con ${jornadas.toLocaleString('es-CO')} ${jornadas === 1 ? 'jornada' : 'jornadas'}`
+          : 'Seguimiento de inventario descargado',
+      );
       setEligiendoPeriodo(false);
     } catch (error) {
       // El servidor puede responder con un error en JSON; como la petición pide
