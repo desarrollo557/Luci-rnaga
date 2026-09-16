@@ -4,6 +4,7 @@ import { query, queryOne, queryResult } from '../config/db.js';
 import { audit } from '../services/audit.service.js';
 import type { User } from '../types/db.js';
 import type { CreateUserDto, UpdateUserDto } from '../types/index.js';
+import { fechaHoyLocal } from '../utils/format.js';
 
 const saltRounds = 10;
 
@@ -123,10 +124,9 @@ export async function suspenderUsuario(req: Request, res: Response): Promise<voi
       res.status(400).json({ message: 'Formato de fecha inválido. Use YYYY-MM-DD' });
       return;
     }
-    const fechaSusp = new Date(suspendido_hasta);
-    const hoy = new Date();
-    hoy.setHours(0, 0, 0, 0);
-    if (fechaSusp < hoy) {
+    // Se compara como texto YYYY-MM-DD con el día de Colombia: el servidor
+    // corre en UTC y desde las 7 de la noche su "hoy" ya es mañana.
+    if (suspendido_hasta < fechaHoyLocal()) {
       res.status(400).json({ message: 'La fecha de suspensión no puede ser anterior a hoy' });
       return;
     }

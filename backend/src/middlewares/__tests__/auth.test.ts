@@ -8,15 +8,15 @@ import { isAdmin, isAuthenticated, isLiderOrAdmin, isTecnica, isTecnicaOnly } fr
  * Se prueban aquí, sin base de datos ni servidor, porque son la única capa que
  * separa a un digitador de la administración de usuarios: si uno de ellos deja
  * pasar un rol de más, ningún controlador lo vuelve a comprobar. Cada guardia
- * se ejerce con los cuatro roles y sin sesión, y se afirma tanto a quién deja
+ * se ejerce con los tres roles y sin sesión, y se afirma tanto a quién deja
  * pasar como a quién no.
  *
  * La matriz completa de endpoints por rol se comprueba contra la API real en
  * `backend/scripts/pruebas/roles.ts`; esto es el nivel de abajo.
  */
 
-type Rol = 'ADMIN' | 'LIDER' | 'TECNICA' | 'CALIDAD';
-const ROLES: Rol[] = ['ADMIN', 'LIDER', 'TECNICA', 'CALIDAD'];
+type Rol = 'ADMIN' | 'LIDER' | 'TECNICA';
+const ROLES: Rol[] = ['ADMIN', 'LIDER', 'TECNICA'];
 
 interface Resultado {
   paso: boolean;
@@ -68,8 +68,8 @@ describe('sin iniciar sesión no se pasa de la puerta', () => {
 });
 
 describe('qué rol deja pasar cada guardia', () => {
-  it('isAuthenticated: los cuatro perfiles', () => {
-    expect(quienesPasan(isAuthenticated)).toEqual(['ADMIN', 'LIDER', 'TECNICA', 'CALIDAD']);
+  it('isAuthenticated: los tres perfiles', () => {
+    expect(quienesPasan(isAuthenticated)).toEqual(['ADMIN', 'LIDER', 'TECNICA']);
   });
 
   it('isAdmin: solo la administración', () => {
@@ -86,8 +86,8 @@ describe('qué rol deja pasar cada guardia', () => {
     expect(quienesPasan(isTecnicaOnly)).toEqual(['TECNICA']);
   });
 
-  it('isTecnica: los cuatro, pese al nombre', () => {
-    expect(quienesPasan(isTecnica)).toEqual(['ADMIN', 'LIDER', 'TECNICA', 'CALIDAD']);
+  it('isTecnica: los tres, pese al nombre', () => {
+    expect(quienesPasan(isTecnica)).toEqual(['ADMIN', 'LIDER', 'TECNICA']);
   });
 });
 
@@ -99,23 +99,24 @@ describe('el motivo del rechazo se nombra', () => {
   });
 
   it('isTecnicaOnly dice que la acción es de técnica', () => {
-    const resultado = ejecutar(isTecnicaOnly, 'CALIDAD');
+    const resultado = ejecutar(isTecnicaOnly, 'LIDER');
     expect(resultado.estado).toBe(403);
     expect(resultado.cuerpo?.error).toContain('TECNICA');
   });
 
-  it('isLiderOrAdmin rechaza a técnica y a calidad con 403', () => {
-    for (const rol of ['TECNICA', 'CALIDAD'] as const) {
-      expect(ejecutar(isLiderOrAdmin, rol).estado).toBe(403);
-    }
+  it('isLiderOrAdmin rechaza a técnica con 403', () => {
+    expect(ejecutar(isLiderOrAdmin, 'TECNICA').estado).toBe(403);
   });
 });
 
 describe('un rol desconocido no se cuela', () => {
   it('ningún guardia de rol acepta un valor fuera de la lista', () => {
-    const invitado = 'INVITADO' as unknown as Rol;
-    for (const guardia of [isAdmin, isLiderOrAdmin, isTecnicaOnly]) {
-      expect(ejecutar(guardia, invitado).paso).toBe(false);
+    // CALIDAD existió y se retiró del software: una cuenta que aún lo tenga
+    // queda fuera igual que cualquier valor inventado.
+    for (const ajeno of ['INVITADO', 'CALIDAD'] as unknown as Rol[]) {
+      for (const guardia of [isAdmin, isLiderOrAdmin, isTecnica, isTecnicaOnly]) {
+        expect(ejecutar(guardia, ajeno).paso, ajeno).toBe(false);
+      }
     }
   });
 });

@@ -182,19 +182,11 @@ export interface SerieCajasInput {
   estado_caja: string;
   /** Usuarios que quedan asignados a todas las cajas creadas. */
   usuarios_tecnica?: number[];
-  usuarios_calidad?: number[];
 }
 
 export interface AsignacionCajaInput {
   modulo_id: number;
   usuarios: number[];
-}
-
-export interface AsignacionCajaRangoInput {
-  modulo_id: number;
-  usuarios: number[];
-  rango_inicio: string;
-  rango_fin: string;
 }
 
 export const authApi = {
@@ -258,8 +250,6 @@ export const modulosCajaApi = {
     api.patch(`/modulos_caja/${id}/cambiarEstado`, { estado_caja }),
   usuariosTecnica: (moduloId: string | number) =>
     api.get<UsuarioAsignado[]>(`/modulos_caja/${moduloId}/usuarios`),
-  usuariosCalidad: (moduloId: string | number) =>
-    api.get<UsuarioAsignado[]>(`/modulos_caja_calidad/${moduloId}/usuarios`),
   countFuidDatosReal: (cajaModulo: string) =>
     api.get<{ total: number }>('/modulos_caja/count_fuiddatosreal', {
       params: { caja_modulo: cajaModulo },
@@ -289,7 +279,7 @@ export const modulosCajaApi = {
     }>;
   }>('/modulos_caja/tecnica-stats'),
   createSerie: (data: SerieCajasInput) =>
-    api.post<{ message: string; cantidad: number; asignados: { tecnica: number; calidad: number } }>(
+    api.post<{ message: string; cantidad: number; asignados: { tecnica: number } }>(
       '/modulos_caja/serie',
       data,
     ),
@@ -299,13 +289,6 @@ export const asignacionCajaTecnicaApi = {
   asignar: (data: AsignacionCajaInput) => api.post('/asignacion_caja_tecnica', data),
   eliminar: (moduloId: string | number, usuarios: number[]) =>
     api.post(`/asignacion_caja_tecnica/${moduloId}/eliminar`, { usuarios }),
-};
-
-export const asignacionCajaCalidadApi = {
-  asignar: (data: AsignacionCajaInput) => api.post('/asignacion_caja_calidad', data),
-  eliminar: (moduloId: string | number, usuarios: number[]) =>
-    api.post(`/asignacion_caja_calidad/${moduloId}/eliminar`, { usuarios }),
-  asignarRango: (data: AsignacionCajaRangoInput) => api.post('/asignacion_caja_calidad/rango', data),
 };
 
 export const fuidApi = {

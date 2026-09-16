@@ -28,8 +28,8 @@ interface NavItem {
 
 const NAV_ITEMS: NavItem[] = [
   { label: 'Administración', to: '/admin', icon: LayoutDashboard, roles: ['ADMIN'] },
-  { label: 'Clientes', to: '/clientes', icon: Building2, roles: ['LIDER', 'TECNICA', 'CALIDAD'] },
-  { label: 'Producción', to: '/produccion', icon: Factory, roles: ['LIDER', 'CALIDAD'] },
+  { label: 'Clientes', to: '/clientes', icon: Building2, roles: ['LIDER', 'TECNICA'] },
+  { label: 'Producción', to: '/produccion', icon: Factory, roles: ['LIDER'] },
   { label: 'Inventario', to: '/inventario', icon: Package, roles: ['LIDER'] },
   { label: 'Historial', to: '/historial', icon: History, roles: ['LIDER'] },
   { label: 'Mi Panel', to: '/mi-panel', icon: Users, roles: ['TECNICA'] },
@@ -39,7 +39,6 @@ const ROL_LABEL: Record<Role, string> = {
   ADMIN: 'Administrador',
   LIDER: 'Líder',
   TECNICA: 'Técnica',
-  CALIDAD: 'Calidad',
 };
 
 const SIDEBAR_STORAGE_KEY = 'sidebar-collapsed';

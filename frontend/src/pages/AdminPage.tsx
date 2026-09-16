@@ -6,7 +6,6 @@ import {
   Pencil,
   Plus,
   Search,
-  ShieldCheck,
   Trash2,
   UserCheck,
   Users,
@@ -33,6 +32,7 @@ import { toastApiError } from '@/lib/feedback';
 import { invalidateDomain } from '@/lib/queryInvalidation';
 import { sedeOptionsCon } from '@/lib/sedes';
 import { createValidator, minLength, onlyDigits } from '@/lib/validation';
+import { fechaHoyLocal, formatearFechaHora } from '@/lib/fechas';
 import type { Role, User } from '@/types';
 import { ROLES } from '@/types';
 
@@ -40,21 +40,18 @@ const ROLE_BADGE: Record<Role, BadgeColor> = {
   ADMIN: 'red',
   LIDER: 'red',
   TECNICA: 'gray',
-  CALIDAD: 'green',
 };
 
 const ROLE_LABEL: Record<Role, string> = {
   ADMIN: 'Administrador',
   LIDER: 'Líder',
   TECNICA: 'Técnica',
-  CALIDAD: 'Calidad',
 };
 
 const ROLE_AVATAR: Record<Role, string> = {
   ADMIN: 'bg-solid-brand',
   LIDER: 'bg-solid-amber',
   TECNICA: 'bg-solid-slate',
-  CALIDAD: 'bg-solid-emerald',
 };
 
 const EMPTY_FORM: UserInput = {
@@ -157,7 +154,6 @@ export default function AdminPage() {
     () => ({
       total: users.length,
       tecnicas: users.filter((user) => user.rol === 'TECNICA').length,
-      calidad: users.filter((user) => user.rol === 'CALIDAD').length,
       lideresAdmin: users.filter((user) => user.rol === 'LIDER' || user.rol === 'ADMIN').length,
     }),
     [users],
@@ -187,7 +183,6 @@ export default function AdminPage() {
   const statCards: { label: string; icon: LucideIcon; value: number; iconClass: string }[] = [
     { label: 'Total Usuarios', icon: Users, value: stats.total, iconClass: 'bg-primary-50 text-primary-600' },
     { label: 'Técnicas', icon: UserCheck, value: stats.tecnicas, iconClass: 'bg-silver-100 text-silver-600' },
-    { label: 'Calidad', icon: ShieldCheck, value: stats.calidad, iconClass: 'bg-emerald-50 text-emerald-600' },
     { label: 'Líderes y Administradores', icon: Building2, value: stats.lideresAdmin, iconClass: 'bg-red-50 text-red-600' },
   ];
 
@@ -250,7 +245,7 @@ export default function AdminPage() {
 
   const isSuspendido = (user: User): boolean => {
     if (!user.suspendido_hasta) return false;
-    const today = new Date().toISOString().slice(0, 10);
+    const today = fechaHoyLocal();
     return user.suspendido_hasta >= today;
   };
 
@@ -303,12 +298,12 @@ export default function AdminPage() {
     {
       key: 'created_at',
       header: 'Creado',
-      render: (user) => (user.created_at ? user.created_at.slice(0, 19).replace('T', ' ') : '—'),
+      render: (user) => formatearFechaHora(user.created_at),
     },
     {
       key: 'updated_at',
       header: 'Actualizado',
-      render: (user) => (user.updated_at ? user.updated_at.slice(0, 19).replace('T', ' ') : '—'),
+      render: (user) => formatearFechaHora(user.updated_at),
     },
     {
       key: 'acciones',
@@ -501,7 +496,7 @@ export default function AdminPage() {
               label="Fecha de suspensión"
               value={suspendFecha}
               onChange={setSuspendFecha}
-              min={new Date().toISOString().slice(0, 10)}
+              min={fechaHoyLocal()}
               placeholder="Seleccione una fecha"
               required
             />

@@ -3,7 +3,7 @@ import type { SessionUser } from '../types/index.js';
 
 /**
  * Jerarquía de gestión: ADMIN administra todo; LIDER solo lo que pertenece a su
- * sede (cliente → acta → caja); TECNICA y CALIDAD no crean, editan ni borran
+ * sede (cliente → acta → caja); TECNICA no crea, edita ni borra
  * estas entidades (lo bloquea el middleware isLiderOrAdmin en las rutas).
  */
 
@@ -45,10 +45,9 @@ export function fueraDeSuSede(user: SessionUser | undefined, sede: string | null
   return user?.rol === 'LIDER' && Boolean(sede) && sede !== user.sede;
 }
 
-/** True si el técnico o analista de calidad tiene la caja asignada. */
+/** True si el técnico tiene la caja asignada. */
 export async function tieneCajaAsignada(user: SessionUser, cajaId: string | number): Promise<boolean> {
-  const tabla = user.rol === 'CALIDAD' ? 'asignacion_caja_calidad' : 'asignacion_caja_tecnica';
-  const fila = await queryOne<{ id: number }>(`SELECT id FROM ${tabla} WHERE modulo_id = ? AND usuario_id = ? LIMIT 1`, [
+  const fila = await queryOne<{ id: number }>('SELECT id FROM asignacion_caja_tecnica WHERE modulo_id = ? AND usuario_id = ? LIMIT 1', [
     cajaId,
     user.id,
   ]);

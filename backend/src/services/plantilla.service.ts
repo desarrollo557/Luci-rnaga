@@ -3,9 +3,10 @@ import path from 'node:path';
 import ExcelJS from 'exceljs';
 import { query } from '../config/db.js';
 import type { FuidDato } from '../types/db.js';
-import { abrirPlantillaFuid, escribirFilasFuid } from './plantillaFuid.service.js';
+import { RAIZ_BACKEND, abrirPlantillaFuid, escribirFilasFuid } from './plantillaFuid.service.js';
 
-const TEMP_DIR = path.resolve(process.cwd(), 'temp');
+// Junto al resto de `backend/`, no donde se haya arrancado el proceso.
+const TEMP_DIR = path.join(RAIZ_BACKEND, 'temp');
 
 export interface PlantillaFiltros {
   caja?: string;

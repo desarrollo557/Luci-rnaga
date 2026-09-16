@@ -92,7 +92,6 @@ async function main(): Promise<void> {
     ['/api/modulos_caja/tecnica-stats', null],
     [`/api/modulos_caja/${idCaja}`, idCaja],
     [`/api/modulos_caja/${idCaja}/usuarios`, idCaja],
-    [`/api/modulos_caja_calidad/${idCaja}/usuarios`, idCaja],
     [`/api/modulos_caja/next/${codigoCliente.padStart(3, '0')}C`, codigoCliente],
     [`/api/modulos_caja/next-upd/${codigoCaja}`, codigoCaja],
     ['/api/fuiddatosreal', null],

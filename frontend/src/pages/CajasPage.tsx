@@ -1,57 +1,44 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ClipboardList, Eye, FileText, PencilLine, Users, Wrench, ShieldCheck, User } from 'lucide-react';
+import { ClipboardList, Eye, FileText, PencilLine, Users, Wrench, User } from 'lucide-react';
 import { toast } from 'sonner';
-import { Badge, Button, Card, Input, LoadingState, Modal, PageHeader } from '@/components/ui';
+import { Badge, Button, Card, LoadingState, Modal, PageHeader } from '@/components/ui';
 import {
-  asignacionCajaCalidadApi,
   asignacionCajaTecnicaApi,
   getApiErrorMessage,
   modulosCajaApi,
   usersApi,
   type AsignacionCajaInput,
-  type AsignacionCajaRangoInput,
 } from '@/lib/api';
 import { invalidateDomain } from '@/lib/queryInvalidation';
-import { validCaja } from '@/lib/validation';
+import { formatearFechaHora } from '@/lib/fechas';
 import { useAuthStore } from '@/stores/authStore';
 
 interface SeccionAsignacionCajaProps {
   cajaId: number;
-  rol: 'TECNICA' | 'CALIDAD';
   label: string;
 }
 
-function SeccionAsignacionCaja({ cajaId, rol, label }: SeccionAsignacionCajaProps) {
+/** Técnicos asignados a la caja: la única asignación que existe en el software. */
+function SeccionAsignacionCaja({ cajaId, label }: SeccionAsignacionCajaProps) {
   const queryClient = useQueryClient();
-  const isCalidad = rol === 'CALIDAD';
   const currentUser = useAuthStore((state) => state.user);
 
   const asignadosQuery = useQuery({
-    queryKey: ['modulos-caja', 'usuarios', cajaId, rol],
-    queryFn: () =>
-      (rol === 'TECNICA'
-        ? modulosCajaApi.usuariosTecnica(cajaId)
-        : modulosCajaApi.usuariosCalidad(cajaId)
-      ).then((res) => res.data),
+    queryKey: ['modulos-caja', 'usuarios', cajaId, 'TECNICA'],
+    queryFn: () => modulosCajaApi.usuariosTecnica(cajaId).then((res) => res.data),
     enabled: cajaId > 0,
   });
 
   const disponiblesQuery = useQuery({
-    queryKey: ['users', 'rol', rol],
-    queryFn: () => usersApi.byRol(rol, { sede: currentUser?.sede }).then((res) => res.data),
+    queryKey: ['users', 'rol', 'TECNICA'],
+    queryFn: () => usersApi.byRol('TECNICA', { sede: currentUser?.sede }).then((res) => res.data),
     enabled: cajaId > 0,
   });
 
-  // Para TÉCNICA: usuarios seleccionados para asignar
+  // Usuarios seleccionados para asignar
   const [selected, setSelected] = useState<Set<number>>(new Set());
-
-  // Para CALIDAD: asignar por rango de cajas
-  const [rangoInicio, setRangoInicio] = useState('');
-  const [rangoFin, setRangoFin] = useState('');
-  const [rangoUsuarios, setRangoUsuarios] = useState<Set<number>>(new Set());
-  const [rangoError, setRangoError] = useState<string | null>(null);
 
   useEffect(() => {
     if (asignadosQuery.data) {
@@ -60,10 +47,7 @@ function SeccionAsignacionCaja({ cajaId, rol, label }: SeccionAsignacionCajaProp
   }, [asignadosQuery.data]);
 
   const asignarMutation = useMutation({
-    mutationFn: (data: AsignacionCajaInput) =>
-      rol === 'TECNICA'
-        ? asignacionCajaTecnicaApi.asignar(data)
-        : asignacionCajaCalidadApi.asignar(data),
+    mutationFn: (data: AsignacionCajaInput) => asignacionCajaTecnicaApi.asignar(data),
     onSuccess: () => {
       toast.success('Asignación guardada correctamente');
       setSelected(new Set());
@@ -76,24 +60,9 @@ function SeccionAsignacionCaja({ cajaId, rol, label }: SeccionAsignacionCajaProp
   });
 
   const eliminarMutation = useMutation({
-    mutationFn: (usuarios: number[]) =>
-      rol === 'TECNICA'
-        ? asignacionCajaTecnicaApi.eliminar(cajaId, usuarios)
-        : asignacionCajaCalidadApi.eliminar(cajaId, usuarios),
+    mutationFn: (usuarios: number[]) => asignacionCajaTecnicaApi.eliminar(cajaId, usuarios),
     onSuccess: () => {
       toast.success('Usuarios eliminados correctamente');
-      void invalidateDomain(queryClient, 'users');
-    },
-  });
-
-  const rangoMutation = useMutation({
-    mutationFn: (data: AsignacionCajaRangoInput) => asignacionCajaCalidadApi.asignarRango(data),
-    onSuccess: () => {
-      toast.success('Rango asignado correctamente');
-      setRangoInicio('');
-      setRangoFin('');
-      setRangoUsuarios(new Set());
-      setRangoError(null);
       void invalidateDomain(queryClient, 'users');
     },
   });
@@ -111,15 +80,6 @@ function SeccionAsignacionCaja({ cajaId, rol, label }: SeccionAsignacionCajaProp
       } else {
         next.add(id);
       }
-      return next;
-    });
-  };
-
-  const toggleRango = (id: number) => {
-    setRangoUsuarios((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
       return next;
     });
   };
@@ -150,30 +110,11 @@ function SeccionAsignacionCaja({ cajaId, rol, label }: SeccionAsignacionCajaProp
     eliminarMutation.mutate(toRemove);
   };
 
-  const handleAsignarRango = (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    if (validCaja(rangoInicio) !== null || validCaja(rangoFin) !== null) {
-      setRangoError('El rango debe tener el formato 000C000000');
-      return;
-    }
-    if (rangoUsuarios.size === 0) {
-      setRangoError('Selecciona al menos un usuario de calidad');
-      return;
-    }
-    setRangoError(null);
-    rangoMutation.mutate({
-      modulo_id: cajaId,
-      usuarios: [...rangoUsuarios],
-      rango_inicio: rangoInicio,
-      rango_fin: rangoFin,
-    });
-  };
-
   return (
     <Card className="p-4">
       <div className="mb-3 flex items-center justify-between gap-2">
         <h3 className="text-sm font-semibold text-silver-800">{label}</h3>
-        <Badge color={isCalidad ? 'green' : 'blue'}>
+        <Badge color="blue">
           {asignadosQuery.data?.length ?? 0} asignados
         </Badge>
       </div>
@@ -200,7 +141,7 @@ function SeccionAsignacionCaja({ cajaId, rol, label }: SeccionAsignacionCajaProp
                   <span className="flex-1 text-silver-700">{usuario.nombre}</span>
                   {isAssigned && <Badge color="gray">Asignado</Badge>}
                 </label>
-                {!isCalidad && isAssigned && asignadosMap.get(usuario.id)?.ultimo_upd && (
+                {isAssigned && asignadosMap.get(usuario.id)?.ultimo_upd && (
                   <p className="ml-7 mt-0.5 text-xs text-silver-500">
                     Último: {asignadosMap.get(usuario.id)?.ultimo_upd}
                   </p>
@@ -226,44 +167,6 @@ function SeccionAsignacionCaja({ cajaId, rol, label }: SeccionAsignacionCajaProp
         </Button>
       </div>
 
-      {isCalidad && (
-        <form onSubmit={handleAsignarRango} className="mt-4 space-y-3 border-t border-silver-100 pt-4">
-          <h4 className="text-sm font-semibold text-silver-700">Asignar por rango</h4>
-          <div className="grid grid-cols-2 gap-2">
-            <Input
-              label="Rango inicio"
-              value={rangoInicio}
-              onChange={(event) => setRangoInicio(event.target.value)}
-              placeholder="000C000000"
-            />
-            <Input
-              label="Rango fin"
-              value={rangoFin}
-              onChange={(event) => setRangoFin(event.target.value)}
-              placeholder="000C000000"
-            />
-          </div>
-          <div className="max-h-40 overflow-y-auto rounded-lg border border-silver-200 p-2">
-            {usuarios.map((usuario) => (
-              <label
-                key={usuario.id}
-                className="flex cursor-pointer items-center gap-2 rounded px-2 py-1 text-sm hover:bg-silver-50"
-              >
-                <input
-                  type="checkbox"
-                  checked={rangoUsuarios.has(usuario.id)}
-                  onChange={() => toggleRango(usuario.id)}
-                />
-                <span className="text-silver-700">{usuario.nombre}</span>
-              </label>
-            ))}
-          </div>
-          {rangoError && <p className="text-xs text-red-600">{rangoError}</p>}
-          <Button type="submit" size="sm" loading={rangoMutation.isPending}>
-            Asignar rango
-          </Button>
-        </form>
-      )}
     </Card>
   );
 }
@@ -286,12 +189,9 @@ export default function CajasPage() {
   const usuariosAsignadosQuery = useQuery({
     queryKey: ['modulos-caja', 'usuarios', cajaId, 'all'],
     queryFn: async () => {
-      if (!cajaId) return { tecnica: [], calidad: [] };
-      const [tecnica, calidad] = await Promise.all([
-        modulosCajaApi.usuariosTecnica(cajaId).then((r) => r.data),
-        modulosCajaApi.usuariosCalidad(cajaId).then((r) => r.data),
-      ]);
-      return { tecnica, calidad };
+      if (!cajaId) return { tecnica: [] };
+      const tecnica = await modulosCajaApi.usuariosTecnica(cajaId).then((r) => r.data);
+      return { tecnica };
     },
     enabled: Boolean(cajaId),
   });
@@ -368,20 +268,6 @@ export default function CajasPage() {
                   </Button>
                 </>
               )}
-              {rol === 'CALIDAD' && (
-                <>
-                  <Link to={`/cajas/${mid}/datos`} state={{ from: `/clientes/${id}/actas/${mid}/cajas` }}>
-                    <Button variant="secondary">
-                      <ClipboardList className="size-4" /> Ver FUIDs
-                    </Button>
-                  </Link>
-                  <Link to={`/cajas/${mid}/revision`} state={{ from: `/clientes/${id}/actas/${mid}/cajas` }}>
-                    <Button variant="secondary">
-                      <Eye className="size-4" /> Ver Revisión
-                    </Button>
-                  </Link>
-                </>
-              )}
             </>
           )
         }
@@ -429,11 +315,11 @@ export default function CajasPage() {
               </div>
               <div>
                 <dt className="font-medium text-silver-500">Creada</dt>
-                <dd className="mt-0.5 text-silver-800">{caja.created_at ? caja.created_at.slice(0, 19).replace('T', ' ') : '—'}</dd>
+                <dd className="mt-0.5 text-silver-800">{formatearFechaHora(caja.created_at)}</dd>
               </div>
               <div>
                 <dt className="font-medium text-silver-500">Actualizada</dt>
-                <dd className="mt-0.5 text-silver-800">{caja.updated_at ? caja.updated_at.slice(0, 19).replace('T', ' ') : '—'}</dd>
+                <dd className="mt-0.5 text-silver-800">{formatearFechaHora(caja.updated_at)}</dd>
               </div>
             </dl>
           </Card>
@@ -441,10 +327,7 @@ export default function CajasPage() {
       )}
 
       {isManager && cajaId !== null && (
-        <div className="grid gap-4 md:grid-cols-2">
-          <SeccionAsignacionCaja cajaId={cajaId} rol="TECNICA" label="Técnicos" />
-          <SeccionAsignacionCaja cajaId={cajaId} rol="CALIDAD" label="Calidad" />
-        </div>
+        <SeccionAsignacionCaja cajaId={cajaId} label="Técnicos" />
       )}
 
       {/* Modal Mostrar Detalles */}
@@ -509,11 +392,11 @@ export default function CajasPage() {
                 </div>
                 <div className="flex flex-col">
                   <dt className="text-xs font-medium text-silver-500 uppercase tracking-wider">Creada</dt>
-                  <dd className="mt-0.5 text-silver-800 font-mono text-sm">{caja?.created_at ? caja.created_at.slice(0, 19).replace('T', ' ') : '—'}</dd>
+                  <dd className="mt-0.5 text-silver-800 font-mono text-sm">{formatearFechaHora(caja?.created_at)}</dd>
                 </div>
                 <div className="flex flex-col">
                   <dt className="text-xs font-medium text-silver-500 uppercase tracking-wider">Actualizada</dt>
-                  <dd className="mt-0.5 text-silver-800 font-mono text-sm">{caja?.updated_at ? caja.updated_at.slice(0, 19).replace('T', ' ') : '—'}</dd>
+                  <dd className="mt-0.5 text-silver-800 font-mono text-sm">{formatearFechaHora(caja?.updated_at)}</dd>
                 </div>
               </dl>
             </div>
@@ -528,7 +411,7 @@ export default function CajasPage() {
               </h3>
             </div>
             <div className="p-4">
-              <div className="grid gap-4 md:grid-cols-2">
+              <div className="grid gap-4">
                 {/* Técnicos */}
                 <div className="bg-silver-50 rounded-lg p-4 border border-silver-100">
                   <h4 className="font-medium text-silver-700 mb-3 flex items-center gap-2">
@@ -551,27 +434,6 @@ export default function CajasPage() {
                           ) : (
                             <span className="text-xs text-silver-400">Sin registros aún</span>
                           )}
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </div>
-
-                {/* Calidad */}
-                <div className="bg-silver-50 rounded-lg p-4 border border-silver-100">
-                  <h4 className="font-medium text-silver-700 mb-3 flex items-center gap-2">
-                    <ShieldCheck className="size-4 text-green-600" />
-                    Calidad
-                  </h4>
-                  {usuariosAsignadosQuery.data?.calidad.length === 0 ? (
-                    <p className="text-sm text-silver-500">Sin usuarios de calidad asignados</p>
-                  ) : (
-                    <ul className="space-y-2">
-                      {usuariosAsignadosQuery.data?.calidad.map((u) => (
-                        <li key={u.id} className="flex items-center gap-2 text-sm text-silver-700 bg-surface px-3 py-2 rounded-lg border border-silver-200">
-                          <User className="size-4 text-silver-400" />
-                          <span>{u.nombre}</span>
-                          <span className="text-xs text-silver-400 px-2 py-0.5 rounded-full bg-silver-100">{u.sede}</span>
                         </li>
                       ))}
                     </ul>

@@ -8,7 +8,6 @@ import {
 } from '../validators/modulosCaja.validator.js';
 import {
   asignarUsuariosSchema,
-  asignarRangoSchema,
   usuariosOnlySchema,
 } from '../validators/asignaciones.validator.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
@@ -26,15 +25,11 @@ import {
   changeEstadoCaja,
   countFuidByCaja,
   listTecnicaUsersOfCaja,
-  listCalidadUsersOfCaja,
   getTecnicaStats,
 } from '../controllers/modulosCaja.controller.js';
 import {
   assignCajaTecnica,
   removeCajaTecnica,
-  assignCajaCalidad,
-  removeCajaCalidad,
-  assignCajaCalidadRango,
 } from '../controllers/asignacionesCaja.controller.js';
 
 const router = Router();
@@ -80,7 +75,6 @@ router.put(
 router.get('/modulos_caja/tecnica-stats', isAuthenticated, asyncHandler(getTecnicaStats));
 router.get('/modulos_caja/:id', isAuthenticated, asyncHandler(getModuloCajaById));
 router.get('/modulos_caja/:modulo_id/usuarios', isAuthenticated, asyncHandler(listTecnicaUsersOfCaja));
-router.get('/modulos_caja_calidad/:modulo_id/usuarios', isAuthenticated, asyncHandler(listCalidadUsersOfCaja));
 
 // Asignaciones de caja
 router.post(
@@ -96,27 +90,6 @@ router.post(
   isLiderOrAdmin,
   validate(usuariosOnlySchema),
   asyncHandler(removeCajaTecnica),
-);
-router.post(
-  '/asignacion_caja_calidad',
-  isAuthenticated,
-  isLiderOrAdmin,
-  validate(asignarUsuariosSchema),
-  asyncHandler(assignCajaCalidad),
-);
-router.post(
-  '/asignacion_caja_calidad/:modulo_id/eliminar',
-  isAuthenticated,
-  isLiderOrAdmin,
-  validate(usuariosOnlySchema),
-  asyncHandler(removeCajaCalidad),
-);
-router.post(
-  '/asignacion_caja_calidad/rango',
-  isAuthenticated,
-  isLiderOrAdmin,
-  validate(asignarRangoSchema),
-  asyncHandler(assignCajaCalidadRango),
 );
 
 export default router;

@@ -355,8 +355,15 @@ input[type="date"]:focus::-webkit-calendar-picker-indicator {
 /* Regla de negocio: en este software solo se escriben letras MAYÚSCULAS. Lo que
    se digita se muestra en mayúsculas desde el primer carácter; el valor real lo
    convierten el frontend (interceptor de axios) y el backend (middleware) antes
-   de guardarlo. Contraseñas y controles no textuales quedan fuera. */
-input:not([type='password']):not([type='date']):not([type='number']):not([type='checkbox']):not([type='radio']):not([type='file']):not([type='time']),
+   de guardarlo. Contraseñas y controles no textuales quedan fuera.
+
+   La contraseña es la única excepción del software: se acepta y se guarda tal
+   cual se escribe, con sus mayúsculas y minúsculas, y así se compara al iniciar
+   sesión. Queda fuera por su `autocomplete` y no solo por `type`, porque el
+   botón de "mostrar contraseña" del login cambia el campo a `type="text"` y con
+   la regla anterior se veía en mayúsculas aunque el valor enviado fuera el
+   escrito. */
+input:not([type='password']):not([autocomplete='current-password']):not([autocomplete='new-password']):not([type='date']):not([type='number']):not([type='checkbox']):not([type='radio']):not([type='file']):not([type='time']),
 textarea {
   text-transform: uppercase;
 }

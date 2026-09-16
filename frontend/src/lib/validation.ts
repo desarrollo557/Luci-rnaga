@@ -1,3 +1,4 @@
+import { fechaHoyLocal } from './fechas';
 import { esValorVacio } from './camposVacios';
 
 export type FieldValidator = (value: string, label: string) => string | null;
@@ -32,14 +33,8 @@ export function validDate(value: string, label: string): string | null {
  */
 export const FECHA_MINIMA_DOCUMENTAL = '1920-01-01';
 
-/** Hoy en formato YYYY-MM-DD, en la zona horaria donde opera la sede. */
-export function fechaHoyLocal(): string {
-  return new Intl.DateTimeFormat('en-CA', {
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).format(new Date());
-}
+/** Hoy en formato YYYY-MM-DD, en hora de Colombia. Vive en `lib/fechas`. */
+export { fechaHoyLocal };
 
 /** true si la cadena YYYY-MM-DD es un día que existe (descarta 2025-02-30). */
 export function esFechaReal(value: string): boolean {

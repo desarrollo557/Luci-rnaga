@@ -33,7 +33,7 @@ const CAMPOS_COMPARABLES = [
  * asunto", "Las notas") para encajar en los mensajes de error, y aquí las
  * etiquetas encabezan una comparación: "Notas: N/A → REVISADO" se lee, "Las
  * notas: N/A → REVISADO" no. Los tres últimos campos solo existen en el
- * historial: son el rastro de la revisión de calidad.
+ * historial: son el rastro de la revisión.
  */
 const ETIQUETAS: Record<string, string> = {
   fecha_del_dato: 'Fecha del dato',

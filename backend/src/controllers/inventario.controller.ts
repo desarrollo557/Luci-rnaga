@@ -154,6 +154,25 @@ function extraerResourceIdDeUrl(url: string | null | undefined): string | null {
   return match ? match[1] : null;
 }
 
+/**
+ * Motivo del fallo de la sincronización, en un texto que se pueda leer.
+ *
+ * Antes, todo lo que no fuera un `ZohoSheetError` se guardaba como "Error
+ * desconocido al subir a Zoho Sheet". El mensaje se quedaba en los registros
+ * del servidor y quien veía la pantalla no tenía nada con qué averiguar la
+ * causa: un fallo al leer el formato del inventario y una caída de Zoho se
+ * veían exactamente igual. Ahora se conserva el mensaje real, con el tipo de
+ * error delante cuando no viene de Zoho, para saber en qué paso se rompió.
+ */
+function motivoDelFallo(error: unknown): string {
+  if (error instanceof ZohoSheetError) return error.message;
+  if (error instanceof Error) {
+    const tipo = error.name && error.name !== 'Error' ? `${error.name}: ` : '';
+    return `Falló antes de llegar a Zoho Sheet — ${tipo}${error.message}`;
+  }
+  return `Falló antes de llegar a Zoho Sheet — ${String(error)}`;
+}
+
 /** Sube el .xlsx FUID del inventario a Zoho Sheet como Sheet nativo y persiste el resultado. Nunca lanza errores. */
 async function syncInventarioToWorkDrive(data: Record<string, unknown>, itemsId: number | string): Promise<SyncOutcome> {
   if (!isZohoSheetConfigured()) {
@@ -185,7 +204,7 @@ async function syncInventarioToWorkDrive(data: Record<string, unknown>, itemsId:
     console.log(`[Zoho Sheet] Inventario subido: ${baseName}`);
     return { state: 'SUBIDO', fileId: url, syncedAt: new Date().toISOString() };
   } catch (error) {
-    const message = error instanceof ZohoSheetError ? error.message : 'Error desconocido al subir a Zoho Sheet';
+    const message = motivoDelFallo(error);
     await query(
       `UPDATE inventario SET "ZOHO_SYNC_STATE" = 'ERROR', "ZOHO_SYNC_ERROR" = ?, "ZOHO_SYNC_AT" = NOW() WHERE "ITEMS" = ?`,
       [message.slice(0, 500), itemsId],

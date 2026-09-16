@@ -41,7 +41,7 @@ CREATE TRIGGER fuid_asunto_automatico
 --
 -- Se copian TODAS las columnas que el historial puede guardar. El trigger que
 -- venía de MySQL se dejaba cinco fuera —sede, tiempo y los tres campos de la
--- revisión de calidad—, y al quedar vacías el historial las mostraba como si
+-- revisión—, y al quedar vacías el historial las mostraba como si
 -- hubieran cambiado en cada edición: "Sede: — → BARRANQUILLA" aparecía en todos
 -- los movimientos aunque nadie tocara ese campo. `tipo_cambio` distingue
 -- una edición de un borrado; ambos casos comparten función porque lo único que
