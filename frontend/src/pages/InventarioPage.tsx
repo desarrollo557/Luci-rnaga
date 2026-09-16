@@ -1,14 +1,42 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { ChevronRight, Download, ExternalLink, Eye, Pencil, Plus, RefreshCcw, RefreshCw, RotateCcw, Search, Trash2 } from 'lucide-react';
-import { Badge, Button, ConfirmDialog, DatePicker, Input, Modal, PageHeader, Select, Spinner, Table, type Column } from '@/components/ui';
+import {
+  AlertTriangle,
+  Check,
+  ChevronRight,
+  Download,
+  ExternalLink,
+  Eye,
+  Pencil,
+  Plus,
+  RefreshCcw,
+  RefreshCw,
+  RotateCcw,
+  Search,
+  Trash2,
+} from 'lucide-react';
+import {
+  Badge,
+  Button,
+  ConfirmDialog,
+  DatePicker,
+  Input,
+  MenuDeAcciones,
+  Modal,
+  PageHeader,
+  Select,
+  Spinner,
+  Table,
+  type AccionDeMenu,
+  type Column,
+} from '@/components/ui';
 import { inventarioApi, type ActaDelCliente } from '@/lib/api';
 import { toastApiError } from '@/lib/feedback';
 import { cn } from '@/lib/cn';
 import { descargarBlob } from '@/lib/utils';
 import { invalidateDomain } from '@/lib/queryInvalidation';
-import { aFechaISO, fechaHoyLocal, formatearFecha, formatearFechaHora } from '@/lib/fechas';
+import { aFechaISO, fechaHoyLocal, formatearFecha, hace } from '@/lib/fechas';
 import type { DataRow, FuidConEstado, Inventario } from '@/types';
 import { useAuthStore } from '@/stores/authStore';
 
@@ -137,14 +165,40 @@ function camposDelActa(
   };
 }
 
+/**
+ * Cómo de al día está un inventario respecto de lo que hay digitado.
+ *
+ * Compara los registros que el inventario tiene guardados con los que existen
+ * ahora mismo en el sistema. Es la única forma de responder a "¿hace falta
+ * actualizar esto?" sin abrirlo: una fecha de última modificación no lo dice,
+ * porque un inventario leído ayer puede estar perfecto y uno leído hace una hora
+ * puede haberse quedado corto en ese rato.
+ *
+ * La diferencia puede ser negativa si se borraron registros, y también cuenta
+ * como desfase: el inventario dice más de lo que hay.
+ */
+type Frescura =
+  | { estado: 'al-dia' }
+  | { estado: 'desfasado'; diferencia: number }
+  | { estado: 'sin-datos' };
+
+function frescuraDe(row: Inventario): Frescura {
+  const vivos = row.registros_vivos ?? 0;
+  const guardados = row.REGISTROS_PROCESADOS ?? 0;
+  if (vivos === 0 && guardados === 0) return { estado: 'sin-datos' };
+  if (vivos === guardados) return { estado: 'al-dia' };
+  return { estado: 'desfasado', diferencia: vivos - guardados };
+}
+
 interface ArbolDeActasProps {
   codigo: string;
-  cliente: string | null;
   /** Clave de la descarga en curso, o null si no hay ninguna. */
   descargando: string | null;
   claveDescarga: (codigo: string, acta?: string | null) => string;
   onDescargar: (acta: string | null) => void;
   onVerPrevia: (acta: string | null) => void;
+  /** Registros que el inventario del cliente tiene ya reflejados. */
+  registrosReflejados: number;
 }
 
 /**
@@ -160,11 +214,11 @@ interface ArbolDeActasProps {
  */
 function ArbolDeActas({
   codigo,
-  cliente,
   descargando,
   claveDescarga,
   onDescargar,
   onVerPrevia,
+  registrosReflejados,
 }: ArbolDeActasProps) {
   const actasQuery = useQuery({
     queryKey: ['inventario', 'actas', codigo],
@@ -173,12 +227,23 @@ function ArbolDeActas({
   });
 
   const actas = actasQuery.data ?? [];
+  const registrosVivos = actas.reduce((suma, acta) => suma + (acta.registros ?? 0), 0);
+  const cajasVivas = actas.reduce((suma, acta) => suma + (acta.totalCajas ?? 0), 0);
+  /*
+   * Con el cliente desfasado, el desfase viene de alguna acta. No se puede saber
+   * de cuál con exactitud —el inventario guarda un único total—, pero sí señalar
+   * la más reciente, que es de donde suele venir el trabajo nuevo.
+   */
+  const hayDesfase = registrosVivos !== registrosReflejados;
+  const actaMasReciente = hayDesfase && actas.length > 0 ? actas[actas.length - 1].id : null;
 
   return (
     <div className="space-y-2 pl-2">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="text-xs font-semibold uppercase tracking-wide text-silver-500">
-          Actas de {cliente ?? codigo}
+          {actas.length} {actas.length === 1 ? 'acta' : 'actas'} &middot; {cajasVivas}{' '}
+          {cajasVivas === 1 ? 'caja' : 'cajas'} &middot; {registrosVivos.toLocaleString('es-CO')}{' '}
+          {registrosVivos === 1 ? 'registro' : 'registros'}
         </p>
         <div className="flex items-center gap-2">
           <Button size="sm" variant="secondary" onClick={() => onVerPrevia(null)}>
@@ -233,12 +298,24 @@ function ArbolDeActas({
               )}
             />
             <span aria-hidden="true" className="absolute left-2 top-1/2 h-px w-3 bg-silver-300" />
-            <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-silver-200 bg-surface px-3 py-2">
+            <div
+              className={cn(
+                'flex flex-wrap items-center justify-between gap-3 rounded-lg border px-3 py-2',
+                acta.id === actaMasReciente
+                  ? 'border-amber-300 bg-amber-50/40'
+                  : 'border-silver-200 bg-surface',
+              )}
+            >
               <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
                 <span className="font-medium text-silver-800">{acta.acta ?? 'SIN NÚMERO'}</span>
                 <span className="text-xs text-silver-500">
-                  {acta.totalCajas} {acta.totalCajas === 1 ? 'caja' : 'cajas'}
+                  {acta.totalCajas} {acta.totalCajas === 1 ? 'caja' : 'cajas'} &middot;{' '}
+                  {(acta.registros ?? 0).toLocaleString('es-CO')}{' '}
+                  {acta.registros === 1 ? 'registro' : 'registros'}
                 </span>
+                {acta.id === actaMasReciente && (
+                  <Badge color="amber">sin reflejar</Badge>
+                )}
                 {acta.cajaIniciar && acta.cajaFin && (
                   <span className="text-xs text-silver-500">
                     {acta.cajaIniciar} a {acta.cajaFin}
@@ -333,6 +410,16 @@ export default function InventarioPage() {
   const [desplegados, setDesplegados] = useState<Set<number>>(new Set());
   /** Inventario cuyas cifras se están recalculando, por su ITEMS. */
   const [recalculando, setRecalculando] = useState<number | null>(null);
+  /** Si el bloque de filtros secundarios esta desplegado. */
+  const [masFiltros, setMasFiltros] = useState(false);
+  /*
+   * Creacion en un paso. Antes, "Nuevo inventario" abria el formulario entero de
+   * veintiun campos para algo que solo necesita saber de que cliente se trata:
+   * las cifras las cuenta el sistema y la gestion se llena despues, cuando el
+   * trabajo avanza. Aqui solo se elige el cliente y se ve que se va a crear.
+   */
+  const [creando, setCreando] = useState(false);
+  const [codigoNuevo, setCodigoNuevo] = useState('');
 
   const [q, setQ] = useState('');
   const [estado, setEstado] = useState('');
@@ -653,12 +740,52 @@ export default function InventarioPage() {
   const retrySync = (row: Inventario) => retryMutation.mutate(row.ITEMS);
 
   const openCreate = () => {
-    setEditing(null);
-    setForm(emptyForm());
-    setActasDelCliente([]);
-    setCargandoCliente(false);
-    setModalOpen(true);
+    setCodigoNuevo('');
+    setCreando(true);
   };
+
+  /** Lo que hay en el sistema para el cliente elegido, para mostrarlo antes de crear. */
+  const resumenNuevoQuery = useQuery({
+    queryKey: ['inventario', 'resumen-cliente', codigoNuevo],
+    queryFn: () => inventarioApi.clienteParaInventario(codigoNuevo).then((r) => r.data),
+    enabled: creando && Boolean(codigoNuevo),
+  });
+
+  const yaTieneInventario = useMemo(
+    () => rows.some((row) => row.CODIGO_DEL_CLIENTE === codigoNuevo),
+    [rows, codigoNuevo],
+  );
+
+  const crearMutation = useMutation({
+    mutationFn: async () => {
+      const paquete = resumenNuevoQuery.data;
+      // Solo se manda lo que identifica al cliente y su primera acta. El resto lo
+      // calcula el servidor al crear, que es quien sabe contar cajas y registros.
+      const primera = paquete?.actas?.[0] ?? null;
+      const data: DataRow = {
+        CODIGO_DEL_CLIENTE: codigoNuevo,
+        CLIENTE: paquete?.cliente.entidad_remitente ?? null,
+        No_ACTA: primera?.acta ?? null,
+        FECHA_TRANSFERENCIA: primera?.fecha ? aFechaISO(primera.fecha) : null,
+        ESTADO_DEL_INVENTARIO: 'PENDIENTE',
+        ESTADO_ENTREGA: 'PENDIENTE',
+      };
+      return await inventarioApi.create(data);
+    },
+    onSuccess: async (resp) => {
+      await queryClient.invalidateQueries({ queryKey: ['inventario'] });
+      const sync = resp.data?.sync;
+      if (sync?.state === 'ERROR') {
+        toast.error(`Inventario creado, pero fallo la subida a Zoho Sheet: ${sync.error ?? 'error desconocido'}`);
+      } else {
+        toast.success('Inventario creado con los datos del sistema');
+      }
+      setCreando(false);
+    },
+    onError: (error) => {
+      toastApiError(error, { context: 'No se pudo crear el inventario:' });
+    },
+  });
 
   const openEdit = (row: Inventario) => {
     setEditing(row);
@@ -743,30 +870,68 @@ export default function InventarioPage() {
         );
       },
     },
-    { key: 'ITEMS', header: 'ID' },
-    { key: 'CODIGO_DEL_CLIENTE', header: 'Código Cliente' },
-    { key: 'CLIENTE', header: 'Cliente' },
     {
-      key: 'No_ACTA',
-      header: 'N° Acta',
+      key: 'CLIENTE',
+      header: 'Cliente',
       render: (row) => (
-        <div className="flex items-center gap-2">
-          <span>{row.No_ACTA ?? '—'}</span>
-          {(row.total_actas ?? 0) > 1 && (
-            <Badge color="blue">{row.total_actas} actas</Badge>
-          )}
+        <div>
+          <div className="font-medium text-silver-900">{row.CLIENTE ?? 'Sin nombre'}</div>
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-silver-500">{row.CODIGO_DEL_CLIENTE ?? 'sin codigo'}</span>
+            {/*
+              La subida a Zoho ya no tiene columna propia, pero un fallo tiene que
+              verse igual: sin esta marca, un documento que no llego a publicarse
+              quedaba indistinguible de uno publicado. El motivo va en el titulo,
+              y la acción de reintentar, en el menu.
+            */}
+            {row.ZOHO_SYNC_STATE === 'ERROR' && (
+              <span title={row.ZOHO_SYNC_ERROR ?? 'Fallo la subida a Zoho Sheet'}>
+                <Badge color="red">Zoho</Badge>
+              </span>
+            )}
+          </div>
         </div>
       ),
     },
     {
-      key: 'TOTAL_CAJAS',
-      header: 'Total Cajas',
-      render: (row) => <span>{row.TOTAL_CAJAS ?? '—'}</span>,
+      key: 'total_actas',
+      header: 'Actas',
+      render: (row) => <span className="text-silver-700">{row.total_actas ?? 0}</span>,
     },
     {
-      key: 'CAJAS_PROCESADAS',
-      header: 'Procesadas',
-      render: (row) => <span>{row.CAJAS_PROCESADAS ?? '—'}</span>,
+      /*
+       * Cajas terminadas sobre el total, con una barra. Antes eran dos columnas
+       * ("Total Cajas" y "Procesadas") y había que compararlas con la vista; el
+       * avance de una caja sobre otra es lo que se quiere leer, no cada cifra
+       * suelta.
+       */
+      key: 'cajas',
+      header: 'Cajas',
+      render: (row) => {
+        const total = row.cajas_vivas ?? row.TOTAL_CAJAS ?? 0;
+        const hechas = row.CAJAS_PROCESADAS ?? 0;
+        const porcentaje = total > 0 ? Math.min(100, Math.round((hechas / total) * 100)) : 0;
+        const color = porcentaje === 100 ? 'bg-green-500' : porcentaje > 0 ? 'bg-amber-500' : 'bg-silver-400';
+        return (
+          <div>
+            <div className="whitespace-nowrap text-silver-800">
+              {hechas} <span className="text-silver-400">/ {total}</span>
+            </div>
+            <div className="mt-1 h-1 w-16 overflow-hidden rounded-full bg-silver-200">
+              <div className={cn('h-full rounded-full', color)} style={{ width: `${porcentaje}%` }} />
+            </div>
+          </div>
+        );
+      },
+    },
+    {
+      key: 'registros',
+      header: 'Registros',
+      render: (row) => (
+        <span className="text-silver-700">
+          {(row.REGISTROS_PROCESADOS ?? 0).toLocaleString('es-CO')}
+        </span>
+      ),
     },
     {
       key: 'ESTADO_DEL_INVENTARIO',
@@ -778,124 +943,129 @@ export default function InventarioPage() {
       },
     },
     {
-      key: 'ESTADO_ENTREGA',
-      header: 'Entrega',
+      /*
+       * La columna que responde a "¿hace falta actualizar?". Compara los
+       * registros que el inventario tiene guardados con los que hay digitados
+       * ahora mismo. Sin ella, el boton de actualizar es una accion a ciegas.
+       */
+      key: 'frescura',
+      header: 'Al dia',
       render: (row) => {
-        const estadoRow = row.ESTADO_ENTREGA;
-        const color = estadoRow === 'ENTREGADO' ? 'green' : estadoRow === 'EN PROCESO' ? 'amber' : 'gray';
-        return <Badge color={color}>{estadoRow ?? 'PENDIENTE'}</Badge>;
-      },
-    },
-    {
-      key: 'FECHA_ACTUALIZACION',
-      header: 'Últ. Actualización',
-      render: (row) => <span>{formatearFechaHora(row.FECHA_ACTUALIZACION ?? row.FECHA_CREACION)}</span>,
-    },
-    {
-      key: 'USUARIO_ACTUALIZACION',
-      header: 'Modificado por',
-      render: (row) => <span>{row.USUARIO_ACTUALIZACION ?? '—'}</span>,
-    },
-    {
-      key: 'zoho',
-      header: 'Zoho Sheet',
-      render: (row) => {
-        const state = row.ZOHO_SYNC_STATE ?? 'PENDIENTE';
-        if (state === 'SUBIDO') {
-          const url = row.ZOHO_FILE_ID;
-          const isUrl = typeof url === 'string' && url.startsWith('http');
-          return (
-            <div className="flex flex-col items-start gap-1">
-              <Badge color="green">Subido</Badge>
-              {isUrl && (
-                <a
-                  href={url}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="text-xs text-primary-600 hover:underline"
-                >
-                  Abrir Sheet
-                </a>
-              )}
-            </div>
-          );
+        const estadoFrescura = frescuraDe(row);
+        const leido = row.FECHA_ACTUALIZACION ?? row.FECHA_CREACION;
+        if (estadoFrescura.estado === 'sin-datos') {
+          return <span className="text-xs text-silver-400">sin registros aun</span>;
         }
-        if (state === 'ERROR') {
-          return (
-            <div className="flex items-center gap-1">
-              <span title={row.ZOHO_SYNC_ERROR ?? undefined}>
-                <Badge color="red">Error</Badge>
-              </span>
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={() => retrySync(row)}
-                aria-label="Reintentar subida a Zoho Sheet"
-                className="text-silver-500 hover:text-primary-600"
-              >
-                <RefreshCw className="size-4" />
-              </Button>
-            </div>
-          );
-        }
-        return <Badge color="gray">Pendiente</Badge>;
+        return (
+          <div>
+            {estadoFrescura.estado === 'al-dia' ? (
+              <div className="flex items-center gap-1.5 text-xs font-medium text-green-700">
+                <Check className="size-3.5" /> Al dia
+              </div>
+            ) : (
+              <div className="flex items-center gap-1.5 text-xs font-medium text-amber-700">
+                <AlertTriangle className="size-3.5" />
+                {estadoFrescura.diferencia > 0
+                  ? `${estadoFrescura.diferencia.toLocaleString('es-CO')} registros nuevos`
+                  : `${Math.abs(estadoFrescura.diferencia).toLocaleString('es-CO')} registros de menos`}
+              </div>
+            )}
+            <div className="text-xs text-silver-400">leido {hace(leido)}</div>
+          </div>
+        );
       },
     },
     {
       key: 'acciones',
-      header: 'Acciones',
-      render: (row: Inventario) => (
-        <div className="flex items-center gap-1">
-          <Button
-            size="sm"
-            variant="ghost"
-            onClick={() => abrirVistaPrevia(row)}
-            aria-label="Ver el FUID del cliente"
-            title="Ver el FUID del cliente"
-          >
-            <Eye className="size-4" />
-          </Button>
-          <Button
-            size="sm"
-            variant="ghost"
-            onClick={() => void descargarFuid(row.CODIGO_DEL_CLIENTE, null, row.CLIENTE)}
-            loading={descargando === claveDescarga(row.CODIGO_DEL_CLIENTE ?? '', null)}
-            aria-label="Descargar inventario en Excel"
-            title="Descargar en Excel"
-          >
-            <Download className="size-4" />
-          </Button>
-          {canEdit && (
+      header: <span className="block text-right">Acciones</span>,
+      render: (row: Inventario) => {
+        const estadoFrescura = frescuraDe(row);
+        const desfasado = estadoFrescura.estado === 'desfasado';
+        const sinRegistros = (row.registros_vivos ?? 0) === 0;
+        const zoho = row.ZOHO_SYNC_STATE ?? 'PENDIENTE';
+        const enlaceZoho = typeof row.ZOHO_FILE_ID === 'string' && row.ZOHO_FILE_ID.startsWith('http')
+          ? row.ZOHO_FILE_ID
+          : null;
+
+        const secundarias: AccionDeMenu[] = [];
+        if (canEdit && !desfasado) {
+          secundarias.push({
+            label: 'Actualizar cifras',
+            icon: <RefreshCcw className="size-4" />,
+            onSelect: () => recalcularMutation.mutate(row),
+            disabled: recalculando !== null,
+          });
+        }
+        if (enlaceZoho) {
+          secundarias.push({
+            label: 'Abrir en Zoho Sheet',
+            icon: <ExternalLink className="size-4" />,
+            onSelect: () => window.open(enlaceZoho, '_blank', 'noopener'),
+          });
+        }
+        if (canEdit && zoho === 'ERROR') {
+          secundarias.push({
+            label: 'Reintentar subida a Zoho',
+            icon: <RefreshCw className="size-4" />,
+            onSelect: () => retrySync(row),
+          });
+        }
+        if (canEdit) {
+          secundarias.push({
+            label: 'Editar datos de gestion',
+            icon: <Pencil className="size-4" />,
+            onSelect: () => openEdit(row),
+          });
+          secundarias.push({
+            label: 'Eliminar inventario',
+            icon: <Trash2 className="size-4" />,
+            onSelect: () => setDeleting(row),
+            peligrosa: true,
+          });
+        }
+
+        return (
+          <div className="flex items-center justify-end gap-1">
             <Button
               size="sm"
               variant="ghost"
-              onClick={() => recalcularMutation.mutate(row)}
-              loading={recalculando === row.ITEMS}
-              disabled={recalculando !== null}
-              aria-label="Actualizar las cifras con los datos del sistema"
-              title="Actualizar las cifras con los datos del sistema"
+              disabled={sinRegistros}
+              onClick={() => abrirVistaPrevia(row)}
+              aria-label="Ver el FUID del cliente"
+              title={sinRegistros ? 'Este cliente no tiene registros' : 'Ver el FUID del cliente'}
             >
-              <RefreshCcw className="size-4" />
+              <Eye className="size-4" />
             </Button>
-          )}
-          {canEdit && (
-            <>
-              <Button size="sm" variant="ghost" onClick={() => openEdit(row)} aria-label="Editar">
-                <Pencil className="size-4" />
-              </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              disabled={sinRegistros}
+              onClick={() => void descargarFuid(row.CODIGO_DEL_CLIENTE, null, row.CLIENTE)}
+              loading={descargando === claveDescarga(row.CODIGO_DEL_CLIENTE ?? '', null)}
+              aria-label="Descargar el FUID del cliente"
+              title={sinRegistros ? 'Este cliente no tiene registros' : 'Descargar el FUID del cliente'}
+            >
+              <Download className="size-4" />
+            </Button>
+            {/* Actualizar solo se muestra cuando hace falta, y entonces se ve. */}
+            {canEdit && desfasado && (
               <Button
                 size="sm"
                 variant="ghost"
-                onClick={() => setDeleting(row)}
-                className="text-red-600 hover:bg-red-50"
-                aria-label="Eliminar"
+                onClick={() => recalcularMutation.mutate(row)}
+                loading={recalculando === row.ITEMS}
+                disabled={recalculando !== null}
+                className="border border-amber-300 bg-amber-50 text-amber-800 hover:bg-amber-100"
+                title="Actualizar las cifras con lo que hay digitado"
               >
-                <Trash2 className="size-4" />
+                <RefreshCcw className="mr-1.5 size-3.5" />
+                Actualizar
               </Button>
-            </>
-          )}
-        </div>
-      ),
+            )}
+            {secundarias.length > 0 && <MenuDeAcciones acciones={secundarias} />}
+          </div>
+        );
+      },
     },
   ] as Column<Inventario>[];
 
@@ -914,87 +1084,99 @@ export default function InventarioPage() {
         }
       />
 
-      {/* Panel de filtros — diseño propio de Inventario */}
-      <div className="rounded-2xl border border-silver-200 bg-surface p-5 shadow-sm">
-        <div className="relative">
-          <Search className="pointer-events-none absolute left-3.5 top-1/2 size-5 -translate-y-1/2 text-silver-400" />
-          <input
-            type="search"
-            value={q}
-            onChange={(e) => {
-              setQ(e.target.value);
-              setPage(0);
-            }}
-            placeholder="Buscar por cliente, código, acta, funcionario, caja…"
-            className="h-12 w-full rounded-xl border border-silver-300 bg-silver-50 pl-11 pr-4 text-sm text-silver-900 shadow-sm placeholder:text-silver-400 transition-all duration-200 focus:border-primary-500 focus:bg-surface focus:outline-none focus:ring-4 focus:ring-primary-500/20"
-          />
-        </div>
-
-        <div className="mt-4 flex flex-wrap items-center gap-2">
-          <span className="mr-1 text-xs font-semibold uppercase tracking-wide text-silver-500">Estado:</span>
-          <Chip label="Todos" active={estado === ''} onClick={() => setEstado('')} />
-          {ESTADOS_INVENTARIO.map((e) => (
-            <Chip key={e} label={e} active={estado === e} onClick={() => setEstado(e)} />
-          ))}
-        </div>
-
-        <div className="mt-3 flex flex-wrap items-center gap-2">
-          <span className="mr-1 text-xs font-semibold uppercase tracking-wide text-silver-500">Entrega:</span>
-          <Chip label="Todos" active={estadoEntrega === ''} onClick={() => setEstadoEntrega('')} />
-          {ESTADOS_ENTREGA.map((e) => (
-            <Chip key={e} label={e} active={estadoEntrega === e} onClick={() => setEstadoEntrega(e)} />
-          ))}
-        </div>
-
-        <div className="mt-4 grid grid-cols-1 gap-3 border-t border-silver-100 pt-4 sm:grid-cols-2 lg:grid-cols-4">
-          <Select
-            label="Funcionario"
-            placeholder="Todos"
-            options={funcionarios.map((f) => ({ value: f, label: f }))}
-            value={funcionario}
-            onChange={(value) => {
-              setFuncionario(value);
-              setPage(0);
-            }}
-          />
-          <DatePicker
-            label="Desde (transferencia)"
-            value={desde}
-            onChange={(value) => {
-              setDesde(value);
-              setPage(0);
-            }}
-          />
-          <DatePicker
-            label="Hasta (transferencia)"
-            value={hasta}
-            onChange={(value) => {
-              setHasta(value);
-              setPage(0);
-            }}
-          />
-          <div className="flex items-end">
-            <Button
-              variant="ghost"
-              onClick={limpiar}
-              disabled={!hayFiltros}
-              className="h-10 border border-silver-200 text-silver-600 hover:bg-silver-50 hover:text-silver-900"
-            >
-              <RotateCcw className="size-4" /> Limpiar
-            </Button>
+      {/*
+        Filtros en una sola linea. Antes ocupaban la primera pantalla entera
+        —buscador grande, dos filas de fichas, cuatro campos y un contador— y
+        para llegar a la tabla habia que bajar. En un modulo de trabajo los datos
+        van primero; lo que se usa a diario queda a la vista y el resto se
+        despliega.
+      */}
+      <div className="rounded-xl border border-silver-200 bg-surface p-3 shadow-sm">
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="relative min-w-[260px] flex-1">
+            <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-silver-400" />
+            <input
+              type="search"
+              value={q}
+              onChange={(e) => {
+                setQ(e.target.value);
+                setPage(0);
+              }}
+              placeholder="Buscar cliente, codigo o acta…"
+              className="h-9 w-full rounded-lg border border-silver-300 bg-surface pl-9 pr-3 text-sm text-silver-800 transition-colors focus:border-primary-500 focus:outline-none focus:ring-4 focus:ring-primary-500/15"
+            />
           </div>
-        </div>
 
-        <div className="mt-4 flex items-center justify-between border-t border-silver-100 pt-3 text-sm">
-          <span className="font-medium text-silver-600">
-            {filtered.length.toLocaleString('es-CO')} {filtered.length === 1 ? 'inventario' : 'inventarios'}
-            {hayFiltros && (
-              <span className="ml-2 rounded-full bg-primary-100 px-2 py-0.5 text-xs font-semibold text-primary-700">
-                filtrado
-              </span>
-            )}
+          <div className="flex items-center gap-1">
+            <Chip label="Todos" active={estado === ''} onClick={() => setEstado('')} />
+            {ESTADOS_INVENTARIO.map((e) => (
+              <Chip key={e} label={e} active={estado === e} onClick={() => setEstado(e)} />
+            ))}
+          </div>
+
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => setMasFiltros((abierto) => !abierto)}
+            className={cn(masFiltros && 'border-primary-400 text-primary-700')}
+          >
+            Mas filtros
+            <ChevronRight className={cn('ml-1 size-4 transition-transform', masFiltros && 'rotate-90')} />
+          </Button>
+
+          <span className="ml-auto whitespace-nowrap text-xs font-medium text-silver-500">
+            {filtered.length.toLocaleString('es-CO')} {filtered.length === 1 ? 'cliente' : 'clientes'}
+            {hayFiltros && <span className="ml-1 text-primary-600">(filtrado)</span>}
           </span>
         </div>
+
+        {masFiltros && (
+          <div className="mt-3 grid grid-cols-1 gap-3 border-t border-silver-100 pt-3 sm:grid-cols-2 lg:grid-cols-4">
+            <Select
+              label="Estado de entrega"
+              placeholder="Todos"
+              options={ESTADOS_ENTREGA.map((v) => ({ value: v, label: v }))}
+              value={estadoEntrega}
+              onChange={(value) => {
+                setEstadoEntrega(value);
+                setPage(0);
+              }}
+            />
+            <Select
+              label="Funcionario"
+              placeholder="Todos"
+              options={funcionarios.map((f) => ({ value: f, label: f }))}
+              value={funcionario}
+              onChange={(value) => {
+                setFuncionario(value);
+                setPage(0);
+              }}
+            />
+            <DatePicker
+              label="Transferencia desde"
+              value={desde}
+              onChange={(value) => {
+                setDesde(value);
+                setPage(0);
+              }}
+            />
+            <div className="flex gap-2">
+              <DatePicker
+                label="Hasta"
+                value={hasta}
+                onChange={(value) => {
+                  setHasta(value);
+                  setPage(0);
+                }}
+              />
+              <div className="flex items-end">
+                <Button variant="ghost" onClick={limpiar} disabled={!hayFiltros} title="Limpiar filtros">
+                  <RotateCcw className="size-4" />
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       <Table
@@ -1007,11 +1189,11 @@ export default function InventarioPage() {
         renderExpansion={(row) => (
           <ArbolDeActas
             codigo={row.CODIGO_DEL_CLIENTE ?? ''}
-            cliente={row.CLIENTE}
             descargando={descargando}
             claveDescarga={claveDescarga}
             onDescargar={(acta) => void descargarFuid(row.CODIGO_DEL_CLIENTE, acta, row.CLIENTE)}
             onVerPrevia={(acta) => abrirVistaPrevia(row, acta)}
+            registrosReflejados={row.REGISTROS_PROCESADOS ?? 0}
           />
         )}
       />
@@ -1040,7 +1222,7 @@ export default function InventarioPage() {
       <Modal
         open={modalOpen}
         onClose={() => setModalOpen(false)}
-        title={editing ? `Editar Inventario #${editing.ITEMS}` : 'Nuevo Inventario'}
+        title={editing ? `Editar inventario de ${editing.CLIENTE ?? editing.CODIGO_DEL_CLIENTE ?? ''}` : 'Inventario'}
         size="lg"
         footer={
           <>
@@ -1412,6 +1594,88 @@ export default function InventarioPage() {
             )}
           </div>
         )}
+      </Modal>
+
+      {/*
+        Nuevo inventario: un paso. Se elige el cliente y se ve, antes de crear,
+        exactamente que se va a guardar. Los campos de gestion —funcionario,
+        estados, fechas de entrega— se llenan despues desde Editar, que es cuando
+        de verdad se conocen.
+      */}
+      <Modal
+        open={creando}
+        onClose={() => setCreando(false)}
+        title="Nuevo inventario"
+        size="sm"
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setCreando(false)}>
+              Cancelar
+            </Button>
+            <Button
+              onClick={() => crearMutation.mutate()}
+              loading={crearMutation.isPending}
+              disabled={!codigoNuevo || yaTieneInventario || resumenNuevoQuery.isLoading}
+            >
+              Crear inventario
+            </Button>
+          </>
+        }
+      >
+        <div className="space-y-4">
+          <Select
+            label="Cliente"
+            placeholder="Elija el cliente"
+            options={clientOptions}
+            value={codigoNuevo}
+            onChange={setCodigoNuevo}
+          />
+
+          {yaTieneInventario && (
+            <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+              Este cliente ya tiene inventario. Abralo desde la tabla para actualizarlo.
+            </p>
+          )}
+
+          {codigoNuevo && !yaTieneInventario && (
+            <div className="rounded-lg border border-silver-200 bg-surface-2 px-3 py-3 text-sm">
+              {resumenNuevoQuery.isLoading && (
+                <div className="flex items-center gap-2 text-silver-500">
+                  <Spinner className="size-4" />
+                  <span>Leyendo lo que hay en el sistema…</span>
+                </div>
+              )}
+              {resumenNuevoQuery.isError && (
+                <p className="text-red-600">No se pudo leer la informacion de este cliente.</p>
+              )}
+              {resumenNuevoQuery.data && (
+                <>
+                  <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-silver-500">
+                    Se creara con
+                  </p>
+                  <p className="font-medium text-silver-800">
+                    {resumenNuevoQuery.data.cliente.entidad_remitente ?? codigoNuevo}
+                  </p>
+                  <p className="mt-1 text-silver-600">
+                    {resumenNuevoQuery.data.actas.length}{' '}
+                    {resumenNuevoQuery.data.actas.length === 1 ? 'acta' : 'actas'} &middot;{' '}
+                    {resumenNuevoQuery.data.totalCajas}{' '}
+                    {resumenNuevoQuery.data.totalCajas === 1 ? 'caja' : 'cajas'}
+                  </p>
+                  {resumenNuevoQuery.data.cajaIniciar && resumenNuevoQuery.data.cajaFin && (
+                    <p className="text-xs text-silver-500">
+                      {resumenNuevoQuery.data.cajaIniciar} a {resumenNuevoQuery.data.cajaFin}
+                    </p>
+                  )}
+                  <p className="mt-3 text-xs text-silver-500">
+                    Las cifras las cuenta el sistema y se releen solas todos los dias a las 4:15 p. m.
+                    El funcionario, los estados y las fechas de entrega se completan despues.
+                  </p>
+                </>
+              )}
+            </div>
+          )}
+        </div>
       </Modal>
 
       <ConfirmDialog

@@ -130,3 +130,30 @@ export function formatearFechaHora(valor: Entrada): string {
   const { anio, mes, dia, hora, minuto } = componentes(instante);
   return `${dia}/${mes}/${anio} ${horaDoce(hora, minuto)}`;
 }
+
+/**
+ * `hace 2 horas`, `hace 6 días`, `ayer`.
+ *
+ * Para marcas de tiempo cuya pregunta real es "¿esto está reciente?" y no "¿qué
+ * día exactamente?". Una fecha con hora obliga a restar mentalmente; esto
+ * responde de una vez. Pasadas cuatro semanas deja de tener sentido contar días y
+ * se cae a la fecha completa.
+ *
+ * Se apoya en `Intl.RelativeTimeFormat`, que ya conjuga en español, en vez de
+ * armar los plurales a mano.
+ */
+const RELATIVO = new Intl.RelativeTimeFormat('es-CO', { numeric: 'auto' });
+
+export function hace(valor: Entrada, ahora: Date = new Date()): string {
+  const instante = aInstante(valor);
+  if (!instante) return SIN_FECHA;
+
+  const segundos = Math.round((instante.getTime() - ahora.getTime()) / 1000);
+  const absoluto = Math.abs(segundos);
+
+  if (absoluto < 60) return 'hace un momento';
+  if (absoluto < 3600) return RELATIVO.format(Math.round(segundos / 60), 'minute');
+  if (absoluto < 86400) return RELATIVO.format(Math.round(segundos / 3600), 'hour');
+  if (absoluto < 2419200) return RELATIVO.format(Math.round(segundos / 86400), 'day');
+  return formatearFecha(instante);
+}
