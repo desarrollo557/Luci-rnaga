@@ -1,6 +1,6 @@
 import type { FuidCreateDto } from '../types/index.js';
 import { CAMPOS_NO_DILIGENCIADOS } from '../config/constants.js';
-import { valorParaGuardar } from '../utils/noDiligenciado.js';
+import { sinDiligenciar, valorParaGuardar } from '../utils/noDiligenciado.js';
 
 export const FUID_COLUMNS = [
   'fecha_del_dato',
@@ -60,6 +60,27 @@ function texto(campo: string, valor: unknown): unknown {
   return valorParaGuardar(valor, CON_NO_DILIGENCIADO.has(campo));
 }
 
+/**
+ * Fecha final con la que se guarda el registro.
+ *
+ * La mayoría de los documentos de una caja son de un solo día, y quien digita
+ * escribe la fecha inicial y deja la final en blanco. Guardarla vacía dejaba el
+ * rango abierto: el inventario mostraba un documento que empieza y no termina, y
+ * cualquier consulta por rango de fechas tenía que contemplar el hueco. Cuando
+ * la final no viene, se guarda la inicial y el rango queda cerrado en ese mismo
+ * día, que es lo que el documento dice.
+ *
+ * Si tampoco hay fecha inicial no hay nada que copiar y las dos quedan en NULL:
+ * es el caso de un documento sin fecha legible, que sí existe.
+ *
+ * Vive aquí y no en el formulario a propósito. El backend es la barrera real,
+ * así que la regla se cumple venga la petición de donde venga, y el campo se le
+ * sigue mostrando vacío a quien digita, como el resto de lo no diligenciado.
+ */
+export function fechaFinalEfectiva(dto: { fecha_inicial?: unknown; fecha_final?: unknown }): unknown {
+  return sinDiligenciar(dto.fecha_final) ? dto.fecha_inicial : dto.fecha_final;
+}
+
 /** Valores en el mismo orden que FUID_COLUMNS para INSERT/UPDATE. */
 export function fuidValues(dto: FuidCreateDto): unknown[] {
   // Columnas que no son de texto (`date`, `int`, `time`): una cadena vacía no es
@@ -85,7 +106,7 @@ export function fuidValues(dto: FuidCreateDto): unknown[] {
     texto('numero_doc', dto.numero_doc),
     texto('numero_doc_hasta', dto.numero_doc_hasta),
     nullable(dto.fecha_inicial),
-    nullable(dto.fecha_final),
+    nullable(fechaFinalEfectiva(dto)),
     dto.caja ?? null,
     dto.upd ?? null,
     texto('tomo', dto.tomo),

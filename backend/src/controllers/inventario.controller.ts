@@ -110,6 +110,24 @@ const FUID_QUERY_FILTRADO = `${FUID_BASE_SELECT}${FUID_WHERE_FILTRO} ORDER BY f.
 const FUID_COUNT_QUERY_FILTRADO = `${FUID_COUNT_QUERY}${FUID_WHERE_FILTRO}`;
 
 /**
+ * Acota el FUID a una sola acta de transferencia del cliente.
+ *
+ * Un cliente puede tener varias, y quien arma el inventario a veces necesita el
+ * de una sola: entregar un acta no obliga a sacar el documento completo. El
+ * número del acta vive en `moduloscliente`, que ya está en el JOIN, así que basta
+ * con añadir la condición. Sin este añadido la consulta devuelve el FUID del
+ * cliente entero, que es el comportamiento por defecto.
+ */
+const FUID_WHERE_ACTA = ` AND mcl.acta_transferencia_modulo = ?`;
+
+/** Consulta del FUID de un cliente, acotada al acta indicada si se pide una. */
+function fuidQueryPorActa(acta: string | null): string {
+  return acta
+    ? `${FUID_BASE_SELECT}${FUID_WHERE_ACTA} ORDER BY f.caja, f.n_orden`
+    : FUID_QUERY;
+}
+
+/**
  * Totales del inventario de un cliente.
  *
  * `folios` es una columna de texto porque admite el marcador N/A, así que solo
@@ -248,7 +266,8 @@ type ClienteParaInventario = {
   entidad_remitente: string;
   acta_transferencia_modulo: string;
   fecha_trans_modulo: string | null;
-  id_submodulo: number;
+  /** Nulo en actas antiguas que quedaron sin cliente asociado. */
+  id_submodulo: number | null;
 };
 
 /** Códigos únicos de clientes con datos en módulos, para el select del formulario de inventario. */
@@ -261,31 +280,99 @@ export async function listClientesParaInventario(_req: Request, res: Response): 
   res.json(rows);
 }
 
-/** Paquete completo para autocompletar el formulario de inventario según el código del cliente. */
+type ActaDelCliente = {
+  id: number;
+  acta: string | null;
+  fecha: string | null;
+  totalCajas: number;
+  cajaIniciar: string | null;
+  cajaFin: string | null;
+};
+
+/**
+ * Paquete completo para autocompletar el formulario de inventario según el
+ * código del cliente.
+ *
+ * Un cliente puede tener varias actas de transferencia, y antes esta consulta
+ * se quedaba con la primera (`LIMIT 1`): el formulario proponía siempre el mismo
+ * número de acta y las cifras de cajas eran solo las de esa, aunque el FUID que
+ * se descargaba fuera el del cliente entero. Ahora devuelve todas, cada una con
+ * sus propias cajas, para que quien crea el inventario elija de cuál habla y las
+ * cifras acompañen a esa elección.
+ *
+ * Los totales de primer nivel son los del cliente completo, que es el alcance
+ * del inventario cuando no se acota a un acta.
+ */
 export async function getClienteParaInventario(req: Request, res: Response): Promise<void> {
   const { codigo } = req.params;
   const cliente = await queryOne<ClienteParaInventario>(
     `SELECT id, codigo, entidad_remitente, acta_transferencia_modulo, fecha_trans_modulo, id_submodulo
-     FROM moduloscliente WHERE codigo = ? LIMIT 1`,
+     FROM moduloscliente WHERE codigo = ? ORDER BY id LIMIT 1`,
     [codigo],
   );
   if (!cliente) {
     res.status(404).json({ error: `No se encontró un cliente con código ${codigo}` });
     return;
   }
+
+  /*
+   * Las actas del cliente se agrupan por `id_submodulo`, que es el cliente real
+   * (`sub_modulos`), igual que hace la consulta de FUID de esta misma pantalla.
+   * Un acta suelta sin cliente asociado no tiene con quién agruparse, así que en
+   * ese caso se responde solo con ella.
+   */
+  const actas =
+    cliente.id_submodulo == null
+      ? await query<ActaDelCliente>(ACTAS_QUERY_POR_ID, [cliente.id])
+      : await query<ActaDelCliente>(ACTAS_QUERY_POR_CLIENTE, [cliente.id_submodulo]);
+
   const cajas = await query<{ caja_modulo: string }>(
-    `SELECT caja_modulo FROM modulos_caja WHERE id_modulo_caja = ? ORDER BY caja_modulo`,
-    [cliente.id],
+    cliente.id_submodulo == null ? CAJAS_QUERY_POR_ACTA : CAJAS_QUERY_POR_CLIENTE,
+    [cliente.id_submodulo == null ? cliente.id : cliente.id_submodulo],
   );
+
   const numeros = cajas.map((c) => c.caja_modulo).filter(Boolean) as string[];
   res.json({
     cliente,
+    actas,
     cajas,
     totalCajas: cajas.length,
     cajaIniciar: numeros.length > 0 ? numeros.reduce((a, b) => (a < b ? a : b)) : null,
     cajaFin: numeros.length > 0 ? numeros.reduce((a, b) => (a > b ? a : b)) : null,
   });
 }
+
+/** Actas con el recuento y el rango de sus propias cajas. */
+const ACTAS_SELECT = `
+  SELECT mcl.id,
+         mcl.acta_transferencia_modulo AS acta,
+         mcl.fecha_trans_modulo AS fecha,
+         COUNT(mc.id) AS "totalCajas",
+         MIN(mc.caja_modulo) AS "cajaIniciar",
+         MAX(mc.caja_modulo) AS "cajaFin"
+  FROM moduloscliente mcl
+  LEFT JOIN modulos_caja mc ON mc.id_modulo_caja = mcl.id
+`;
+
+const ACTAS_AGRUPACION = `
+  GROUP BY mcl.id, mcl.acta_transferencia_modulo, mcl.fecha_trans_modulo
+  ORDER BY mcl.acta_transferencia_modulo, mcl.id
+`;
+
+const ACTAS_QUERY_POR_CLIENTE = `${ACTAS_SELECT} WHERE mcl.id_submodulo = ? ${ACTAS_AGRUPACION}`;
+const ACTAS_QUERY_POR_ID = `${ACTAS_SELECT} WHERE mcl.id = ? ${ACTAS_AGRUPACION}`;
+
+const CAJAS_QUERY_POR_CLIENTE = `
+  SELECT mc.caja_modulo
+  FROM modulos_caja mc
+  JOIN moduloscliente mcl ON mcl.id = mc.id_modulo_caja
+  WHERE mcl.id_submodulo = ?
+  ORDER BY mc.caja_modulo
+`;
+
+const CAJAS_QUERY_POR_ACTA = `
+  SELECT caja_modulo FROM modulos_caja WHERE id_modulo_caja = ? ORDER BY caja_modulo
+`;
 
 export async function getInventario(req: Request, res: Response): Promise<void> {
   const { id } = req.params;
@@ -359,16 +446,30 @@ export async function descargarInventarioExcel(req: Request, res: Response): Pro
   }
 
   const codigoCliente = inventario.CODIGO_DEL_CLIENTE;
-  const filas = await query<FuidConEstadoRow>(FUID_QUERY, [codigoCliente]);
+
+  // `?acta=` acota la descarga a una sola acta de transferencia. Sin él se baja
+  // el FUID completo del cliente, que es lo que esta pantalla hacía siempre.
+  const actaRaw = typeof req.query.acta === 'string' ? req.query.acta.trim() : '';
+  const acta = actaRaw.length > 0 ? actaRaw : null;
+
+  const parametros = acta ? [codigoCliente, acta] : [codigoCliente];
+  const filas = await query<FuidConEstadoRow>(fuidQueryPorActa(acta), parametros);
   if (filas.length === 0) {
     res.status(404).json({
-      error: 'El cliente no tiene datos FUID registrados para generar el inventario',
+      error: acta
+        ? `El acta ${acta} no tiene datos FUID registrados para generar el inventario`
+        : 'El cliente no tiene datos FUID registrados para generar el inventario',
     });
     return;
   }
 
   const buffer = await buildInventarioFuidExcel(filas);
-  const nombre = inventarioFuidFilename(inventario.CLIENTE, codigoCliente, inventario.FECHA_CREACION);
+  const nombre = inventarioFuidFilename(
+    inventario.CLIENTE,
+    codigoCliente,
+    inventario.FECHA_CREACION,
+    acta,
+  );
 
   res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
   // `filename*` va con el nombre codificado: el del cliente puede llevar tildes
@@ -383,7 +484,9 @@ export async function descargarInventarioExcel(req: Request, res: Response): Pro
     entidad: 'inventario',
     entidadId: String(id),
     accion: 'DESCARGAR',
-    detalle: `Descarga del inventario de ${inventario.CLIENTE ?? codigoCliente} (${filas.length} registros)`,
+    detalle: `Descarga del inventario de ${inventario.CLIENTE ?? codigoCliente}${
+      acta ? `, acta ${acta}` : ''
+    } (${filas.length} registros)`,
     usuario: req.session.user,
   });
 }
