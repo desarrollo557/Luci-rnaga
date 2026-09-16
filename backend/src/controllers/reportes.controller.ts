@@ -641,18 +641,25 @@ const SEGUIMIENTO_AGRUPACION = `
   ORDER BY f.fecha_del_dato, mcl.codigo, f.elaborado_por
 `;
 
-/** `GET /seguimiento-inventario/excel?desde=&hasta=&persona=` */
-export async function descargarSeguimientoInventario(req: Request, res: Response): Promise<void> {
+/**
+ * Filtros del seguimiento, compartidos por el resumen y la descarga para que los
+ * dos cuenten exactamente lo mismo.
+ *
+ * Sin exigir colaborador. Antes se pedía `elaborado_por IS NOT NULL`, y eso
+ * borraba del informe toda la producción heredada de la base antigua, que no lo
+ * trae. El seguimiento tiene que llevar todo lo digitado: si no se sabe quién lo
+ * hizo, la columna va en blanco y la jornada se cuenta igual.
+ */
+function filtrosSeguimiento(req: Request): {
+  where: string;
+  params: unknown[];
+  desde: string;
+  hasta: string;
+  persona: string;
+} {
   const desde = String(req.query.desde ?? '').trim();
   const hasta = String(req.query.hasta ?? '').trim();
   const persona = String(req.query.persona ?? '').trim();
-
-  /*
-   * Sin exigir colaborador. Antes se pedía `elaborado_por IS NOT NULL`, y eso
-   * borraba del informe toda la producción heredada de la base antigua, que no
-   * lo trae. El seguimiento tiene que llevar todo lo digitado: si no se sabe
-   * quién lo hizo, la columna va en blanco y la jornada se cuenta igual.
-   */
   const condiciones: string[] = ['TRUE'];
   const params: unknown[] = [];
   if (desde) {
@@ -667,11 +674,32 @@ export async function descargarSeguimientoInventario(req: Request, res: Response
     condiciones.push('f.elaborado_por = ?');
     params.push(persona);
   }
+  return { where: condiciones.join(' AND '), params, desde, hasta, persona };
+}
 
-  const filas = await query<FilaSeguimiento>(
-    `${SEGUIMIENTO_QUERY} WHERE ${condiciones.join(' AND ')} ${SEGUIMIENTO_AGRUPACION}`,
+/**
+ * `GET /seguimiento-inventario/resumen?desde=&hasta=&persona=`
+ *
+ * Cuántas jornadas y cuántos registros va a llevar el documento. La pantalla lo
+ * pide antes de generar para poder decir "armando el formato con 1.245
+ * jornadas" en vez de un "generando…" mudo: es una etapa real del proceso, no
+ * un mensaje puesto a tiempo.
+ */
+export async function resumenSeguimientoInventario(req: Request, res: Response): Promise<void> {
+  const { where, params } = filtrosSeguimiento(req);
+  const [fila] = await query<{ jornadas: number | string; registros: number | string }>(
+    `SELECT COUNT(*) AS jornadas, COALESCE(SUM(t.total_registros), 0) AS registros
+     FROM (${SEGUIMIENTO_QUERY} WHERE ${where} ${SEGUIMIENTO_AGRUPACION}) t`,
     params,
   );
+  res.json({ jornadas: Number(fila?.jornadas ?? 0), registros: Number(fila?.registros ?? 0) });
+}
+
+/** `GET /seguimiento-inventario/excel?desde=&hasta=&persona=` */
+export async function descargarSeguimientoInventario(req: Request, res: Response): Promise<void> {
+  const { where, params, desde, hasta } = filtrosSeguimiento(req);
+
+  const filas = await query<FilaSeguimiento>(`${SEGUIMIENTO_QUERY} WHERE ${where} ${SEGUIMIENTO_AGRUPACION}`, params);
 
   if (filas.length === 0) {
     /*
