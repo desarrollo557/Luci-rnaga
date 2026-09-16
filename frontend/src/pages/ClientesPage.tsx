@@ -41,7 +41,7 @@ import { sedeOptionsCon } from '@/lib/sedes';
 import { fechaHoyLocal } from '@/lib/fechas';
 import { useAuthStore } from '@/stores/authStore';
 import { cn } from '@/lib/cn';
-import type { ModuloCliente, Role, SubModulo } from '@/types';
+import { type ModuloCliente, type Role, type SubModulo, tieneAlgunRol } from '@/types';
 
 interface SubModuloForm {
   codigo: string;
@@ -116,7 +116,7 @@ const PROCESOS_ATAJOS: ProcesoAtajo[] = [
 export default function ClientesPage() {
   const queryClient = useQueryClient();
   const user = useAuthStore((state) => state.user);
-  const isManager = user?.rol === 'ADMIN' || user?.rol === 'LIDER';
+  const isManager = tieneAlgunRol(user, ['ADMIN', 'LIDER']);
 
   const [subModuloId, setSubModuloId] = useState<number | null>(null);
   // Cliente recién creado: se selecciona automáticamente cuando la lista se
@@ -458,7 +458,7 @@ export default function ClientesPage() {
       />
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        {PROCESOS_ATAJOS.filter((atajo) => user?.rol && atajo.roles.includes(user.rol)).map((atajo) => {
+        {PROCESOS_ATAJOS.filter((atajo) => tieneAlgunRol(user, atajo.roles as Role[])).map((atajo) => {
           const Icon = atajo.icon;
           return (
             <Link key={atajo.to} to={atajo.to}>

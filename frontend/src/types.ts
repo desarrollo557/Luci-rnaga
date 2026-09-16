@@ -7,7 +7,10 @@ export type DataRow = Record<string, string | number | null | undefined>;
 export interface SessionUser {
   cc: string;
   nombre: string;
+  /** Perfil principal: decide en qué pantalla aterriza al entrar. */
   rol: Role;
+  /** Segundo perfil opcional. Suma permisos al principal; nunca los quita. */
+  rol_secundario?: Role | null;
   sede: string;
 }
 
@@ -24,6 +27,8 @@ export interface User {
   nombre: string;
   contrasena?: string;
   rol: Role;
+  /** Segundo perfil opcional. Suma permisos al principal; nunca los quita. */
+  rol_secundario?: Role | null;
   sede: string | null;
   suspendido_hasta?: string | null;
   created_at?: string | null;
@@ -226,6 +231,36 @@ export interface Historial {
 }
 
 export const ROLES: Role[] = ['ADMIN', 'LIDER', 'TECNICA'];
+
+/**
+ * Perfiles de una cuenta.
+ *
+ * El principal decide en qué pantalla aterriza la persona al entrar. El segundo,
+ * opcional, **solo suma permisos**: nunca quita ninguno. El caso que lo motivó es
+ * el administrador que además lleva clientes, que antes necesitaba dos cuentas.
+ */
+export interface ConPerfiles {
+  rol: Role;
+  rol_secundario?: Role | null;
+}
+
+/** Si la cuenta tiene ese perfil, sea el principal o el segundo. */
+export function tieneRol(usuario: ConPerfiles | null | undefined, rol: Role): boolean {
+  if (!usuario) return false;
+  return usuario.rol === rol || usuario.rol_secundario === rol;
+}
+
+/** Si la cuenta tiene alguno de esos perfiles. */
+export function tieneAlgunRol(usuario: ConPerfiles | null | undefined, roles: readonly Role[]): boolean {
+  return roles.some((rol) => tieneRol(usuario, rol));
+}
+
+/** Los perfiles de la cuenta, el principal primero y sin repetir. */
+export function rolesDe(usuario: ConPerfiles | null | undefined): Role[] {
+  if (!usuario) return [];
+  const segundo = usuario.rol_secundario;
+  return segundo && segundo !== usuario.rol ? [usuario.rol, segundo] : [usuario.rol];
+}
 
 /** Campos del FUID que admiten autocompletado por caja (mismo contrato que el backend). */
 export const SUGGESTION_FIELDS = [

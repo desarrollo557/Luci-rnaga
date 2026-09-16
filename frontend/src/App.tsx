@@ -3,6 +3,7 @@ import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import AppLayout from '@/components/layout/AppLayout';
 import { Spinner } from '@/components/ui';
 import { useAuthStore } from '@/stores/authStore';
+import { rolesDe, tieneAlgunRol, tieneRol, type Role } from '@/types';
 import ActasPage from '@/pages/ActasPage';
 import AdminPage from '@/pages/AdminPage';
 import CajasPage from '@/pages/CajasPage';
@@ -30,14 +31,23 @@ function ProtectedLayout() {
   if (loading) return <FullPageLoader />;
   if (!user) return <Navigate to="/login" replace state={{ from: location.pathname }} />;
 
-  const isAdmin = user.rol === 'ADMIN';
+  const administra = tieneRol(user, 'ADMIN');
   const isAdminRoute = location.pathname.startsWith('/admin');
 
-  if (isAdmin && !isAdminRoute) return <Navigate to="/admin" replace />;
-  if (!isAdmin && isAdminRoute) return <Navigate to="/clientes" replace />;
+  /*
+   * Quien solo administra no tiene nada que hacer fuera de Administración, así
+   * que se le lleva allí. Pero una cuenta que además es líder sí trabaja en el
+   * resto del sistema: antes esta redirección la sacaba de cualquier pantalla y
+   * la devolvía a /admin una y otra vez, que es lo que obligaba a tener dos
+   * cuentas para la misma persona.
+   */
+  const soloAdministra = administra && rolesDe(user).length === 1;
+  if (soloAdministra && !isAdminRoute) return <Navigate to="/admin" replace />;
+  if (!administra && isAdminRoute) return <Navigate to="/clientes" replace />;
 
-  // Guarda de ruta por rol: las páginas solo se renderizan si el rol tiene permiso.
-  const roleRestrictedRoutes: Record<string, string[]> = {
+  // Guarda de ruta por perfil: la página se renderiza si alguno de los perfiles
+  // de la cuenta tiene permiso.
+  const roleRestrictedRoutes: Record<string, Role[]> = {
     '/produccion': ['LIDER'],
     '/inventario': ['LIDER'],
     '/historial': ['LIDER'],
@@ -45,7 +55,7 @@ function ProtectedLayout() {
   const allowedRoles = Object.entries(roleRestrictedRoutes).find(([path]) =>
     location.pathname.startsWith(path),
   )?.[1];
-  if (allowedRoles && !allowedRoles.includes(user.rol)) {
+  if (allowedRoles && !tieneAlgunRol(user, allowedRoles)) {
     return <Navigate to="/clientes" replace />;
   }
 
@@ -83,7 +93,12 @@ export default function App() {
       </Route>
       <Route
         path="*"
-        element={<Navigate to={!user ? '/login' : user.rol === 'ADMIN' ? '/admin' : '/clientes'} replace />}
+        element={
+          <Navigate
+            to={!user ? '/login' : rolesDe(user).length === 1 && user.rol === 'ADMIN' ? '/admin' : '/clientes'}
+            replace
+          />
+        }
       />
     </Routes>
   );

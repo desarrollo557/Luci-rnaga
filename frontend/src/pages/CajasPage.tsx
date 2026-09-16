@@ -14,6 +14,7 @@ import {
 import { invalidateDomain } from '@/lib/queryInvalidation';
 import { formatearFechaHora } from '@/lib/fechas';
 import { useAuthStore } from '@/stores/authStore';
+import { tieneAlgunRol, tieneRol } from '@/types';
 
 interface SeccionAsignacionCajaProps {
   cajaId: number;
@@ -175,8 +176,7 @@ export default function CajasPage() {
   const queryClient = useQueryClient();
   const { id, mid } = useParams<{ id: string; mid: string }>();
   const user = useAuthStore((state) => state.user);
-  const rol = user?.rol;
-  const isManager = rol === 'LIDER' || rol === 'ADMIN';
+  const isManager = tieneAlgunRol(user, ['LIDER', 'ADMIN']);
   const cajaId = mid ? Number(mid) : null;
 
   const cajaQuery = useQuery({
@@ -227,7 +227,7 @@ export default function CajasPage() {
           caja && (
             <>
               <Badge color={estadoColor}>{estado || '—'}</Badge>
-              {rol === 'TECNICA' && (
+              {tieneRol(user, 'TECNICA') && (
                 <>
                   <Button
                     variant="secondary"

@@ -4,6 +4,8 @@ export interface User {
   nombre: string;
   contrasena: string;
   rol: string;
+  /** Segundo perfil opcional. Suma permisos al principal; nunca los quita. */
+  rol_secundario: string | null;
   sede: string | null;
   suspendido_hasta: string | null;
   created_at: string | null;
