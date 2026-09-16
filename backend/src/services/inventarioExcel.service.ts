@@ -1,5 +1,6 @@
 import ExcelJS from 'exceljs';
 import { construirInventarioFuid } from './plantillaFuid.service.js';
+import { fechaHoyLocal, fechaLocal } from '../utils/format.js';
 
 const LABELS: Record<string, string> = {
   ITEMS: 'ID',
@@ -68,14 +69,26 @@ export async function buildInventarioExcel(data: Record<string, unknown>): Promi
   return Buffer.from(buf);
 }
 
+/**
+ * Día (YYYY-MM-DD) que va en el nombre del archivo, en hora de Colombia.
+ *
+ * `FECHA_CREACION` llega de la base como texto ya en esa hora, así que basta
+ * con recortarlo. Si no hay fecha se usa el día de hoy en Colombia, no el UTC
+ * del servidor, que desde las 7 de la noche ya es mañana.
+ */
+function fechaDeArchivo(fechaCreacion: unknown): string {
+  if (fechaCreacion instanceof Date) return fechaLocal(fechaCreacion);
+  const texto = String(fechaCreacion ?? '').trim();
+  return /^\d{4}-\d{2}-\d{2}/.test(texto) ? texto.slice(0, 10) : fechaHoyLocal();
+}
+
 /** Safe filename: Inventario_<cliente>_<codigo>_<YYYY-MM-DD>.xlsx (no invalid chars, spaces -> _). */
 export function inventarioFilename(cliente: unknown, codigoCliente: unknown, fechaCreacion: unknown): string {
   const clean = (v: unknown, fallback: string) =>
     String(v ?? fallback).replace(/[\\/:*?"<>|\s]+/g, '_').slice(0, 80);
   const clienteName = clean(cliente, 'sin_cliente');
   const codigo = clean(codigoCliente, 'sin_codigo');
-  const raw = fechaCreacion instanceof Date ? fechaCreacion.toISOString() : String(fechaCreacion ?? new Date().toISOString());
-  const fecha = raw.slice(0, 10);
+  const fecha = fechaDeArchivo(fechaCreacion);
   return `Inventario_${clienteName}_${codigo}_${fecha}.xlsx`;
 }
 
@@ -97,7 +110,6 @@ export function inventarioFuidFilename(cliente: unknown, codigoCliente: unknown,
     String(v ?? fallback).replace(/[\\/:*?"<>|\s]+/g, '_').slice(0, 80);
   const clienteName = clean(cliente, 'sin_cliente');
   const codigo = clean(codigoCliente, 'sin_codigo');
-  const raw = fechaCreacion instanceof Date ? fechaCreacion.toISOString() : String(fechaCreacion ?? new Date().toISOString());
-  const fecha = raw.slice(0, 10);
+  const fecha = fechaDeArchivo(fechaCreacion);
   return `Inventario_FUID_${clienteName}_${codigo}_${fecha}.xlsx`;
 }

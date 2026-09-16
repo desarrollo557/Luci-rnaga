@@ -56,7 +56,7 @@ async function codigoDeError(accion: () => Promise<unknown>): Promise<string> {
 const TABLAS = [
   'users', 'sub_modulos', 'moduloscliente', 'modulos_caja', 'fuiddatosreal',
   'historial', 'inventario', 'auditoria', 'rangos_upd', 'session',
-  'asignacion_caja_tecnica', 'asignacion_caja_calidad',
+  'asignacion_caja_tecnica',
 ];
 
 /** Columnas de las que depende directamente el código, por tabla. */
@@ -121,6 +121,13 @@ async function probarEstructura(): Promise<void> {
       WHERE table_name = 'fuiddatosreal' AND column_name = 'version'`,
   );
   comprobar('fuiddatosreal.version arranca con un valor', version?.column_default != null, String(version?.column_default));
+
+  // Todo el software habla en hora de Colombia: `db.ts` la fija en cada
+  // conexión, y de ella dependen `now()` en los valores por defecto y en los
+  // triggers. Sin ella, cada marca de tiempo nace cinco horas adelantada.
+  const zona = await queryOne<Record<string, string>>('SHOW TimeZone');
+  const zonaActual = Object.values(zona ?? {})[0];
+  comprobar('la conexión trabaja en hora de Colombia', zonaActual === 'America/Bogota', zonaActual);
 }
 
 // ═════════════════════════════════════════════════════════════════════════
@@ -271,7 +278,7 @@ async function revisarDatos(): Promise<void> {
   comprobar('todos los números de caja tienen el formato 000C000000', Number(cajaMalFormada?.n) === 0, `${cajaMalFormada?.n}`);
 
   const rolInvalido = await queryOne<{ n: string }>(
-    `SELECT COUNT(*) AS n FROM users WHERE rol NOT IN ('ADMIN','LIDER','TECNICA','CALIDAD')`,
+    `SELECT COUNT(*) AS n FROM users WHERE rol NOT IN ('ADMIN','LIDER','TECNICA')`,
   );
   comprobar('todos los usuarios tienen un perfil de la lista', Number(rolInvalido?.n) === 0, `${rolInvalido?.n}`);
 

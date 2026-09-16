@@ -71,16 +71,3 @@ export function exportExcel(
 }
 
 export { XLSX };
-/**
- * Fecha de hoy en formato `YYYY-MM-DD`, tomada del calendario **local**.
- *
- * No usa `toISOString()` a propósito: ese método convierte a UTC, y en Colombia
- * (UTC-5) cualquier momento posterior a las 19:00 ya cae en el día siguiente en
- * UTC. Un formulario abierto a las 20:00 quedaría fechado mañana.
- */
-export function fechaHoyISO(): string {
-  const hoy = new Date();
-  const mes = String(hoy.getMonth() + 1).padStart(2, '0');
-  const dia = String(hoy.getDate()).padStart(2, '0');
-  return `${hoy.getFullYear()}-${mes}-${dia}`;
-}

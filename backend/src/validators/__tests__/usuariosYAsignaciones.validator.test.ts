@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest';
 import { ROLES, createUserSchema, updateUserSchema } from '../users.validator.js';
 import { loginSchema } from '../auth.validator.js';
 import {
-  asignarRangoSchema,
   asignarUsuariosSchema,
   usuariosOnlySchema,
 } from '../asignaciones.validator.js';
@@ -28,11 +27,16 @@ const usuarioBase = {
 };
 
 describe('crear un usuario', () => {
-  it('acepta los cuatro perfiles del software', () => {
-    expect([...ROLES]).toEqual(['ADMIN', 'LIDER', 'TECNICA', 'CALIDAD']);
+  it('acepta los tres perfiles del software', () => {
+    expect([...ROLES]).toEqual(['ADMIN', 'LIDER', 'TECNICA']);
     for (const rol of ROLES) {
       expect(createUserSchema.safeParse({ ...usuarioBase, rol }).success, rol).toBe(true);
     }
+  });
+
+  it('rechaza el perfil CALIDAD, que se retiró del software', () => {
+    expect(createUserSchema.safeParse({ ...usuarioBase, rol: 'CALIDAD' }).success).toBe(false);
+    expect(updateUserSchema.safeParse({ ...usuarioBase, rol: 'CALIDAD' }).success).toBe(false);
   });
 
   it('rechaza un perfil inventado', () => {
@@ -109,19 +113,6 @@ describe('asignar usuarios a una caja', () => {
     for (const usuarios of [[0], [-3], [1.5], ['abc']]) {
       expect(asignarUsuariosSchema.safeParse({ modulo_id: 22, usuarios }).success, JSON.stringify(usuarios)).toBe(false);
     }
-  });
-});
-
-describe('asignar un rango de cajas', () => {
-  const rango = { modulo_id: 22, usuarios: [4], rango_inicio: '051C000001', rango_fin: '051C000010' };
-
-  it('acepta dos números de caja bien formados', () => {
-    expect(asignarRangoSchema.safeParse(rango).success).toBe(true);
-  });
-
-  it('rechaza un número de caja con otro formato', () => {
-    expect(asignarRangoSchema.safeParse({ ...rango, rango_inicio: '51C1' }).success).toBe(false);
-    expect(asignarRangoSchema.safeParse({ ...rango, rango_fin: '051-000010' }).success).toBe(false);
   });
 });
 

@@ -13,10 +13,9 @@ export async function listModulosCliente(req: Request, res: Response): Promise<v
 
   const subModuloId = String(req.query.subModuloId ?? '');
 
-  if (user.rol === 'TECNICA' || user.rol === 'CALIDAD') {
-    // Técnica y calidad ven las actas en las que tienen al menos una caja
-    // asignada: la asignación por caja es la única fuente de acceso.
-    const tablaAsignacion = user.rol === 'CALIDAD' ? 'asignacion_caja_calidad' : 'asignacion_caja_tecnica';
+  if (user.rol === 'TECNICA') {
+    // La técnica ve las actas en las que tiene al menos una caja asignada:
+    // la asignación por caja es la única fuente de acceso.
     const filtroSubModulo = subModuloId ? ' AND m.id_submodulo = ?' : '';
     const params: unknown[] = subModuloId ? [user.id, subModuloId] : [user.id];
     const results = await query<ModuloCliente>(
@@ -24,7 +23,7 @@ export async function listModulosCliente(req: Request, res: Response): Promise<v
        FROM moduloscliente m
        WHERE EXISTS (
          SELECT 1 FROM modulos_caja mc
-         JOIN ${tablaAsignacion} a ON a.modulo_id = mc.id
+         JOIN asignacion_caja_tecnica a ON a.modulo_id = mc.id
          WHERE mc.id_modulo_caja = m.id AND a.usuario_id = ?
        )${filtroSubModulo}`,
       params,

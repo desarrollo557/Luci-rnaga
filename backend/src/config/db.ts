@@ -1,5 +1,5 @@
 import pg from 'pg';
-import { DB_CONNECTION_LIMIT } from './constants.js';
+import { DB_CONNECTION_LIMIT, ZONA_HORARIA } from './constants.js';
 
 /**
  * Acceso a la base de datos (PostgreSQL / Supabase).
@@ -43,6 +43,27 @@ export const pool = new Pool({
   // Supabase exige TLS; su certificado lo firma una CA propia que no está en el
   // almacén del sistema, de ahí que no se verifique la cadena.
   ssl: { rejectUnauthorized: false },
+});
+
+/**
+ * Toda conexión trabaja en la hora de Colombia.
+ *
+ * Supabase corre en UTC, y `now()` —el valor por defecto de `created_at`, el
+ * que ponen los triggers en `updated_at` y `fecha_cambio`, el `NOW()` de las
+ * consultas del inventario— se convierte a la zona de la sesión al guardarse
+ * en una columna `timestamp`. Sin esto, un usuario creado a las 8 de la mañana
+ * quedaba creado a la 1 de la tarde y el historial agrupaba por días de UTC.
+ *
+ * El evento `connect` se emite antes de entregar la conexión, y el cliente
+ * ejecuta sus consultas en orden, así que el ajuste llega antes que cualquier
+ * consulta. El pooler en modo sesión (puerto 5432) lo conserva mientras dura
+ * la conexión; en modo transacción (6543) se perdería, así que no cambiar de
+ * puerto sin revisar esto.
+ */
+pool.on('connect', (client) => {
+  client.query(`SET TIME ZONE '${ZONA_HORARIA}'`).catch((error: unknown) => {
+    console.error('[db] No se pudo fijar la zona horaria de la conexión:', error);
+  });
 });
 
 /** SQL con marcadores `?` traducido a la numeración de PostgreSQL. */
