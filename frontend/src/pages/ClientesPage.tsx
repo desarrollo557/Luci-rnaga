@@ -38,7 +38,7 @@ import {
 import { toastApiError } from '@/lib/feedback';
 import { invalidateDomain } from '@/lib/queryInvalidation';
 import { sedeOptionsCon } from '@/lib/sedes';
-import { fechaHoyISO } from '@/lib/utils';
+import { fechaHoyLocal } from '@/lib/fechas';
 import { useAuthStore } from '@/stores/authStore';
 import { cn } from '@/lib/cn';
 import type { ModuloCliente, Role, SubModulo } from '@/types';
@@ -84,7 +84,7 @@ const PROCESOS_ATAJOS: ProcesoAtajo[] = [
     desc: 'Avance de digitación y revisión',
     icon: Factory,
     to: '/produccion',
-    roles: ['LIDER', 'CALIDAD'],
+    roles: ['LIDER'],
     accent: 'bg-primary-50 text-primary-600',
   },
   {
@@ -373,7 +373,7 @@ export default function ClientesPage() {
       // Un acta se registra el día en que se recibe la transferencia, así que
       // hoy es el valor correcto en la enorme mayoría de los casos; queda
       // editable para cargar actas atrasadas.
-      fecha_trans_modulo: fechaHoyISO(),
+      fecha_trans_modulo: fechaHoyLocal(),
     });
     setModuloErrors({});
     setModuloModalOpen(true);

@@ -75,6 +75,25 @@ entre en uso real conviene pasar a `starter`.
 
 ---
 
+## Hora
+
+Todo el software trabaja en la **hora de Colombia** (`America/Bogota`, UTC-5),
+aunque el servidor y la base corran en UTC. Lo garantizan dos piezas:
+
+- `backend/src/config/db.ts` ejecuta `SET TIME ZONE 'America/Bogota'` en cada
+  conexión, así que `now()` —valores por defecto de `created_at`, triggers del
+  historial, `NOW()` del inventario— se guarda ya en hora de Colombia.
+- `frontend/src/lib/fechas.ts` da forma a todo lo que se muestra: día/mes/año y
+  hora de 12 horas (`16/09/2026 8:21 a. m.`). Las páginas no formatean fechas
+  por su cuenta.
+
+Las marcas de tiempo escritas antes de este ajuste quedaron en UTC, cinco horas
+adelantadas. `database/supabase/03-hora-colombia.sql` las corrige una sola vez
+(lleva su propio candado para no aplicarse dos veces) y, si el permiso lo
+permite, deja la zona fijada también en la base.
+
+---
+
 ## Comprobar que todo funciona
 
 Tres pruebas, de menos a más completa. Las dos últimas necesitan una instancia

@@ -3,6 +3,14 @@ import { query } from '../config/db.js';
 import { fueraDeSuSede, sedeDeCaja } from '../services/jerarquia.service.js';
 
 /**
+ * Asignación de técnicos a cajas.
+ *
+ * Es la única asignación que existe en el software: el perfil de calidad se
+ * retiró, y con él su tabla `asignacion_caja_calidad` y la asignación por
+ * rango de cajas que solo usaba ese perfil.
+ */
+
+/**
  * Comprueba que la caja exista y que el líder pueda gestionarla (su sede).
  * Responde 404/403 y devuelve false cuando no se debe continuar.
  */
@@ -19,9 +27,8 @@ async function cajaGestionable(req: Request, res: Response, cajaId: string | num
   return true;
 }
 
-/** Valida que la caja exista y devuelve solo los usuarios válidos y no duplicados. */
+/** Valida que la caja exista y devuelve solo los técnicos válidos y no duplicados. */
 async function resolveAsignables(
-  tabla: 'asignacion_caja_tecnica' | 'asignacion_caja_calidad',
   moduloId: number,
   usuarios: number[],
 ): Promise<{ error: { status: number; message: string } | null; nuevos: number[]; duplicados: number[] }> {
@@ -49,17 +56,13 @@ async function resolveAsignables(
     };
   }
 
-  const rolEsperado = tabla === 'asignacion_caja_calidad' ? 'CALIDAD' : 'TECNICA';
-  const rolIncorrecto = idsUnicos.filter((id) => {
-    const u = existentes.find((e) => e.id === id);
-    return u?.rol !== rolEsperado;
-  });
+  const rolIncorrecto = idsUnicos.filter((id) => existentes.find((e) => e.id === id)?.rol !== 'TECNICA');
   if (rolIncorrecto.length > 0) {
     const nombres = rolIncorrecto.map((id) => existentes.find((e) => e.id === id)?.nombre ?? id);
     return {
       error: {
         status: 400,
-        message: `Los siguientes usuarios no tienen el rol ${rolEsperado}: ${nombres.join(', ')}`,
+        message: `Los siguientes usuarios no tienen el rol TECNICA: ${nombres.join(', ')}`,
       },
       nuevos: [],
       duplicados: [],
@@ -67,7 +70,7 @@ async function resolveAsignables(
   }
 
   const asignados = await query<{ usuario_id: number }>(
-    `SELECT usuario_id FROM ${tabla} WHERE modulo_id = ? AND usuario_id IN (?)`,
+    'SELECT usuario_id FROM asignacion_caja_tecnica WHERE modulo_id = ? AND usuario_id IN (?)',
     [moduloId, idsUnicos],
   );
   const asignadosSet = new Set(asignados.map((a) => a.usuario_id));
@@ -80,7 +83,7 @@ async function resolveAsignables(
 /** Valida que todos los usuarios existan y tengan el rol esperado; devuelve los ids únicos. */
 export async function validarUsuariosDeRol(
   usuarios: number[],
-  rolEsperado: 'TECNICA' | 'CALIDAD',
+  rolEsperado: 'TECNICA',
 ): Promise<{ error: string | null; ids: number[] }> {
   const ids = [...new Set(usuarios.map(Number).filter((n) => Number.isInteger(n) && n > 0))];
   if (ids.length === 0) return { error: null, ids: [] };
@@ -102,18 +105,12 @@ export async function validarUsuariosDeRol(
   return { error: null, ids };
 }
 
-/** Asigna en lote los usuarios (ya validados) a cada una de las cajas indicadas. */
-export async function asignarUsuariosACajas(
-  tabla: 'asignacion_caja_tecnica' | 'asignacion_caja_calidad',
-  cajaIds: number[],
-  usuarios: number[],
-): Promise<void> {
+/** Asigna en lote los técnicos (ya validados) a cada una de las cajas indicadas. */
+export async function asignarUsuariosACajas(cajaIds: number[], usuarios: number[]): Promise<void> {
   if (cajaIds.length === 0 || usuarios.length === 0) return;
   const values = cajaIds.flatMap((cajaId) => usuarios.map((usuarioId) => [cajaId, usuarioId]));
-  await query(`INSERT INTO ${tabla} (modulo_id, usuario_id) VALUES ?`, [values]);
+  await query('INSERT INTO asignacion_caja_tecnica (modulo_id, usuario_id) VALUES ?', [values]);
 }
-
-// ===== Asignación de cajas TÉCNICA =====
 
 export async function assignCajaTecnica(req: Request, res: Response): Promise<void> {
   const { modulo_id, usuarios, upd_inicio } = req.body as {
@@ -128,7 +125,7 @@ export async function assignCajaTecnica(req: Request, res: Response): Promise<vo
   }
   if (!(await cajaGestionable(req, res, modulo_id))) return;
 
-  const { error, nuevos, duplicados } = await resolveAsignables('asignacion_caja_tecnica', modulo_id, usuarios);
+  const { error, nuevos, duplicados } = await resolveAsignables(modulo_id, usuarios);
   if (error) {
     res.status(error.status).json({ message: error.message });
     return;
@@ -161,150 +158,4 @@ export async function removeCajaTecnica(req: Request, res: Response): Promise<vo
 
   await query('DELETE FROM asignacion_caja_tecnica WHERE modulo_id = ? AND usuario_id IN (?)', [modulo_id, usuarios]);
   res.json({ message: 'Usuarios eliminados correctamente de técnica' });
-}
-
-// ===== Asignación de cajas CALIDAD =====
-
-export async function assignCajaCalidad(req: Request, res: Response): Promise<void> {
-  const { modulo_id, usuarios } = req.body as { modulo_id: number; usuarios: number[] };
-
-  if (!modulo_id || !usuarios || usuarios.length === 0) {
-    res.status(400).json({ message: 'El campo modulo_id y la lista de usuarios son requeridos' });
-    return;
-  }
-  if (!(await cajaGestionable(req, res, modulo_id))) return;
-
-  const { error, nuevos, duplicados } = await resolveAsignables('asignacion_caja_calidad', modulo_id, usuarios);
-  if (error) {
-    res.status(error.status).json({ message: error.message });
-    return;
-  }
-
-  if (nuevos.length === 0) {
-    res.status(409).json({ message: 'Los usuarios seleccionados ya están asignados a esta caja' });
-    return;
-  }
-
-  const values = nuevos.map((usuarioId) => [modulo_id, usuarioId]);
-  await query('INSERT INTO asignacion_caja_calidad (modulo_id, usuario_id) VALUES ?', [values]);
-  res.json({
-    message: duplicados.length > 0
-      ? `Asignación guardada (${duplicados.length} ya estaban asignados)`
-      : 'Usuarios asignados correctamente a calidad',
-  });
-}
-
-export async function removeCajaCalidad(req: Request, res: Response): Promise<void> {
-  const { usuarios } = req.body as { usuarios: number[] };
-  const { modulo_id } = req.params;
-
-  if (!usuarios || usuarios.length === 0) {
-    res.status(400).json({ message: 'No se enviaron usuarios para eliminar' });
-    return;
-  }
-  if (!(await cajaGestionable(req, res, modulo_id))) return;
-
-  await query('DELETE FROM asignacion_caja_calidad WHERE modulo_id = ? AND usuario_id IN (?)', [modulo_id, usuarios]);
-  res.json({ message: 'Usuarios eliminados correctamente de calidad' });
-}
-
-/** Genera la lista de cajas entre dos extremos del formato XXXC###### (sufijo de 6 dígitos). */
-export function generateRangoCajas(rangoInicio: string, rangoFin: string): string[] {
-  const inicioPrefix = rangoInicio.slice(0, 4);
-  const inicioSuffix = rangoInicio.slice(4);
-  const finSuffix = rangoFin.slice(4);
-
-  const cajas: string[] = [];
-  let currentSuffix = inicioSuffix;
-
-  while (currentSuffix <= finSuffix) {
-    cajas.push(`${inicioPrefix}${currentSuffix}`);
-    currentSuffix = (parseInt(currentSuffix, 10) + 1).toString().padStart(6, '0');
-  }
-  return cajas;
-}
-
-export async function assignCajaCalidadRango(req: Request, res: Response): Promise<void> {
-  const { modulo_id, usuarios, rango_inicio, rango_fin } = req.body as {
-    modulo_id: number;
-    usuarios: number[];
-    rango_inicio: string;
-    rango_fin: string;
-  };
-
-  if (!modulo_id || !usuarios || usuarios.length === 0 || !rango_inicio || !rango_fin) {
-    res.status(400).json({ message: 'El campo modulo_id, usuarios, rango_inicio y rango_fin son requeridos' });
-    return;
-  }
-  if (!(await cajaGestionable(req, res, modulo_id))) return;
-
-  const regex = /^\d{3}C\d{6}$/;
-  if (!regex.test(rango_inicio) || !regex.test(rango_fin)) {
-    res.status(400).json({ message: 'El rango de cajas debe seguir el formato correcto' });
-    return;
-  }
-
-  const inicioPrefix = rango_inicio.slice(0, 4);
-  const finPrefix = rango_fin.slice(0, 4);
-  const inicioSuffix = rango_inicio.slice(4);
-  const finSuffix = rango_fin.slice(4);
-
-  if (inicioPrefix !== finPrefix || inicioSuffix > finSuffix) {
-    res.status(400).json({
-      message: 'El rango de cajas no es válido, asegúrese de que "Desde" no sea mayor que "Hasta"',
-    });
-    return;
-  }
-
-  const idsUnicos = [...new Set(usuarios.map(Number).filter((n) => Number.isInteger(n)))];
-  if (idsUnicos.length === 0) {
-    res.status(400).json({ message: 'La lista de usuarios no es válida' });
-    return;
-  }
-
-  const calidad = await query<{ id: number; nombre: string; rol: string }>(
-    'SELECT id, nombre, rol FROM users WHERE id IN (?)',
-    [idsUnicos],
-  );
-  const rolIncorrecto = idsUnicos.filter((id) => {
-    const u = calidad.find((c) => c.id === id);
-    return u?.rol !== 'CALIDAD';
-  });
-  if (rolIncorrecto.length > 0) {
-    const nombres = rolIncorrecto.map((id) => calidad.find((c) => c.id === id)?.nombre ?? id);
-    res.status(400).json({ message: `Los siguientes usuarios no tienen el rol CALIDAD: ${nombres.join(', ')}` });
-    return;
-  }
-
-  const cajas = generateRangoCajas(rango_inicio, rango_fin);
-  const cajasDb = await query<{ id: number }>('SELECT id FROM modulos_caja WHERE caja_modulo IN (?)', [cajas]);
-
-  if (cajasDb.length === 0) {
-    res.status(404).json({ message: 'No se encontraron cajas en el rango especificado' });
-    return;
-  }
-
-  // Evitar duplicados contra el trigger duplicidad_modulo_caja_calidad
-  const yaAsignadas = await query<{ modulo_id: number }>(
-    `SELECT DISTINCT modulo_id FROM asignacion_caja_calidad WHERE modulo_id IN (?) AND usuario_id IN (?)`,
-    [cajasDb.map((c) => c.id), idsUnicos],
-  );
-  const yaSet = new Set(yaAsignadas.map((a) => a.modulo_id));
-  const cajasNuevas = cajasDb.filter((c) => !yaSet.has(c.id));
-  if (cajasNuevas.length === 0) {
-    res.status(409).json({ message: 'Los usuarios seleccionados ya están asignados a todas las cajas del rango' });
-    return;
-  }
-
-  const values: Array<[number, number]> = [];
-  idsUnicos.forEach((usuarioId) => {
-    cajasNuevas.forEach((caja) => values.push([caja.id, usuarioId]));
-  });
-
-  await query('INSERT INTO asignacion_caja_calidad (modulo_id, usuario_id) VALUES ?', [values]);
-  res.json({
-    message: yaSet.size > 0
-      ? `Cajas asignadas correctamente (${yaSet.size} ya estaban asignadas)`
-      : 'Cajas asignadas correctamente a los usuarios de calidad',
-  });
 }

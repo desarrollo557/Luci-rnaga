@@ -26,8 +26,8 @@ import { invalidateDomain } from '@/lib/queryInvalidation';
 import { retornoDeCaja } from '@/lib/navegacion';
 import { OPCIONES_FRECUENCIA, OPCIONES_OTRO, OPCIONES_SOPORTE } from '@/lib/catalogos';
 import { limiteDe } from '@/lib/limites';
-import { fechaHoyISO } from '@/lib/utils';
-import { FECHA_MINIMA_DOCUMENTAL, dateInRange, dateOrderValid, fechaHoyLocal, onlyDigits } from '@/lib/validation';
+import { fechaHoyLocal, formatearFechaHora } from '@/lib/fechas';
+import { FECHA_MINIMA_DOCUMENTAL, dateInRange, dateOrderValid, onlyDigits } from '@/lib/validation';
 import { useAuthStore } from '@/stores/authStore';
 import {
   SUGGESTION_FIELDS,
@@ -240,8 +240,8 @@ function emptyFormFor(
     // caja y se iba sumando en cada registro, así que el campo llegaba con un
     // número que casi nunca era el del documento y había que borrarlo a mano.
     caja_interna: leerCajaInternaRecordada(),
-    // La fecha del dato es el día en que se digita (hora local del navegador).
-    fecha_del_dato: fechaHoyISO(),
+    // La fecha del dato es el día en que se digita, en hora de Colombia.
+    fecha_del_dato: fechaHoyLocal(),
     elaborado_por: user ? `${user.nombre} (${user.cc})` : '',
     sede: user?.sede ?? '',
     // Datos derivados de la caja seleccionada: la persona solo completa UPD y los
@@ -888,9 +888,11 @@ export default function DatosPage() {
   const location = useLocation();
   const { cajaId } = useParams<{ cajaId: string }>();
   const user = useAuthStore((state) => state.user);
-  const canMarcarOk = user?.rol === 'LIDER' || user?.rol === 'ADMIN' || user?.rol === 'TECNICA' || user?.rol === 'CALIDAD';
-  const canCrear = user?.rol !== 'CALIDAD';
-  const canEliminar = user?.rol !== 'CALIDAD';
+  const canMarcarOk = user?.rol === 'LIDER' || user?.rol === 'ADMIN' || user?.rol === 'TECNICA';
+  // Todos los perfiles que llegan aquí digitan y pueden borrar; las reglas de
+  // autor y de fecha las aplica el backend.
+  const canCrear = true;
+  const canEliminar = true;
   // El retorno se resuelve más abajo, cuando ya se conoce la caja: necesita
   // saber de qué acta cuelga para poder subir un nivel sin depender del
   // historial de navegación.
@@ -1043,12 +1045,12 @@ export default function DatosPage() {
     {
       key: 'created_at',
       header: 'Creado',
-      render: (registro: FuidDato) => (registro.created_at ? registro.created_at.slice(0, 19).replace('T', ' ') : '—'),
+      render: (registro: FuidDato) => formatearFechaHora(registro.created_at),
     },
     {
       key: 'updated_at',
       header: 'Actualizado',
-      render: (registro: FuidDato) => (registro.updated_at ? registro.updated_at.slice(0, 19).replace('T', ' ') : '—'),
+      render: (registro: FuidDato) => formatearFechaHora(registro.updated_at),
     },
     {
       key: 'estado',

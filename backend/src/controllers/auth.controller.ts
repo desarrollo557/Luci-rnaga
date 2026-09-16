@@ -89,7 +89,7 @@ export async function login(req: Request, res: Response): Promise<void> {
 
     if (user.rol === 'ADMIN') {
       res.status(200).json({ success: true, rol: user.rol, redirect: '/admin' } satisfies LoginResponse);
-    } else if (['TECNICA', 'LIDER', 'CALIDAD'].includes(user.rol)) {
+    } else if (['TECNICA', 'LIDER'].includes(user.rol)) {
       res.status(200).json({ success: true, rol: user.rol, redirect: '/clientes' } satisfies LoginResponse);
     } else {
       res.status(200).json({ success: false, message: 'Rol no autorizado' } satisfies LoginResponse);

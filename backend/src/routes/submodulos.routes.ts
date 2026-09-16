@@ -33,7 +33,7 @@ router.put(
 );
 router.delete('/sub_modulos/:id', isAuthenticated, isLiderOrAdmin, asyncHandler(deleteSubModulo));
 
-// Usuarios por rol y sede (TECNICA/CALIDAD disponibles para asignar)
+// Usuarios por rol y sede (técnicos disponibles para asignar)
 router.get('/usuarios/:rol', isAuthenticated, asyncHandler(listUsersByRoleAndSede));
 
 export default router;

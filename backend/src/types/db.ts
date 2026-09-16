@@ -171,4 +171,4 @@ export interface Historial {
   sede_calidad: string | null;
 }
 
-export type Rol = 'ADMIN' | 'LIDER' | 'TECNICA' | 'CALIDAD';
+export type Rol = 'ADMIN' | 'LIDER' | 'TECNICA';

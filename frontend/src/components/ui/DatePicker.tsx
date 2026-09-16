@@ -1,3 +1,4 @@
+import { fechaHoyLocal } from '@/lib/fechas';
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { CalendarDays, ChevronLeft, ChevronRight } from 'lucide-react';
@@ -69,8 +70,8 @@ export const DatePicker = function DatePicker({
   const generatedId = useId();
   const fieldId = id ?? generatedId;
 
-  const today = useMemo(() => new Date(), []);
-  const todayISO = formatISO(today);
+  // "Hoy" es el día de Colombia, no el del reloj del equipo.
+  const todayISO = fechaHoyLocal();
 
   const cells = useMemo(() => {
     const year = viewMonth.getFullYear();

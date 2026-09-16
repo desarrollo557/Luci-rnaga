@@ -8,6 +8,7 @@ import { toastApiError } from '@/lib/feedback';
 import { cn } from '@/lib/cn';
 import { descargarBlob } from '@/lib/utils';
 import { invalidateDomain } from '@/lib/queryInvalidation';
+import { aFechaISO, fechaHoyLocal, formatearFecha, formatearFechaHora } from '@/lib/fechas';
 import type { DataRow, FuidConEstado, Inventario } from '@/types';
 import { useAuthStore } from '@/stores/authStore';
 
@@ -48,32 +49,6 @@ const FUID_COLUMNS: ReadonlyArray<readonly [string, keyof FuidConEstado]> = [
 ];
 
 type InventarioForm = Record<string, string>;
-
-function fmtFecha(value: string | Date | null | undefined): string {
-  if (!value) return '—';
-  const date = value instanceof Date ? value : new Date(value);
-  if (Number.isNaN(date.getTime())) return '—';
-  const day = String(date.getDate()).padStart(2, '0');
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  return `${day}/${month}/${date.getFullYear()}`;
-}
-
-function fmtFechaHora(valor: string | null | undefined): string {
-  if (!valor) return '—';
-  try {
-    const date = new Date(valor);
-    if (Number.isNaN(date.getTime())) return '—';
-    return date.toLocaleString('es-CO', {
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-    });
-  } catch {
-    return '—';
-  }
-}
 
 function emptyForm(): InventarioForm {
   return {
@@ -219,7 +194,7 @@ export default function InventarioPage() {
         key: header,
         header,
         render: (row: FuidConEstado) => (
-          <span>{dateFields.has(campo) ? fmtFecha(row[campo] as string | null) : (row[campo] ?? '—')}</span>
+          <span>{dateFields.has(campo) ? formatearFecha(row[campo] as string | null) : (row[campo] ?? '—')}</span>
         ),
       })),
     ];
@@ -256,7 +231,7 @@ export default function InventarioPage() {
     try {
       const { data: pkg } = await inventarioApi.clienteParaInventario(codigo);
       const fecha = pkg.cliente.fecha_trans_modulo
-        ? new Date(pkg.cliente.fecha_trans_modulo).toISOString().slice(0, 10)
+        ? aFechaISO(pkg.cliente.fecha_trans_modulo)
         : '';
       setForm((prev) => ({
         ...prev,
@@ -283,8 +258,6 @@ export default function InventarioPage() {
 
   const filtered = useMemo(() => {
     const query = q.trim().toLowerCase();
-    const desdeT = desde ? new Date(`${desde}T00:00:00`).getTime() : null;
-    const hastaT = hasta ? new Date(`${hasta}T23:59:59.999`).getTime() : null;
     return rows.filter((row) => {
       if (query) {
         const campos = [
@@ -302,11 +275,14 @@ export default function InventarioPage() {
       if (estado && row.ESTADO_DEL_INVENTARIO !== estado) return false;
       if (estadoEntrega && row.ESTADO_ENTREGA !== estadoEntrega) return false;
       if (funcionario && row.FUNCIONARIO !== funcionario) return false;
-      if (desdeT !== null || hastaT !== null) {
-        const fecha = row.FECHA_TRANSFERENCIA ? new Date(row.FECHA_TRANSFERENCIA).getTime() : null;
-        if (fecha === null) return false;
-        if (desdeT !== null && fecha < desdeT) return false;
-        if (hastaT !== null && fecha > hastaT) return false;
+      if (desde || hasta) {
+        // Se compara como texto YYYY-MM-DD: pasar la fecha por `new Date()` la
+        // ponía en la medianoche UTC, que en Colombia es el día anterior, y el
+        // primer día del rango quedaba fuera.
+        const fecha = aFechaISO(row.FECHA_TRANSFERENCIA);
+        if (!fecha) return false;
+        if (desde && fecha < desde) return false;
+        if (hasta && fecha > hasta) return false;
       }
       return true;
     });
@@ -377,7 +353,7 @@ export default function InventarioPage() {
     try {
       const respuesta = await inventarioApi.descargarExcel(row.ITEMS);
       const nombre = `Inventario_${String(row.CLIENTE ?? row.CODIGO_DEL_CLIENTE ?? 'cliente')
-        .replace(/[^A-Za-z0-9]+/g, '_')}_${new Date().toISOString().slice(0, 10)}.xlsx`;
+        .replace(/[^A-Za-z0-9]+/g, '_')}_${fechaHoyLocal()}.xlsx`;
       descargarBlob(respuesta.data as Blob, nombre);
       toast.success('Inventario descargado');
     } catch (error) {
@@ -473,7 +449,7 @@ export default function InventarioPage() {
     {
       key: 'FECHA_ACTUALIZACION',
       header: 'Últ. Actualización',
-      render: (row) => <span>{fmtFechaHora(row.FECHA_ACTUALIZACION ?? row.FECHA_CREACION)}</span>,
+      render: (row) => <span>{formatearFechaHora(row.FECHA_ACTUALIZACION ?? row.FECHA_CREACION)}</span>,
     },
     {
       key: 'USUARIO_ACTUALIZACION',
@@ -948,8 +924,8 @@ export default function InventarioPage() {
                 { label: 'Cajas', value: fuidQuery.data?.stats?.total_cajas },
                 { label: 'UPDs', value: fuidQuery.data?.stats?.total_upds },
                 { label: 'Folios', value: fuidQuery.data?.stats?.total_folios },
-                { label: 'Desde', value: fmtFecha(fuidQuery.data?.stats?.fecha_inicial_min) },
-                { label: 'Hasta', value: fmtFecha(fuidQuery.data?.stats?.fecha_final_max) },
+                { label: 'Desde', value: formatearFecha(fuidQuery.data?.stats?.fecha_inicial_min) },
+                { label: 'Hasta', value: formatearFecha(fuidQuery.data?.stats?.fecha_final_max) },
               ].map(({ label, value }) => (
                 <div key={label} className="rounded-lg border border-silver-200 bg-surface px-3 py-2">
                   <p className="text-[10px] font-semibold uppercase tracking-wide text-silver-500">{label}</p>
