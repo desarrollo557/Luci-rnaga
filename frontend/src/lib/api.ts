@@ -325,6 +325,18 @@ export interface InventarioSaveResponse {
   sync: InventarioSyncOutcome;
 }
 
+/**
+ * Respuesta del recálculo. Trae el antes y el después de las dos cifras que le
+ * importan a quien pulsa el botón, para poder decirle qué cambió en vez de un
+ * "listo" que no dice nada.
+ */
+export interface InventarioRecalculoResponse {
+  message: string;
+  sync: InventarioSyncOutcome;
+  antes: { totalCajas: number | null; registros: number | null };
+  ahora: { totalCajas: number; registros: number };
+}
+
 export interface ClienteParaInventario {
   codigo: string;
   entidad_remitente: string;
@@ -356,11 +368,18 @@ export interface ClienteParaInventarioResponse {
 export const inventarioApi = {
   list: () => api.get<Inventario[]>('/inventario'),
   get: (id: string | number) => api.get<Inventario>(`/inventario/${id}`),
-  fuid: (id: string | number, params?: { limit?: number; offset?: number; q?: string }) => {
+  /** Con `acta` la vista previa se acota a esa acta; sin ella, al cliente entero. */
+  fuid: (
+    id: string | number,
+    params?: { limit?: number; offset?: number; q?: string; acta?: string | null },
+  ) => {
     const query: Record<string, unknown> = { ...params };
     if (!query.q) delete query.q;
+    if (!query.acta) delete query.acta;
     return api.get<InventarioFuidResponse>(`/inventario/${id}/fuid`, { params: query });
   },
+  /** Vuelve a leer las cifras del cliente y las guarda en su inventario. */
+  recalcular: (id: string | number) => api.post<InventarioRecalculoResponse>(`/inventario/${id}/recalcular`),
   create: (data: DataRow) => api.post<InventarioSaveResponse>('/inventario', data),
   update: (id: string | number, data: DataRow) => api.put<InventarioSaveResponse>(`/inventario/${id}`, data),
   remove: (id: string | number) => api.delete(`/inventario/${id}`),

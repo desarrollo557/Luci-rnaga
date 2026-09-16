@@ -105,10 +105,6 @@ const FUID_WHERE_FILTRO = `
   AND (f.caja LIKE ? OR f.upd LIKE ? OR f.asunto LIKE ? OR f.entidad_remitente LIKE ? OR f.serie LIKE ? OR f.subserie LIKE ?)
 `;
 
-const FUID_QUERY_FILTRADO = `${FUID_BASE_SELECT}${FUID_WHERE_FILTRO} ORDER BY f.caja, f.n_orden`;
-
-const FUID_COUNT_QUERY_FILTRADO = `${FUID_COUNT_QUERY}${FUID_WHERE_FILTRO}`;
-
 /**
  * Acota el FUID a una sola acta de transferencia del cliente.
  *
@@ -120,11 +116,38 @@ const FUID_COUNT_QUERY_FILTRADO = `${FUID_COUNT_QUERY}${FUID_WHERE_FILTRO}`;
  */
 const FUID_WHERE_ACTA = ` AND mcl.acta_transferencia_modulo = ?`;
 
-/** Consulta del FUID de un cliente, acotada al acta indicada si se pide una. */
-function fuidQueryPorActa(acta: string | null): string {
-  return acta
-    ? `${FUID_BASE_SELECT}${FUID_WHERE_ACTA} ORDER BY f.caja, f.n_orden`
-    : FUID_QUERY;
+const FUID_ORDEN = ' ORDER BY f.caja, f.n_orden';
+
+/*
+ * Las tres consultas del FUID —las filas, su recuento y sus totales— comparten
+ * los mismos dos recortes opcionales: el acta y el texto del buscador. Se arman
+ * aquí en vez de tener una constante por combinación, que eran cuatro y ahora
+ * serían ocho, y en las que el orden de los parámetros se desincronizaba en
+ * cuanto se tocaba una sola.
+ *
+ * El orden importa: primero el código del cliente, después el acta y al final el
+ * texto del filtro. `parametrosFuid` los devuelve en ese mismo orden.
+ */
+function recortes(acta: string | null, conFiltro: boolean): string {
+  return `${acta ? FUID_WHERE_ACTA : ''}${conFiltro ? FUID_WHERE_FILTRO : ''}`;
+}
+
+/** Consulta del FUID de un cliente, acotada al acta y al texto que se pidan. */
+function fuidQueryPorActa(acta: string | null, conFiltro = false): string {
+  return `${FUID_BASE_SELECT}${recortes(acta, conFiltro)}${FUID_ORDEN}`;
+}
+
+function fuidCountPorActa(acta: string | null, conFiltro = false): string {
+  return `${FUID_COUNT_QUERY}${recortes(acta, conFiltro)}`;
+}
+
+function fuidStatsPorActa(acta: string | null): string {
+  return `${FUID_STATS_QUERY}${recortes(acta, false)}`;
+}
+
+/** Parámetros en el mismo orden en que los espera cualquiera de las tres. */
+function parametrosFuid(codigo: unknown, acta: string | null, filtro: string[] = []): unknown[] {
+  return [codigo, ...(acta ? [acta] : []), ...filtro];
 }
 
 /**
@@ -416,21 +439,27 @@ export async function getInventarioFuid(req: Request, res: Response): Promise<vo
   const q = qRaw.length > 0 ? qRaw : '';
   const codigo = inventario.CODIGO_DEL_CLIENTE;
 
-  const filterParams = q ? buildFuidFilterParams(q) : [];
-  const baseParams = [codigo];
+  // `?acta=` acota la vista previa a una sola acta de transferencia. Sin él se
+  // ve el FUID del cliente entero, que es como se abría hasta ahora.
+  const actaRaw = typeof req.query.acta === 'string' ? req.query.acta.trim() : '';
+  const acta = actaRaw.length > 0 ? actaRaw : null;
 
-  const fuidSql = q ? FUID_QUERY_FILTRADO : FUID_QUERY;
-  const countSql = q ? FUID_COUNT_QUERY_FILTRADO : FUID_COUNT_QUERY;
+  const filtro = q ? buildFuidFilterParams(q) : [];
+  const conFiltro = filtro.length > 0;
 
-  const filas = await query<FuidConEstadoRow>(`${fuidSql} LIMIT ? OFFSET ?`, [
-    ...baseParams,
-    ...filterParams,
+  const filas = await query<FuidConEstadoRow>(`${fuidQueryPorActa(acta, conFiltro)} LIMIT ? OFFSET ?`, [
+    ...parametrosFuid(codigo, acta, filtro),
     limit,
     offset,
   ]);
-  const countRows = await query<{ total: number }>(countSql, [...baseParams, ...filterParams]);
+  const countRows = await query<{ total: number }>(
+    fuidCountPorActa(acta, conFiltro),
+    parametrosFuid(codigo, acta, filtro),
+  );
 
-  const stats = await queryOne<FuidStatsRow>(FUID_STATS_QUERY, baseParams);
+  // Los totales describen el alcance que se está viendo, con su acta pero sin el
+  // texto del buscador: son el tamaño del conjunto, no el de la búsqueda.
+  const stats = await queryOne<FuidStatsRow>(fuidStatsPorActa(acta), parametrosFuid(codigo, acta));
 
   res.json({
     inventario,
@@ -439,6 +468,7 @@ export async function getInventarioFuid(req: Request, res: Response): Promise<vo
     limit,
     offset,
     q: q || null,
+    acta,
     stats: stats ?? null,
   });
 }
@@ -496,6 +526,163 @@ export async function descargarInventarioExcel(req: Request, res: Response): Pro
     } (${filas.length} registros)`,
     usuario: req.session.user,
   });
+}
+
+/**
+ * Cifras reales de un cliente, leídas de sus cajas y de sus registros FUID.
+ *
+ * Salen de una sola consulta a propósito: si el total de cajas y el de registros
+ * se leyeran por separado, entre una lectura y la otra podría entrar digitación y
+ * el inventario acabaría contando dos momentos distintos.
+ *
+ * `COUNT(DISTINCT mc.id)` y no `COUNT(mc.id)` porque el JOIN con los registros
+ * repite cada caja tantas veces como registros tenga. Los registros sí se cuentan
+ * sin DISTINCT: el número de caja es único en la tabla, así que cada registro
+ * casa con una sola caja y aparece una única vez.
+ */
+const CIFRAS_DEL_CLIENTE = `
+  SELECT COUNT(DISTINCT mcl.id) AS total_actas,
+         COUNT(DISTINCT mc.id) AS total_cajas,
+         COUNT(DISTINCT mc.id) FILTER (WHERE mc.estado_caja = 'FINALIZADO') AS cajas_procesadas,
+         MIN(mc.caja_modulo) AS caja_iniciar,
+         MAX(mc.caja_modulo) AS caja_fin,
+         COUNT(f.id) AS registros
+  FROM moduloscliente mcl
+  LEFT JOIN modulos_caja mc ON mc.id_modulo_caja = mcl.id
+  LEFT JOIN fuiddatosreal f ON f.caja = mc.caja_modulo
+  WHERE mcl.id_submodulo = (
+    SELECT id_submodulo FROM moduloscliente WHERE codigo = ? ORDER BY id LIMIT 1
+  )
+`;
+
+interface CifrasDelCliente {
+  total_actas: number;
+  total_cajas: number;
+  cajas_procesadas: number;
+  caja_iniciar: string | null;
+  caja_fin: string | null;
+  registros: number;
+}
+
+/** Con qué nombre se firma una actualización que no pidió ninguna persona. */
+export const USUARIO_ACTUALIZACION_AUTOMATICA = 'ACTUALIZACION AUTOMATICA';
+
+/**
+ * Pone al día las cifras de un inventario con lo que hay ahora mismo en la base.
+ *
+ * El inventario nace siendo una foto del cliente, pero la digitación sigue: se
+ * abren cajas, se cierran otras y entran registros. Sin volver a leer, el
+ * documento envejece en silencio y lo que se entrega deja de cuadrar con lo que
+ * hay en el sistema.
+ *
+ * No toca lo que se escribe a mano —funcionario, estados, fechas de entrega,
+ * tipos de caja—: eso es gestión, no un dato que la base pueda deducir. Solo
+ * reemplaza lo que sí sabe contar.
+ *
+ * Tras recalcular vuelve a subir el documento a Zoho Sheet, porque de nada sirve
+ * tener la cifra al día aquí y el archivo viejo allá.
+ */
+export async function recalcularInventario(
+  inventario: Inventario,
+  usuario: string,
+): Promise<{ inventario: Inventario; sync: SyncOutcome; cifras: CifrasDelCliente } | null> {
+  const codigo = inventario.CODIGO_DEL_CLIENTE;
+  if (!codigo) return null;
+
+  const cifras = await queryOne<CifrasDelCliente>(CIFRAS_DEL_CLIENTE, [codigo]);
+  if (!cifras) return null;
+
+  await query(
+    `UPDATE inventario
+       SET "TOTAL_CAJAS" = ?, "CAJAS_PROCESADAS" = ?, "CAJA_INICIAR" = ?, "CAJ_FIN" = ?,
+           "REGISTROS_PROCESADOS" = ?, "FECHA_ACTUALIZACION" = NOW(), "USUARIO_ACTUALIZACION" = ?
+     WHERE "ITEMS" = ?`,
+    [
+      cifras.total_cajas,
+      cifras.cajas_procesadas,
+      cifras.caja_iniciar,
+      cifras.caja_fin,
+      cifras.registros,
+      usuario,
+      inventario.ITEMS,
+    ],
+  );
+
+  const recalculado = await queryOne<Inventario>('SELECT * FROM inventario WHERE "ITEMS" = ?', [inventario.ITEMS]);
+  if (!recalculado) return null;
+
+  const sync = await syncInventarioToWorkDrive({ ...recalculado }, inventario.ITEMS);
+  const final = await queryOne<Inventario>('SELECT * FROM inventario WHERE "ITEMS" = ?', [inventario.ITEMS]);
+  return { inventario: final ?? recalculado, sync, cifras };
+}
+
+/** `POST /inventario/:id/recalcular`: el botón de actualizar de la pantalla. */
+export async function recalcularInventarioController(req: Request, res: Response): Promise<void> {
+  const { id } = req.params;
+  const inventario = await queryOne<Inventario>('SELECT * FROM inventario WHERE "ITEMS" = ?', [id]);
+  if (!inventario) {
+    res.status(404).json({ error: 'Registro no encontrado' });
+    return;
+  }
+
+  const antes = {
+    totalCajas: inventario.TOTAL_CAJAS,
+    registros: inventario.REGISTROS_PROCESADOS,
+  };
+  const resultado = await recalcularInventario(inventario, auditoriaUsuario(req.session.user));
+  if (!resultado) {
+    res.status(404).json({ error: 'El inventario no tiene código de cliente con el que recalcular' });
+    return;
+  }
+
+  void audit({
+    entidad: 'inventario',
+    entidadId: String(id),
+    accion: 'ACTUALIZAR',
+    detalle: `Recálculo de ${inventario.CLIENTE ?? inventario.CODIGO_DEL_CLIENTE}: cajas ${antes.totalCajas ?? 0} → ${resultado.cifras.total_cajas}, registros ${antes.registros ?? 0} → ${resultado.cifras.registros}`,
+    usuario: req.session.user,
+  });
+
+  res.json({
+    message: 'Inventario actualizado con los datos del sistema',
+    inventario: resultado.inventario,
+    sync: resultado.sync,
+    antes,
+    ahora: { totalCajas: resultado.cifras.total_cajas, registros: resultado.cifras.registros },
+  });
+}
+
+/**
+ * Recalcula todos los inventarios. La usa la actualización diaria.
+ *
+ * Va de uno en uno y no en paralelo a propósito: cada uno sube su archivo a Zoho,
+ * y lanzar decenas de subidas a la vez es la forma más rápida de que el servicio
+ * empiece a responder 429.
+ */
+export async function recalcularTodosLosInventarios(usuario: string): Promise<{
+  total: number;
+  actualizados: number;
+  fallidos: number;
+}> {
+  const inventarios = await query<Inventario>('SELECT * FROM inventario ORDER BY "ITEMS"');
+  let actualizados = 0;
+  let fallidos = 0;
+
+  for (const inventario of inventarios) {
+    try {
+      const resultado = await recalcularInventario(inventario, usuario);
+      if (resultado) actualizados++;
+      else fallidos++;
+    } catch (error) {
+      fallidos++;
+      console.error(
+        `[Inventario] No se pudo recalcular el inventario ${inventario.ITEMS} (${inventario.CODIGO_DEL_CLIENTE ?? 'sin código'}):`,
+        error,
+      );
+    }
+  }
+
+  return { total: inventarios.length, actualizados, fallidos };
 }
 
 /** Cabeceras y cuerpo de una descarga de Excel. */
@@ -563,44 +750,65 @@ export async function descargarFuidDeCliente(req: Request, res: Response): Promi
   });
 }
 
+/**
+ * Crea el inventario de un cliente, o lo actualiza si ya lo tenía.
+ *
+ * Solo hace falta el cliente. Todo lo que la base puede contar —cajas, cajas
+ * terminadas, rango de cajas y registros— lo pone el recálculo del final, no el
+ * formulario: son cifras que ya existen en el sistema, y pedirlas a mano era
+ * invitarse a que el documento dijera una cosa y la base otra. Lo que sí se
+ * escribe es la gestión: funcionario, estados, fechas de entrega y tipos de caja.
+ *
+ * El recálculo deja además el archivo subido a Zoho Sheet, así que el inventario
+ * nace ya publicado y con sus cifras al día.
+ */
 export async function createInventario(req: Request, res: Response): Promise<void> {
   const body = req.body as Record<string, unknown>;
-  const existente = await queryOne<Inventario>('SELECT * FROM inventario WHERE "CODIGO_DEL_CLIENTE" = ? LIMIT 1', [body.CODIGO_DEL_CLIENTE]);
-  if (existente) {
-    const values = pickValues(body);
-    const usuarioActual = auditoriaUsuario(req.session.user);
-    const sets = `${FIELDS.map((f) => `${comillas(f)} = ?`).join(', ')}, "FECHA_ACTUALIZACION" = NOW(), "USUARIO_ACTUALIZACION" = ?`;
-    await query(`UPDATE inventario SET ${sets} WHERE "ITEMS" = ?`, [...values, usuarioActual, existente.ITEMS]);
-    const row = await queryOne<Inventario>('SELECT * FROM inventario WHERE "ITEMS" = ?', [existente.ITEMS]);
-    if (!row) {
-      res.status(500).json({ error: 'Registro actualizado pero no se pudo recuperar' });
-      return;
-    }
-    const rowData: Record<string, unknown> = { ...row };
-    const sync = await syncInventarioToWorkDrive(rowData, existente.ITEMS);
-    res.json({ message: `El cliente ya tenía un inventario; se actualizó con los últimos registros`, id: existente.ITEMS, sync, actualizado: true });
-    return;
-  }
-  const values = pickValues(body);
   const usuarioActual = auditoriaUsuario(req.session.user);
-  const valuesConAuditoria = [...values, usuarioActual];
-  const placeholders = [...values.map(() => '?'), 'NOW()', '?'].join(', ');
+  const values = pickValues(body);
 
-  const result = await queryResult(
-    // La clave de esta tabla es "ITEMS", no `id`: hay que pedirla por su nombre
-    // o no habría forma de recuperar el registro recién insertado.
-    `INSERT INTO inventario (${FIELDS.map(comillas).join(', ')}, "FECHA_ACTUALIZACION", "USUARIO_ACTUALIZACION")
-     VALUES (${placeholders}) RETURNING "ITEMS"`,
-    valuesConAuditoria,
-  );
-  const row = await queryOne<Inventario>('SELECT * FROM inventario WHERE "ITEMS" = ?', [result.insertId]);
+  const existente = await queryOne<Inventario>('SELECT * FROM inventario WHERE "CODIGO_DEL_CLIENTE" = ? LIMIT 1', [
+    body.CODIGO_DEL_CLIENTE,
+  ]);
+
+  let items: number | string;
+  let yaExistia = false;
+
+  if (existente) {
+    yaExistia = true;
+    items = existente.ITEMS;
+    const sets = `${FIELDS.map((f) => `${comillas(f)} = ?`).join(', ')}, "FECHA_ACTUALIZACION" = NOW(), "USUARIO_ACTUALIZACION" = ?`;
+    await query(`UPDATE inventario SET ${sets} WHERE "ITEMS" = ?`, [...values, usuarioActual, items]);
+  } else {
+    const placeholders = [...values.map(() => '?'), 'NOW()', '?'].join(', ');
+    const result = await queryResult(
+      // La clave de esta tabla es "ITEMS", no `id`: hay que pedirla por su nombre
+      // o no habría forma de recuperar el registro recién insertado.
+      `INSERT INTO inventario (${FIELDS.map(comillas).join(', ')}, "FECHA_ACTUALIZACION", "USUARIO_ACTUALIZACION")
+       VALUES (${placeholders}) RETURNING "ITEMS"`,
+      [...values, usuarioActual],
+    );
+    items = result.insertId;
+  }
+
+  const row = await queryOne<Inventario>('SELECT * FROM inventario WHERE "ITEMS" = ?', [items]);
   if (!row) {
-    res.status(500).json({ error: 'Registro insertado pero no se pudo recuperar' });
+    res.status(500).json({ error: 'Registro guardado pero no se pudo recuperar' });
     return;
   }
-  const rowData: Record<string, unknown> = { ...row };
-  const sync = await syncInventarioToWorkDrive(rowData, result.insertId);
-  res.json({ message: 'Registro insertado correctamente', id: result.insertId, sync });
+
+  const recalculado = await recalcularInventario(row, usuarioActual);
+  const sync = recalculado?.sync ?? (await syncInventarioToWorkDrive({ ...row }, items));
+
+  res.json({
+    message: yaExistia
+      ? 'El cliente ya tenía un inventario; se actualizó con los últimos registros'
+      : 'Inventario creado con los datos del sistema',
+    id: items,
+    sync,
+    actualizado: yaExistia,
+    inventario: recalculado?.inventario ?? row,
+  });
 }
 
 export async function updateInventario(req: Request, res: Response): Promise<void> {
@@ -620,9 +828,19 @@ export async function updateInventario(req: Request, res: Response): Promise<voi
     res.status(404).json({ error: 'Registro no encontrado' });
     return;
   }
-  const rowData: Record<string, unknown> = { ...row };
-  const sync = await syncInventarioToWorkDrive(rowData, id);
-  res.json({ message: `Registro con ID: ${id} actualizado correctamente`, id, sync });
+
+  // Al guardar también se releen las cifras, igual que al crear: el inventario
+  // no debe quedarse con un número de cajas de hace dos semanas solo porque
+  // alguien entró a corregir el nombre del funcionario.
+  const recalculado = await recalcularInventario(row, usuarioActual);
+  const sync = recalculado?.sync ?? (await syncInventarioToWorkDrive({ ...row }, id));
+
+  res.json({
+    message: `Registro con ID: ${id} actualizado correctamente`,
+    id,
+    sync,
+    inventario: recalculado?.inventario ?? row,
+  });
 }
 
 export async function syncInventarioController(req: Request, res: Response): Promise<void> {
