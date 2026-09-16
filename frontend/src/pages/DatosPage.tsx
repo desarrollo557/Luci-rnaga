@@ -14,6 +14,7 @@ import {
   PageHeader,
   Select,
   Table,
+  Textarea,
   UpdInput,
   numeroAUpd,
   updANumero,
@@ -213,28 +214,26 @@ function sinNA(valor?: string | null): string {
   return limpio.toUpperCase() === 'N/A' ? '' : limpio;
 }
 
-/** Asuntos que se arrastran dentro de una misma caja. */
-interface AsuntosDeLaCaja {
-  asunto_2: string;
-  asunto_3: string;
-}
-
 function emptyFormFor(
   cajaId: string,
   user: SessionUser | null,
   defaultNOrden: number,
   caja?: ModuloCaja | null,
-  asuntos?: AsuntosDeLaCaja,
+  asuntoAutomatico?: string,
 ): FuidFormValues {
   return {
     ...EMPTY_FORM,
     caja: cajaId,
-    // Los asuntos del último registro de la caja. Una caja suele contener
-    // documentos del mismo asunto, así que se traen ya escritos y quien
-    // necesite otro los cambia; volver a teclearlos en cada registro era el
+    // El asunto automático del último registro de la caja. Una caja suele
+    // contener documentos del mismo asunto, así que se trae ya escrito y quien
+    // necesite otro lo cambia; volver a teclearlo en cada registro era el
     // trabajo repetido más caro de la digitación.
-    asunto_2: asuntos?.asunto_2 ?? '',
-    asunto_3: asuntos?.asunto_3 ?? '',
+    //
+    // El asunto manual NO se hereda: describe el documento concreto, cambia de
+    // un registro al siguiente y arrastrarlo hacía que se guardara el del
+    // anterior cuando alguien pasaba de largo. Arranca vacío, como el resto de
+    // los campos de EMPTY_FORM.
+    asunto_2: asuntoAutomatico ?? '',
     n_orden: String(defaultNOrden),
     // El tomo queda en blanco a propósito. Antes se sugería el siguiente de la
     // caja y se iba sumando en cada registro, así que el campo llegaba con un
@@ -398,8 +397,8 @@ interface FuidFormModalProps {
   cajaId: string;
   editing: FuidDato | null;
   defaultNOrden: number;
-  /** Asuntos del último registro de la caja, para no reescribirlos. */
-  asuntosDeLaCaja: AsuntosDeLaCaja;
+  /** Asunto automático del último registro de la caja, para no reescribirlo. */
+  asuntoAutomaticoDeLaCaja: string;
   caja?: ModuloCaja | null;
   onClose: () => void;
 }
@@ -412,12 +411,22 @@ interface FuidFormModalProps {
  * derivados (caja, fecha del dato, N° orden, elaborado por, sede, acta y fecha
  * de transferencia) viajan sin mostrarse.
  */
-function FuidFormModal({ open, cajaId, editing, defaultNOrden, asuntosDeLaCaja, caja, onClose }: FuidFormModalProps) {
+function FuidFormModal({
+  open,
+  cajaId,
+  editing,
+  defaultNOrden,
+  asuntoAutomaticoDeLaCaja,
+  caja,
+  onClose,
+}: FuidFormModalProps) {
   const queryClient = useQueryClient();
   const user = useAuthStore((state) => state.user);
 
   const [form, setForm] = useState<FuidFormValues>(() =>
-    editing ? formFromRecord(editing) : emptyFormFor(cajaId, user, defaultNOrden, caja, asuntosDeLaCaja),
+    editing
+      ? formFromRecord(editing)
+      : emptyFormFor(cajaId, user, defaultNOrden, caja, asuntoAutomaticoDeLaCaja),
   );
   /** Registros guardados sin cerrar el formulario; remonta el formulario para volver a enfocar Codigo. */
   const [racha, setRacha] = useState(0);
@@ -471,16 +480,15 @@ function FuidFormModal({ open, cajaId, editing, defaultNOrden, asuntosDeLaCaja, 
       // con el UPD consecutivo, el N° de orden y los datos de la caja
       // precargados; el cursor vuelve a Codigo.
       //
-      // Los dos asuntos se arrastran del registro que se acaba de guardar: lo
-      // habitual es encadenar varios documentos del mismo asunto, y volver a
-      // escribirlo cada vez cuesta más que corregirlo cuando cambia.
+      // Solo el asunto automático se arrastra del registro que se acaba de
+      // guardar: lo habitual es encadenar varios documentos del mismo asunto, y
+      // volver a escribirlo cada vez cuesta más que corregirlo cuando cambia. El
+      // asunto manual y las notas arrancan en blanco, porque describen el
+      // documento concreto y no se repiten de un registro al siguiente.
       const guardado = form.upd.trim().toUpperCase();
       const siguienteUpd = siguienteUpdLocal(guardado);
       setForm({
-        ...emptyFormFor(cajaId, user, defaultNOrden + racha + 1, caja, {
-          asunto_2: form.asunto_2,
-          asunto_3: form.asunto_3,
-        }),
+        ...emptyFormFor(cajaId, user, defaultNOrden + racha + 1, caja, form.asunto_2),
         upd: siguienteUpd,
       });
       setRacha((r) => r + 1);
@@ -692,13 +700,20 @@ function FuidFormModal({ open, cajaId, editing, defaultNOrden, asuntosDeLaCaja, 
           error={(faltantesALaVista && faltaAsuntoAutomatico) || undefined}
         />
 
-        <Input
-          label="Asunto Manual *"
-          value={form.asunto_3}
-          onChange={setField('asunto_3')}
-          maxLength={limiteDe('asunto_3')}
-          error={(faltantesALaVista && faltaAsuntoManual) || undefined}
-        />
+        {/* Asunto Manual ocupa la fila entera y crece hacia abajo: es uno de los
+            dos campos donde se escribe de corrido, y en una columna estrecha no
+            se alcanza a leer lo que ya se puso. Tampoco hereda nada del registro
+            anterior. */}
+        <div className="sm:col-span-2 lg:col-span-4">
+          <Textarea
+            label="Asunto Manual *"
+            value={form.asunto_3}
+            onChange={(event) => updateField('asunto_3')(event.target.value)}
+            maxLength={limiteDe('asunto_3')}
+            error={(faltantesALaVista && faltaAsuntoManual) || undefined}
+          />
+        </div>
+
         <SuggestionInput
           caja={form.caja}
           campo="numero_doc"
@@ -779,14 +794,17 @@ function FuidFormModal({ open, cajaId, editing, defaultNOrden, asuntosDeLaCaja, 
           placeholder="—"
         />
 
-        <SuggestionInput
-          caja={form.caja}
-          campo="notas"
-          label="Notas"
-          value={form.notas}
-          onChange={updateField('notas')}
-          className="sm:col-span-2 lg:col-span-4"
-        />
+        {/* Notas, igual que Asunto Manual: fila entera, crece hacia abajo y sin
+            sugerencias. La lista de sugerencias proponía lo escrito en otros
+            registros de la caja, que es justo lo que aquí no sirve. */}
+        <div className="sm:col-span-2 lg:col-span-4">
+          <Textarea
+            label="Notas"
+            value={form.notas}
+            onChange={(event) => updateField('notas')(event.target.value)}
+            maxLength={limiteDe('notas')}
+          />
+        </div>
       </form>
       </div>
     </Modal>
@@ -955,19 +973,19 @@ export default function DatosPage() {
   }, [registros]);
 
   /*
-   * Asuntos con los que se abre un registro nuevo: los del último que se digitó
-   * en la caja. Se toma el de mayor número de orden, no el último que devuelva
-   * la consulta, porque el orden de las filas no está garantizado.
+   * Asunto automático con el que se abre un registro nuevo: el del último que se
+   * digitó en la caja. Se toma el de mayor número de orden, no el último que
+   * devuelva la consulta, porque el orden de las filas no está garantizado.
+   *
+   * El asunto manual no entra aquí a propósito: es el único texto que describe
+   * el documento concreto, así que cada registro lo escribe desde cero.
    */
-  const asuntosDeLaCaja = useMemo<AsuntosDeLaCaja>(() => {
+  const asuntoAutomaticoDeLaCaja = useMemo<string>(() => {
     const ultimo = registros.reduce<FuidDato | null>(
       (mayor, registro) => ((registro.n_orden ?? 0) >= (mayor?.n_orden ?? -1) ? registro : mayor),
       null,
     );
-    return {
-      asunto_2: sinNA(ultimo?.asunto_2),
-      asunto_3: sinNA(ultimo?.asunto_3),
-    };
+    return sinNA(ultimo?.asunto_2);
   }, [registros]);
 
 
@@ -1176,7 +1194,7 @@ export default function DatosPage() {
           cajaId={cajaCode}
           editing={editing}
           defaultNOrden={defaultNOrden}
-          asuntosDeLaCaja={asuntosDeLaCaja}
+          asuntoAutomaticoDeLaCaja={asuntoAutomaticoDeLaCaja}
           caja={cajaQuery.data}
           onClose={() => setModalOpen(false)}
         />

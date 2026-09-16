@@ -142,7 +142,7 @@ export default function ActasPage() {
   const [cargandoAsignacion, setCargandoAsignacion] = useState(false);
 
   /*
-   * Opciones de "Objeto de la Caja": las dos del catálogo y, cuando se edita
+   * Opciones de "Objeto": las dos del catálogo y, cuando se edita
    * una caja creada antes de que el campo fuera una lista, también la que
    * tiene guardada. Sin ese añadido el desplegable aparecería vacío y guardar
    * cualquier otro dato de la caja borraría el objeto sin que nadie lo pidiera.
@@ -676,7 +676,7 @@ export default function ActasPage() {
             error={cajaErrors.oficina_productora_caja}
           />
           <Select
-            label="Objeto de la Caja"
+            label="Objeto"
             placeholder="Sin especificar"
             options={opcionesObjetoCaja}
             value={cajaForm.objeto_caja}
