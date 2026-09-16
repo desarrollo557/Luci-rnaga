@@ -45,6 +45,7 @@ import {
   type ClienteConDetalle,
   type Digitador,
 } from '@/lib/api';
+import { intervaloRefresco } from '@/lib/refresco';
 
 /** El estado de la caja es una escala reservada, no una serie más. */
 const COLOR_ESTADO_CAJA: Record<string, string> = {
@@ -62,7 +63,10 @@ export default function ProduccionPage() {
   const { data: stats, isLoading, dataUpdatedAt } = useQuery({
     queryKey: ['produccion', 'estadisticas'],
     queryFn: async () => (await reportesApi.estadisticas()).data,
-    staleTime: 60_000,
+    // Sin `staleTime` largo: este panel existe para mirar cómo va el trabajo
+    // ahora, y con un minuto de margen enseñaba cifras viejas a quien lo tenía
+    // abierto justo cuando entraba el trabajo.
+    refetchInterval: intervaloRefresco(),
   });
   const [filtroDigitador, setFiltroDigitador] = useState('');
 
