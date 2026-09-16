@@ -74,3 +74,48 @@ describe('campos no diligenciados', () => {
     expect(fuidValues(registro as FuidCreateDto)).toHaveLength(FUID_COLUMNS.length);
   });
 });
+
+/**
+ * La mayoría de los documentos son de un solo día: quien digita escribe la fecha
+ * inicial y deja la final en blanco. Guardarla vacía dejaba el rango abierto, así
+ * que cuando falta se guarda la inicial y el documento queda con su fecha de
+ * principio y fin en el mismo día.
+ */
+describe('fecha final ausente', () => {
+  it('se guarda la fecha inicial cuando la final llega vacía', () => {
+    expect(porColumna({ ...registro, fecha_inicial: '2025-03-14', fecha_final: '' }).fecha_final).toBe(
+      '2025-03-14',
+    );
+  });
+
+  it('también cuando la final llega como null o con solo espacios', () => {
+    expect(porColumna({ ...registro, fecha_inicial: '2025-03-14', fecha_final: null }).fecha_final).toBe(
+      '2025-03-14',
+    );
+    expect(porColumna({ ...registro, fecha_inicial: '2025-03-14', fecha_final: '   ' }).fecha_final).toBe(
+      '2025-03-14',
+    );
+  });
+
+  it('también cuando la final ni siquiera viene en la petición', () => {
+    expect(porColumna({ ...registro, fecha_inicial: '2025-03-14' }).fecha_final).toBe('2025-03-14');
+  });
+
+  it('no toca la fecha final cuando el documento sí abarca varios días', () => {
+    const fila = porColumna({ ...registro, fecha_inicial: '2025-03-14', fecha_final: '2025-04-02' });
+    expect(fila.fecha_inicial).toBe('2025-03-14');
+    expect(fila.fecha_final).toBe('2025-04-02');
+  });
+
+  it('sin fecha inicial no hay nada que copiar: las dos quedan en NULL', () => {
+    const fila = porColumna({ ...registro, fecha_inicial: '', fecha_final: '' });
+    expect(fila.fecha_inicial).toBeNull();
+    expect(fila.fecha_final).toBeNull();
+  });
+
+  it('la fecha inicial no se toca nunca', () => {
+    expect(porColumna({ ...registro, fecha_inicial: '2025-03-14', fecha_final: '' }).fecha_inicial).toBe(
+      '2025-03-14',
+    );
+  });
+});

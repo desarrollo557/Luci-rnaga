@@ -105,11 +105,24 @@ export async function buildInventarioFuidExcel<T extends object>(filas: T[]): Pr
 }
 
 /** Safe filename: Inventario_FUID_<cliente>_<codigo>_<YYYY-MM-DD>.xlsx (no invalid chars, spaces -> _). */
-export function inventarioFuidFilename(cliente: unknown, codigoCliente: unknown, fechaCreacion: unknown): string {
+/**
+ * Nombre del archivo del inventario FUID.
+ *
+ * Cuando la descarga se acota a un acta, su número entra en el nombre: de un
+ * mismo cliente se bajan varios archivos y en la carpeta de descargas hay que
+ * poder distinguirlos sin abrirlos.
+ */
+export function inventarioFuidFilename(
+  cliente: unknown,
+  codigoCliente: unknown,
+  fechaCreacion: unknown,
+  acta?: unknown,
+): string {
   const clean = (v: unknown, fallback: string) =>
     String(v ?? fallback).replace(/[\\/:*?"<>|\s]+/g, '_').slice(0, 80);
   const clienteName = clean(cliente, 'sin_cliente');
   const codigo = clean(codigoCliente, 'sin_codigo');
   const fecha = fechaDeArchivo(fechaCreacion);
-  return `Inventario_FUID_${clienteName}_${codigo}_${fecha}.xlsx`;
+  const porActa = acta ? `_Acta_${clean(acta, 'sin_acta')}` : '';
+  return `Inventario_FUID_${clienteName}_${codigo}${porActa}_${fecha}.xlsx`;
 }
