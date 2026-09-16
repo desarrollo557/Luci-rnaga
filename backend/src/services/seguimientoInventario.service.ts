@@ -115,6 +115,16 @@ export function escribirFilasSeguimiento(
 
   filas.forEach((registro, indice) => {
     const fila = hoja.getRow(PRIMERA_FILA_DATOS + indice);
+    /*
+     * La fila se muestra siempre.
+     *
+     * El archivo que entregó el cliente venía con un autofiltro aplicado y 2.346
+     * filas ocultas desde la novena, justo donde van los datos. El seguimiento se
+     * generaba con todo dentro y Excel lo enseñaba vacío. La plantilla ya está
+     * limpia, pero esto lo deja atado: si algún día se reemplaza por otra copia
+     * que arrastre ese estado, el documento saldrá visible igual.
+     */
+    fila.hidden = false;
     COLUMNAS.forEach(([columna, campo], posicion) => {
       const celda = fila.getCell(columna);
       celda.style = { ...modelo[posicion] };
@@ -134,6 +144,20 @@ export function escribirFilasSeguimiento(
     });
     fila.commit();
   });
+
+  /*
+   * Fuera cualquier filtro heredado. Un autofiltro con un criterio guardado
+   * esconde las filas que no encajan en él, y las recién escritas nunca encajan:
+   * el documento saldría con los datos dentro y la rejilla en blanco.
+   */
+  hoja.autoFilter = undefined as unknown as ExcelJS.AutoFilter;
+
+  /*
+   * La vista abre arriba, con los encabezados congelados. El archivo original
+   * traía guardada la posición en la fila 8760, así que se abría mirando a una
+   * zona vacía muy por debajo de los datos.
+   */
+  hoja.views = [{ state: 'frozen', xSplit: 0, ySplit: 8, topLeftCell: 'A1', activeCell: 'B9' }];
 
   // Los totales vuelven a ser solo la fórmula: sin resultado guardado, Excel los
   // calcula al abrir sobre los datos que acaban de escribirse.
