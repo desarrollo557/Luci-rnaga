@@ -356,6 +356,12 @@ export interface ActaDelCliente {
   cajaFin: string | null;
   /** Registros FUID digitados en las cajas de esta acta. */
   registros: number;
+  /**
+   * De esos, los creados después de la última lectura del inventario: el trabajo
+   * que el inventario todavía no cuenta. Se calcula comparando la marca de
+   * creación de cada registro contra esa lectura, no se estima.
+   */
+  registrosSinReflejar: number;
 }
 
 export interface ClienteParaInventarioResponse {

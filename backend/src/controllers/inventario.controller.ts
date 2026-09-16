@@ -345,6 +345,8 @@ type ActaDelCliente = {
   cajaFin: string | null;
   /** Registros FUID digitados en las cajas de esta acta. */
   registros: number;
+  /** De esos, los creados después de la última lectura del inventario. */
+  registrosSinReflejar: number;
 };
 
 /**
@@ -379,10 +381,23 @@ export async function getClienteParaInventario(req: Request, res: Response): Pro
    * Un acta suelta sin cliente asociado no tiene con quién agruparse, así que en
    * ese caso se responde solo con ella.
    */
+  /*
+   * Momento de la última lectura del inventario de este cliente. Es la frontera
+   * que separa lo que el inventario ya cuenta de lo que entró después.
+   */
+  const inventario = await queryOne<{ FECHA_ACTUALIZACION: string | null }>(
+    'SELECT "FECHA_ACTUALIZACION" FROM inventario WHERE "CODIGO_DEL_CLIENTE" = ? LIMIT 1',
+    [codigo],
+  );
+  const ultimaLectura = inventario?.FECHA_ACTUALIZACION ?? null;
+
+  // El parámetro de la fecha va primero: aparece antes en el texto de la
+  // consulta que el del cliente, y la traducción a PostgreSQL numera por orden
+  // de aparición.
   const actas =
     cliente.id_submodulo == null
-      ? await query<ActaDelCliente>(ACTAS_QUERY_POR_ID, [cliente.id])
-      : await query<ActaDelCliente>(ACTAS_QUERY_POR_CLIENTE, [cliente.id_submodulo]);
+      ? await query<ActaDelCliente>(ACTAS_QUERY_POR_ID, [ultimaLectura, cliente.id])
+      : await query<ActaDelCliente>(ACTAS_QUERY_POR_CLIENTE, [ultimaLectura, cliente.id_submodulo]);
 
   const cajas = await query<{ caja_modulo: string }>(
     cliente.id_submodulo == null ? CAJAS_QUERY_POR_ACTA : CAJAS_QUERY_POR_CLIENTE,
@@ -401,6 +416,27 @@ export async function getClienteParaInventario(req: Request, res: Response): Pro
 }
 
 /** Actas con el recuento y el rango de sus propias cajas. */
+/*
+ * Actas de un cliente con sus cifras, y cuánto de su trabajo no está todavía
+ * reflejado en el inventario.
+ *
+ * `registrosSinReflejar` se calcula, no se adivina: un registro creado después
+ * de la última lectura del inventario es, por definición, uno que el inventario
+ * no cuenta. Antes esto era una heurística —se marcaba "la última de la lista"—
+ * y la lista viene ordenada por el número de acta como texto, así que marcaba la
+ * de número más alto alfabéticamente, que casi nunca era la que había recibido
+ * el trabajo.
+ *
+ * Con el inventario recién leído, la fecha de referencia es posterior a todos
+ * los registros y la cuenta da cero en todas las actas, que es lo correcto.
+ * Cuando la referencia llega nula —un cliente sin inventario aún— la comparación
+ * es nula y el FILTER no cuenta nada, que también es lo correcto: sin inventario
+ * no hay nada que reflejar.
+ *
+ * Los registros heredados de la base antigua pueden no tener `created_at`. En
+ * ese caso no se cuentan, que es el lado seguro: un acta antigua no saldrá
+ * marcada por error.
+ */
 const ACTAS_SELECT = `
   SELECT mcl.id,
          mcl.acta_transferencia_modulo AS acta,
@@ -408,7 +444,8 @@ const ACTAS_SELECT = `
          COUNT(DISTINCT mc.id) AS "totalCajas",
          MIN(mc.caja_modulo) AS "cajaIniciar",
          MAX(mc.caja_modulo) AS "cajaFin",
-         COUNT(f.id) AS registros
+         COUNT(f.id) AS registros,
+         COUNT(f.id) FILTER (WHERE f.created_at > ?) AS "registrosSinReflejar"
   FROM moduloscliente mcl
   LEFT JOIN modulos_caja mc ON mc.id_modulo_caja = mcl.id
   LEFT JOIN fuiddatosreal f ON f.caja = mc.caja_modulo
