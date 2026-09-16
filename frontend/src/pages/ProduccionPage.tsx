@@ -75,6 +75,50 @@ export default function ProduccionPage() {
   });
   const [filtroDigitador, setFiltroDigitador] = useState('');
 
+  /*
+   * Descarga del seguimiento de inventario en el formato oficial F-PSD-IDA-001.
+   * El periodo se elige al descargar y no con los filtros de más abajo, que son
+   * del explorador por cliente: el seguimiento se entrega por semana o por mes y
+   * quien lo pide viene a eso, no a explorar.
+   *
+   * Va aquí arriba, antes del estado de carga, y no junto al botón que lo usa:
+   * más abajo hay un `return` mientras las cifras cargan, y unos hooks
+   * declarados después de él se ejecutarían solo en algunos renders. React
+   * aborta con el error 310 y la pantalla queda en blanco.
+   */
+  const [eligiendoPeriodo, setEligiendoPeriodo] = useState(false);
+  const [segDesde, setSegDesde] = useState('');
+  const [segHasta, setSegHasta] = useState('');
+  const [descargandoSeguimiento, setDescargandoSeguimiento] = useState(false);
+
+  const descargarSeguimiento = async () => {
+    setDescargandoSeguimiento(true);
+    try {
+      const respuesta = await reportesApi.descargarSeguimiento({ desde: segDesde, hasta: segHasta });
+      const periodo = segDesde && segHasta ? `_${segDesde}_a_${segHasta}` : segDesde ? `_desde_${segDesde}` : segHasta ? `_hasta_${segHasta}` : `_${fechaHoyLocal()}`;
+      descargarBlob(respuesta.data as Blob, `Seguimiento_Inventario${periodo}.xlsx`);
+      toast.success('Seguimiento de inventario descargado');
+      setEligiendoPeriodo(false);
+    } catch (error) {
+      // El servidor puede responder con un error en JSON; como la petición pide
+      // un blob, ese mensaje llega como blob y hay que leerlo para mostrarlo.
+      const datos = (error as { response?: { data?: unknown } }).response?.data;
+      if (datos instanceof Blob) {
+        try {
+          const { error: mensaje } = JSON.parse(await datos.text()) as { error?: string };
+          toast.error(mensaje ?? 'No se pudo descargar el seguimiento');
+          return;
+        } catch {
+          // No era JSON: cae al aviso genérico de abajo.
+        }
+      }
+      toastApiError(error, { context: 'No se pudo descargar el seguimiento:' });
+    } finally {
+      setDescargandoSeguimiento(false);
+    }
+  };
+
+
   const serieMensual = useMemo(
     () =>
       (stats?.fuids_por_mes ?? []).map((m) => ({
@@ -178,44 +222,6 @@ export default function ProduccionPage() {
   }));
 
   const sedePrincipal = stats.fuids_por_sede[0];
-
-  /*
-   * Descarga del seguimiento de inventario en el formato oficial F-PSD-IDA-001.
-   * El periodo se elige al descargar y no con los filtros de más abajo, que son
-   * del explorador por cliente: el seguimiento se entrega por semana o por mes y
-   * quien lo pide viene a eso, no a explorar.
-   */
-  const [eligiendoPeriodo, setEligiendoPeriodo] = useState(false);
-  const [segDesde, setSegDesde] = useState('');
-  const [segHasta, setSegHasta] = useState('');
-  const [descargandoSeguimiento, setDescargandoSeguimiento] = useState(false);
-
-  const descargarSeguimiento = async () => {
-    setDescargandoSeguimiento(true);
-    try {
-      const respuesta = await reportesApi.descargarSeguimiento({ desde: segDesde, hasta: segHasta });
-      const periodo = segDesde && segHasta ? `_${segDesde}_a_${segHasta}` : segDesde ? `_desde_${segDesde}` : segHasta ? `_hasta_${segHasta}` : `_${fechaHoyLocal()}`;
-      descargarBlob(respuesta.data as Blob, `Seguimiento_Inventario${periodo}.xlsx`);
-      toast.success('Seguimiento de inventario descargado');
-      setEligiendoPeriodo(false);
-    } catch (error) {
-      // El servidor puede responder con un error en JSON; como la petición pide
-      // un blob, ese mensaje llega como blob y hay que leerlo para mostrarlo.
-      const datos = (error as { response?: { data?: unknown } }).response?.data;
-      if (datos instanceof Blob) {
-        try {
-          const { error: mensaje } = JSON.parse(await datos.text()) as { error?: string };
-          toast.error(mensaje ?? 'No se pudo descargar el seguimiento');
-          return;
-        } catch {
-          // No era JSON: cae al aviso genérico de abajo.
-        }
-      }
-      toastApiError(error, { context: 'No se pudo descargar el seguimiento:' });
-    } finally {
-      setDescargandoSeguimiento(false);
-    }
-  };
 
   return (
     <div className="space-y-6">
