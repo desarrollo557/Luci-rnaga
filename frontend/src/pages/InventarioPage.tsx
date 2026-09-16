@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { ChevronRight, Download, ExternalLink, Eye, Pencil, Plus, RefreshCw, RotateCcw, Search, Trash2 } from 'lucide-react';
+import { ChevronRight, Download, ExternalLink, Eye, Pencil, Plus, RefreshCcw, RefreshCw, RotateCcw, Search, Trash2 } from 'lucide-react';
 import { Badge, Button, ConfirmDialog, DatePicker, Input, Modal, PageHeader, Select, Spinner, Table, type Column } from '@/components/ui';
 import { inventarioApi, type ActaDelCliente } from '@/lib/api';
 import { toastApiError } from '@/lib/feedback';
@@ -144,6 +144,7 @@ interface ArbolDeActasProps {
   descargando: string | null;
   claveDescarga: (codigo: string, acta?: string | null) => string;
   onDescargar: (acta: string | null) => void;
+  onVerPrevia: (acta: string | null) => void;
 }
 
 /**
@@ -157,7 +158,14 @@ interface ArbolDeActasProps {
  * Las actas se piden al desplegar y no antes: la tabla lista muchos clientes y
  * preguntar por todos de entrada serían tantas consultas como filas.
  */
-function ArbolDeActas({ codigo, cliente, descargando, claveDescarga, onDescargar }: ArbolDeActasProps) {
+function ArbolDeActas({
+  codigo,
+  cliente,
+  descargando,
+  claveDescarga,
+  onDescargar,
+  onVerPrevia,
+}: ArbolDeActasProps) {
   const actasQuery = useQuery({
     queryKey: ['inventario', 'actas', codigo],
     queryFn: () => inventarioApi.clienteParaInventario(codigo).then((r) => r.data.actas ?? []),
@@ -172,16 +180,22 @@ function ArbolDeActas({ codigo, cliente, descargando, claveDescarga, onDescargar
         <p className="text-xs font-semibold uppercase tracking-wide text-silver-500">
           Actas de {cliente ?? codigo}
         </p>
-        <Button
-          size="sm"
-          variant="secondary"
-          loading={descargando === claveDescarga(codigo, null)}
-          disabled={descargando !== null}
-          onClick={() => onDescargar(null)}
-        >
-          <Download className="mr-2 size-4" />
-          Todo el FUID del cliente
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button size="sm" variant="secondary" onClick={() => onVerPrevia(null)}>
+            <Eye className="mr-2 size-4" />
+            Ver todo el FUID
+          </Button>
+          <Button
+            size="sm"
+            variant="secondary"
+            loading={descargando === claveDescarga(codigo, null)}
+            disabled={descargando !== null}
+            onClick={() => onDescargar(null)}
+          >
+            <Download className="mr-2 size-4" />
+            Descargar todo
+          </Button>
+        </div>
       </div>
 
       {actasQuery.isLoading && (
@@ -234,17 +248,29 @@ function ArbolDeActas({ codigo, cliente, descargando, claveDescarga, onDescargar
                   <span className="text-xs text-silver-500">{formatearFecha(acta.fecha)}</span>
                 )}
               </div>
-              <Button
-                size="sm"
-                variant="ghost"
-                loading={descargando === claveDescarga(codigo, acta.acta)}
-                disabled={sinCajas || descargando !== null}
-                onClick={() => onDescargar(acta.acta)}
-                title={sinCajas ? 'Esta acta no tiene cajas' : `Descargar el FUID del acta ${acta.acta ?? ''}`}
-              >
-                <Download className="mr-2 size-4" />
-                Descargar
-              </Button>
+              <div className="flex items-center gap-1">
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  disabled={sinCajas}
+                  onClick={() => onVerPrevia(acta.acta)}
+                  aria-label={`Ver el FUID del acta ${acta.acta ?? ''}`}
+                  title={sinCajas ? 'Esta acta no tiene cajas' : `Ver el FUID del acta ${acta.acta ?? ''}`}
+                >
+                  <Eye className="size-4" />
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  loading={descargando === claveDescarga(codigo, acta.acta)}
+                  disabled={sinCajas || descargando !== null}
+                  onClick={() => onDescargar(acta.acta)}
+                  aria-label={`Descargar el FUID del acta ${acta.acta ?? ''}`}
+                  title={sinCajas ? 'Esta acta no tiene cajas' : `Descargar el FUID del acta ${acta.acta ?? ''}`}
+                >
+                  <Download className="size-4" />
+                </Button>
+              </div>
             </div>
           </div>
         );
@@ -282,6 +308,12 @@ export default function InventarioPage() {
   const [form, setForm] = useState<InventarioForm>(emptyForm());
   const [deleting, setDeleting] = useState<Inventario | null>(null);
   const [detalle, setDetalle] = useState<Inventario | null>(null);
+  /*
+   * Acta a la que está acotada la vista previa abierta, o null para el cliente
+   * entero. Va aparte de `detalle` porque el inventario es el mismo: lo único
+   * que cambia es cuánto de su FUID se está mirando.
+   */
+  const [detalleActa, setDetalleActa] = useState<string | null>(null);
   const [fuidPage, setFuidPage] = useState(0);
   const [fuidQ, setFuidQ] = useState('');
   const [fuidQInput, setFuidQInput] = useState('');
@@ -299,6 +331,8 @@ export default function InventarioPage() {
    * guarda aquí y no en la tabla porque es la pantalla la que decide qué se abre.
    */
   const [desplegados, setDesplegados] = useState<Set<number>>(new Set());
+  /** Inventario cuyas cifras se están recalculando, por su ITEMS. */
+  const [recalculando, setRecalculando] = useState<number | null>(null);
 
   const [q, setQ] = useState('');
   const [estado, setEstado] = useState('');
@@ -325,13 +359,14 @@ export default function InventarioPage() {
   }, [fuidQInput]);
 
   const fuidQuery = useQuery({
-    queryKey: ['inventario-fuid', detalle?.ITEMS, fuidPage, fuidQ],
+    queryKey: ['inventario-fuid', detalle?.ITEMS, detalleActa, fuidPage, fuidQ],
     queryFn: async () =>
       (
         await inventarioApi.fuid(detalle!.ITEMS, {
           limit: FUID_PAGE_SIZE,
           offset: fuidPage * FUID_PAGE_SIZE,
           q: fuidQ || undefined,
+          acta: detalleActa,
         })
       ).data,
     enabled: detalle !== null,
@@ -569,6 +604,38 @@ export default function InventarioPage() {
     }
   };
 
+  /**
+   * Vuelve a leer del sistema las cifras del inventario y las guarda.
+   *
+   * El aviso dice qué cambió y no solo que terminó: quien pulsa el botón quiere
+   * saber si entró trabajo nuevo desde la última vez, y un "listo" no responde a
+   * eso. Cuando nada cambió, también se dice, que es una respuesta útil.
+   */
+  const recalcularMutation = useMutation({
+    mutationFn: async (row: Inventario) => {
+      setRecalculando(row.ITEMS);
+      return (await inventarioApi.recalcular(row.ITEMS)).data;
+    },
+    onSuccess: async (datos) => {
+      await queryClient.invalidateQueries({ queryKey: ['inventario'] });
+      const { antes, ahora } = datos;
+      const cambioCajas = (antes.totalCajas ?? 0) !== ahora.totalCajas;
+      const cambioRegistros = (antes.registros ?? 0) !== ahora.registros;
+      if (!cambioCajas && !cambioRegistros) {
+        toast.success('El inventario ya estaba al día');
+        return;
+      }
+      const partes = [];
+      if (cambioCajas) partes.push(`cajas ${antes.totalCajas ?? 0} → ${ahora.totalCajas}`);
+      if (cambioRegistros) partes.push(`registros ${antes.registros ?? 0} → ${ahora.registros}`);
+      toast.success(`Inventario actualizado: ${partes.join(', ')}`);
+    },
+    onError: (error) => {
+      toastApiError(error, { context: 'No se pudo actualizar el inventario:' });
+    },
+    onSettled: () => setRecalculando(null),
+  });
+
   const retryMutation = useMutation({
     mutationFn: (id: number) => inventarioApi.sync(id),
     onSuccess: async (resp) => {
@@ -625,6 +692,25 @@ export default function InventarioPage() {
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const pageRows = filtered.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
+
+  /**
+   * Abre la vista previa del FUID. Con `acta` se acota a esa acta de
+   * transferencia; sin ella se ve el cliente entero, que es como se abría antes.
+   * El buscador y la página se reinician: lo que se estaba mirando ya no aplica
+   * al conjunto nuevo.
+   */
+  const abrirVistaPrevia = (row: Inventario, acta: string | null = null) => {
+    setDetalle(row);
+    setDetalleActa(acta);
+    setFuidPage(0);
+    setFuidQ('');
+    setFuidQInput('');
+  };
+
+  const cerrarVistaPrevia = () => {
+    setDetalle(null);
+    setDetalleActa(null);
+  };
 
   const alternarDespliegue = (items: number) =>
     setDesplegados((previos) => {
@@ -763,13 +849,9 @@ export default function InventarioPage() {
           <Button
             size="sm"
             variant="ghost"
-            onClick={() => {
-              setDetalle(row);
-              setFuidPage(0);
-              setFuidQ('');
-              setFuidQInput('');
-            }}
-            aria-label="Ver FUID"
+            onClick={() => abrirVistaPrevia(row)}
+            aria-label="Ver el FUID del cliente"
+            title="Ver el FUID del cliente"
           >
             <Eye className="size-4" />
           </Button>
@@ -783,6 +865,19 @@ export default function InventarioPage() {
           >
             <Download className="size-4" />
           </Button>
+          {canEdit && (
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => recalcularMutation.mutate(row)}
+              loading={recalculando === row.ITEMS}
+              disabled={recalculando !== null}
+              aria-label="Actualizar las cifras con los datos del sistema"
+              title="Actualizar las cifras con los datos del sistema"
+            >
+              <RefreshCcw className="size-4" />
+            </Button>
+          )}
           {canEdit && (
             <>
               <Button size="sm" variant="ghost" onClick={() => openEdit(row)} aria-label="Editar">
@@ -916,6 +1011,7 @@ export default function InventarioPage() {
             descargando={descargando}
             claveDescarga={claveDescarga}
             onDescargar={(acta) => void descargarFuid(row.CODIGO_DEL_CLIENTE, acta, row.CLIENTE)}
+            onVerPrevia={(acta) => abrirVistaPrevia(row, acta)}
           />
         )}
       />
@@ -958,6 +1054,14 @@ export default function InventarioPage() {
         }
       >
 <div key={fillVersion} className="form-fill-anim space-y-6">
+          {/* El formulario ya no pide cifras: con elegir el cliente basta, y el
+              resto se lee del sistema al guardar. Se dice en pantalla para que
+              quien llega no busque dónde escribir el total de cajas. */}
+          <p className="rounded-lg border border-silver-200 bg-surface-2 px-3 py-2 text-sm text-silver-600">
+            Elija el cliente y guarde. El número de cajas, el rango y los registros los lee el sistema
+            de lo que hay digitado, y se vuelven a leer solos todos los días a las 4:15 p. m.
+          </p>
+
           <div>
             <h3 className="mb-3 text-sm font-semibold uppercase tracking-wide text-silver-500">Cliente</h3>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -1087,25 +1191,31 @@ export default function InventarioPage() {
               />
               <Input
                 label="Total Cajas"
-                type="number"
                 value={form.TOTAL_CAJAS}
-                onChange={(e) => setForm({ ...form, TOTAL_CAJAS: e.target.value })}
+                readOnly
+                hint="Lo calcula el sistema"
+                className="bg-surface-muted"
               />
               <Input
                 label="Cajas Procesadas"
-                type="number"
                 value={form.CAJAS_PROCESADAS}
-                onChange={(e) => setForm({ ...form, CAJAS_PROCESADAS: e.target.value })}
+                readOnly
+                hint="Lo calcula el sistema"
+                className="bg-surface-muted"
               />
               <Input
                 label="Caja Iniciar"
                 value={form.CAJA_INICIAR}
-                onChange={(e) => setForm({ ...form, CAJA_INICIAR: e.target.value })}
+                readOnly
+                hint="Lo calcula el sistema"
+                className="bg-surface-muted"
               />
               <Input
                 label="Caja Fin"
                 value={form.CAJ_FIN}
-                onChange={(e) => setForm({ ...form, CAJ_FIN: e.target.value })}
+                readOnly
+                hint="Lo calcula el sistema"
+                className="bg-surface-muted"
               />
             </div>
           </div>
@@ -1131,9 +1241,10 @@ export default function InventarioPage() {
               />
               <Input
                 label="Registros Procesados"
-                type="number"
                 value={form.REGISTROS_PROCESADOS}
-                onChange={(e) => setForm({ ...form, REGISTROS_PROCESADOS: e.target.value })}
+                readOnly
+                hint="Lo calcula el sistema"
+                className="bg-surface-muted"
               />
               <DatePicker
                 label="Fecha Entrega"
@@ -1168,11 +1279,17 @@ export default function InventarioPage() {
 
       <Modal
         open={detalle !== null}
-        onClose={() => setDetalle(null)}
-        title={detalle ? `FUID — ${detalle.CLIENTE ?? ''}` : ''}
+        onClose={cerrarVistaPrevia}
+        title={
+          detalle
+            ? detalleActa
+              ? `FUID — ${detalle.CLIENTE ?? ''} · acta ${detalleActa}`
+              : `FUID — ${detalle.CLIENTE ?? ''} · todas las actas`
+            : ''
+        }
         size="full"
         footer={
-          <Button variant="ghost" onClick={() => setDetalle(null)}>
+          <Button variant="ghost" onClick={cerrarVistaPrevia}>
             Cerrar
           </Button>
         }
