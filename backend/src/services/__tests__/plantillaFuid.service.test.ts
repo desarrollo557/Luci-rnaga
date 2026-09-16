@@ -1,6 +1,8 @@
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { abrirPlantillaFuid, comoFecha } from '../plantillaFuid.service.js';
+import { abrirPlantillaFuid, comoFecha, escribirFilasFuid } from '../plantillaFuid.service.js';
+import { FUID_COLUMNS } from '../zohoSheet.service.js';
+import { soloNombre } from '../../utils/format.js';
 
 /**
  * Las fechas del inventario oficial.
@@ -104,5 +106,78 @@ describe('el formato se encuentra desde cualquier directorio de arranque', () =>
     const { hoja } = await abrirPlantillaFuid();
     expect(hoja.getRow(7).getCell(1).value).toBe('N° Orden');
     expect(hoja.getRow(7).getCell(27).value).toBe('FECHA DE TRANSFERENCIA');
+  });
+});
+
+/**
+ * La cédula del digitador no sale en el archivo que se entrega.
+ *
+ * `elaborado_por` se guarda como "NOMBRE (CC)" porque los informes de producción
+ * cruzan al digitador con la tabla de usuarios por esa cédula. Pero el FUID se le
+ * entrega al cliente, y al líder le tocaba borrar las cédulas a mano de cada fila
+ * antes de mandarlo.
+ *
+ * Lo que se prueba es que se quite **al escribir el archivo** y no en otro sitio:
+ * si algún día alguien decidiera limpiarlo en la base, producción se quedaría sin
+ * con qué cruzar al digitador y nadie lo notaría hasta ver los informes vacíos.
+ */
+describe('el nombre sin la cédula', () => {
+  it('quita la cédula del final', () => {
+    expect(soloNombre('SALLY PINEDA (1046812542)')).toBe('SALLY PINEDA');
+  });
+
+  it('quita la cédula aunque no haya espacio antes del paréntesis', () => {
+    expect(soloNombre('SALLY PINEDA(1046812542)')).toBe('SALLY PINEDA');
+  });
+
+  it('un nombre sin cédula se queda igual', () => {
+    expect(soloNombre('SALLY PINEDA')).toBe('SALLY PINEDA');
+    expect(soloNombre('N/A')).toBe('N/A');
+  });
+
+  it('conserva los paréntesis que no están al final', () => {
+    expect(soloNombre('FUNDACION (FUNDES) DEL CARIBE (900123)')).toBe('FUNDACION (FUNDES) DEL CARIBE');
+  });
+
+  it('si al quitarlo no queda nada, se devuelve el original', () => {
+    // Una celda vacía dice menos que un dato raro.
+    expect(soloNombre('(1046812542)')).toBe('(1046812542)');
+  });
+
+  it('lo que no es texto pasa sin tocarse', () => {
+    expect(soloNombre(null)).toBeNull();
+    expect(soloNombre(undefined)).toBeUndefined();
+    expect(soloNombre(42)).toBe(42);
+  });
+});
+
+describe('el archivo generado no lleva cédulas', () => {
+  /** Índice de la columna "ELABORADO POR" dentro del formato oficial. */
+  const COLUMNA_ELABORADO = FUID_COLUMNS.findIndex(([, campo]) => campo === 'elaborado_por') + 1;
+  const COLUMNA_NOTAS = FUID_COLUMNS.findIndex(([, campo]) => campo === 'notas') + 1;
+  const PRIMERA_FILA = 8;
+
+  it('escribe solo el nombre en la columna ELABORADO POR', async () => {
+    const { hoja } = await abrirPlantillaFuid();
+    escribirFilasFuid(hoja, [
+      { elaborado_por: 'SALLY PINEDA (1046812542)', notas: 'SIN NOVEDAD' },
+      { elaborado_por: 'DEV TECNICO (987654321)', notas: 'N/A' },
+    ]);
+    expect(hoja.getRow(PRIMERA_FILA).getCell(COLUMNA_ELABORADO).value).toBe('SALLY PINEDA');
+    expect(hoja.getRow(PRIMERA_FILA + 1).getCell(COLUMNA_ELABORADO).value).toBe('DEV TECNICO');
+  });
+
+  it('no queda ningún número de cédula en esa columna', async () => {
+    const { hoja } = await abrirPlantillaFuid();
+    escribirFilasFuid(hoja, [{ elaborado_por: 'SALLY PINEDA (1046812542)' }]);
+    const celda = String(hoja.getRow(PRIMERA_FILA).getCell(COLUMNA_ELABORADO).value ?? '');
+    expect(celda).not.toContain('1046812542');
+    expect(celda).not.toContain('(');
+  });
+
+  it('las demás columnas se escriben tal cual están guardadas', async () => {
+    const { hoja } = await abrirPlantillaFuid();
+    escribirFilasFuid(hoja, [{ elaborado_por: 'X (1)', notas: 'CARPETA (COPIA) DETERIORADA' }]);
+    expect(hoja.getRow(PRIMERA_FILA).getCell(COLUMNA_NOTAS).value).toBe('CARPETA (COPIA) DETERIORADA');
   });
 });
