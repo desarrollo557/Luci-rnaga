@@ -1,4 +1,4 @@
-export type Role = 'ADMIN' | 'LIDER' | 'TECNICA' | 'CALIDAD';
+export type Role = 'ADMIN' | 'LIDER' | 'TECNICA';
 
 export type UpdFormat = string; // Formato: UPD seguido de 7 dígitos (ej. UPD1234567), validación en runtime via regex
 
@@ -66,7 +66,6 @@ export interface ModuloCaja {
   total_fuids?: number;
   /** Nombres separados por coma; solo llegan en el listado para líder/admin. */
   tecnicos_asignados?: string | null;
-  calidad_asignados?: string | null;
   upd: UpdFormat | null;
   created_at?: string | null;
   updated_at?: string | null;
@@ -217,7 +216,7 @@ export interface Historial {
   sede_calidad: string | null;
 }
 
-export const ROLES: Role[] = ['ADMIN', 'LIDER', 'TECNICA', 'CALIDAD'];
+export const ROLES: Role[] = ['ADMIN', 'LIDER', 'TECNICA'];
 
 /** Campos del FUID que admiten autocompletado por caja (mismo contrato que el backend). */
 export const SUGGESTION_FIELDS = [

@@ -42,24 +42,23 @@ export async function listFuid(req: Request, res: Response): Promise<void> {
     return;
   }
 
-  if (user.rol === 'TECNICA' || user.rol === 'CALIDAD') {
-    // El técnico/calidad ve los FUIDs de las cajas que le fueron asignadas,
-    // sin importar quién los digitó (la caja es del equipo asignado).
-    const tabla = user.rol === 'CALIDAD' ? 'asignacion_caja_calidad' : 'asignacion_caja_tecnica';
+  if (user.rol === 'TECNICA') {
+    // El técnico ve los FUIDs de las cajas que le fueron asignadas, sin
+    // importar quién los digitó (la caja es del equipo asignado).
     // EXISTS en lugar de JOIN: si el mismo número de caja existiera en más de un
     // registro de modulos_caja, el JOIN devolvería cada FUID repetido.
     const sql = caja
       ? `SELECT f.* FROM fuiddatosreal f
          WHERE f.caja = ? AND EXISTS (
            SELECT 1 FROM modulos_caja mc
-           JOIN ${tabla} ac ON ac.modulo_id = mc.id
+           JOIN asignacion_caja_tecnica ac ON ac.modulo_id = mc.id
            WHERE mc.caja_modulo = f.caja AND ac.usuario_id = ?
          )
          LIMIT ? OFFSET ?`
       : `SELECT f.* FROM fuiddatosreal f
          WHERE EXISTS (
            SELECT 1 FROM modulos_caja mc
-           JOIN ${tabla} ac ON ac.modulo_id = mc.id
+           JOIN asignacion_caja_tecnica ac ON ac.modulo_id = mc.id
            WHERE mc.caja_modulo = f.caja AND ac.usuario_id = ?
          )
          LIMIT ? OFFSET ?`;
@@ -247,12 +246,11 @@ export async function updateFuid(req: Request, res: Response): Promise<void> {
   /**
    * Quién puede editar el registro de otra persona.
    *
-   * El líder y el administrador, porque responden por el inventario; y calidad,
-   * porque su trabajo es justamente revisar lo que otros digitaron. La técnica
+   * El líder y el administrador, porque responden por el inventario. La técnica
    * solo corrige lo suyo.
    */
   const nombreCompletoMayus = `${user.nombre.toUpperCase()} (${cc})`;
-  const revisaLoDeOtros = editaSinRestriccion || rol === 'CALIDAD';
+  const revisaLoDeOtros = editaSinRestriccion;
   const loDigitoEstaPersona = registro.elaborado_por?.toUpperCase() === nombreCompletoMayus;
 
   if (!revisaLoDeOtros && !loDigitoEstaPersona) {
@@ -263,7 +261,7 @@ export async function updateFuid(req: Request, res: Response): Promise<void> {
   }
 
   // Bloqueo optimista: el UPDATE solo aplica si el registro sigue en la versión
-  // que el cliente leyó, y la sube en el mismo paso. Si dos personas de Calidad
+  // que el cliente leyó, y la sube en el mismo paso. Si dos personas
   // editan a la vez, la segunda no pisa el trabajo de la primera en silencio.
   const values = [...fuidValues(body as FuidCreateDto), id, body.version];
   const sql = `UPDATE fuiddatosreal SET
@@ -335,12 +333,8 @@ export async function deleteFuid(req: Request, res: Response): Promise<void> {
   }
 
   // Jerarquía: ADMIN borra cualquier registro; LIDER los de su sede; TECNICA solo
-  // los que digitó el mismo día (fecha local de Colombia); CALIDAD no borra.
+  // los que digitó el mismo día (fecha local de Colombia).
   const { rol } = user;
-  if (rol === 'CALIDAD') {
-    res.status(403).json({ error: 'El rol CALIDAD no puede eliminar registros FUID' });
-    return;
-  }
   if (rol === 'LIDER' && registro.sede && registro.sede !== user.sede) {
     res.status(403).json({ error: 'Solo puede eliminar registros de su sede' });
     return;
@@ -395,8 +389,8 @@ export async function marcarOk(req: Request, res: Response): Promise<void> {
   }
   const { rol, nombre, cc, sede } = user;
 
-  if (rol !== 'LIDER' && rol !== 'ADMIN' && rol !== 'TECNICA' && rol !== 'CALIDAD') {
-    res.status(403).json({ success: false, error: 'Acceso denegado. Solo LIDER, ADMIN, TECNICA o CALIDAD pueden realizar esta acción.' });
+  if (rol !== 'LIDER' && rol !== 'ADMIN' && rol !== 'TECNICA') {
+    res.status(403).json({ success: false, error: 'Acceso denegado. Solo LIDER, ADMIN o TECNICA pueden realizar esta acción.' });
     return;
   }
 
@@ -412,13 +406,12 @@ export async function marcarOk(req: Request, res: Response): Promise<void> {
   try {
     await conn.beginTransaction();
 
-    // El técnico/calidad solo puede marcar OK en cajas que le fueron asignadas.
-    if (rol === 'TECNICA' || rol === 'CALIDAD') {
-      const tabla = rol === 'CALIDAD' ? 'asignacion_caja_calidad' : 'asignacion_caja_tecnica';
+    // El técnico solo puede marcar OK en cajas que le fueron asignadas.
+    if (rol === 'TECNICA') {
       const [cajasAutorizadas] = await conn.query<mysql.RowDataPacket[]>(
         `SELECT f.id FROM fuiddatosreal f
          JOIN modulos_caja mc ON mc.caja_modulo = f.caja
-         JOIN ${tabla} ac ON ac.modulo_id = mc.id
+         JOIN asignacion_caja_tecnica ac ON ac.modulo_id = mc.id
          WHERE ac.usuario_id = ? AND f.id IN (?)`,
         [user.id, ids],
       );
@@ -436,7 +429,7 @@ export async function marcarOk(req: Request, res: Response): Promise<void> {
 
     // La versión sube también aquí: marcar OK es un cambio real del registro, y
     // si no se contara, alguien que lo tuviera abierto podría guardar encima y
-    // borrar el visto bueno de calidad sin que nadie lo detectara.
+    // borrar el visto bueno de la revisión sin que nadie lo detectara.
     const [result] = await conn.query(
       `UPDATE fuiddatosreal
        SET historial_y_cambios = 'OK', cambio_calidad = ?, sede_calidad = ?, version = version + 1

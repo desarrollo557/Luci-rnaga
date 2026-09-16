@@ -38,7 +38,7 @@ function ProtectedLayout() {
 
   // Guarda de ruta por rol: las páginas solo se renderizan si el rol tiene permiso.
   const roleRestrictedRoutes: Record<string, string[]> = {
-    '/produccion': ['LIDER', 'CALIDAD'],
+    '/produccion': ['LIDER'],
     '/inventario': ['LIDER'],
     '/historial': ['LIDER'],
   };

@@ -14,6 +14,7 @@ import {
 } from '@/components/ui';
 import { historialApi } from '@/lib/api';
 import type { CambioCampo, MovimientoHistorial } from '@/lib/api';
+import { formatearFechaHora } from '@/lib/fechas';
 
 const PAGE_SIZE = 20;
 
@@ -27,14 +28,6 @@ interface FiltrosHistorial {
 }
 
 const FILTROS_VACIOS: FiltrosHistorial = { q: '', tipo: '', sede: '', caja: '', desde: '', hasta: '' };
-
-/** Fecha y hora en el formato que se usa en el resto del software. */
-function fechaHora(valor: string | null): string {
-  if (!valor) return '—';
-  const [dia, hora = ''] = valor.replace('T', ' ').split(' ');
-  const [a, m, d] = dia.split('-');
-  return `${d}/${m}/${a}${hora ? ` · ${hora.slice(0, 5)}` : ''}`;
-}
 
 /** Un valor vacío se muestra como guion, no como una cadena en blanco. */
 function valor(v: string | null): string {
@@ -89,7 +82,7 @@ function Movimiento({
         <span className="text-sm font-semibold text-silver-800">{movimiento.upd ?? 'Sin UPD'}</span>
         {movimiento.caja && <span className="text-sm text-silver-500">Caja {movimiento.caja}</span>}
         <span className="text-sm text-silver-400">·</span>
-        <span className="text-sm text-silver-500">{fechaHora(movimiento.fecha_cambio)}</span>
+        <span className="text-sm text-silver-500">{formatearFechaHora(movimiento.fecha_cambio)}</span>
         <button
           type="button"
           onClick={() => onVerRegistro(movimiento.id_dato)}

@@ -47,7 +47,7 @@ El formato de error es siempre el mismo:
 | Todo texto se guarda sin espacios sobrantes y en MAYÚSCULAS | Middleware `cuerpoEnMayusculas` (usa `cleanUpper`) | `text-transform: uppercase` en `index.css`; interceptor de `lib/api.ts` |
 | Un registro de un día anterior no se puede modificar | `updateFuid` compara `fecha_del_dato` con `fechaHoyLocal()` | — |
 | Dos personas no pueden pisarse al editar el mismo registro | Columna `version`; `UPDATE … WHERE id = ? AND version = ?`; 409 `VERSION_DESACTUALIZADA` | `DatosPage.tsx` envía `editing.version` y muestra el aviso sin cerrar el formulario |
-| Quién puede borrar un FUID | `deleteFuid`: ADMIN cualquiera, LIDER los de su sede, TECNICA solo los suyos del día, CALIDAD ninguno | La interfaz oculta el botón según el rol |
+| Quién puede borrar un FUID | `deleteFuid`: ADMIN cualquiera, LIDER los de su sede, TECNICA solo los suyos del día | La interfaz oculta el botón según el rol |
 | Marcar OK solo en cajas asignadas | `marcarOk` comprueba la tabla de asignación del rol | — |
 
 ---
@@ -116,7 +116,7 @@ El formato de error es siempre el mismo:
 | `modulo_id` y cada usuario son enteros positivos | `asignaciones.validator.ts` | — |
 | Hay que asignar al menos un usuario | `asignaciones.validator.ts` | El formulario exige una selección |
 | Los rangos de caja tienen formato `000C000000` | `asignaciones.validator.ts` → `cajaCodigo` | `validCaja()` |
-| La asignación se hace solo por caja | `asignacionesCaja.controller.ts` (`asignacion_caja_tecnica` / `asignacion_caja_calidad`) | Formulario de caja en la vista de actas |
+| La asignación se hace solo por caja | `asignacionesCaja.controller.ts` (`asignacion_caja_tecnica`) | Formulario de caja en la vista de actas |
 | El `n_orden` no se duplica al asignar | Transacción en `modulosCaja.controller.ts` | — |
 
 ---
@@ -155,7 +155,7 @@ El marcador solo cabe en columnas de texto. Lo que **nunca** lo recibe:
 | Asunto automático y asunto manual | Obligatorios por decisión de negocio: son lo que permite saber qué contiene el documento sin abrir la caja |
 | Credenciales y datos de la cuenta | Cédula, nombre, contraseña, rol y sede: sin ellos no hay cuenta ni acceso |
 | `elaborado_por` y `sede` del FUID | Los pone el sistema. `elaborado_por` guarda "NOMBRE (CC)" y los reportes lo cruzan con `users` por la cédula |
-| `historial_y_cambios`, `cambio_calidad`, `sede_calidad` | Los escribe el flujo de calidad, no el formulario de digitación |
+| `historial_y_cambios`, `cambio_calidad`, `sede_calidad` | Los escribe la revisión (marcar OK), no el formulario de digitación |
 | `CODIGO_DEL_CLIENTE` del inventario | El controlador decide con él si el inventario ya existe; dos inventarios en `N/A` se tomarían por el mismo |
 
 Los validadores de formato tratan `N/A` como ausencia de valor y no lo rechazan:

@@ -42,15 +42,14 @@ export async function listSubModulos(req: Request, res: Response): Promise<void>
   if (rol === 'LIDER' || rol === 'ADMIN') {
     sql = 'SELECT * FROM sub_modulos WHERE sede_submodulos = ?';
     params.push(sede);
-  } else if (rol === 'TECNICA' || rol === 'CALIDAD') {
+  } else if (rol === 'TECNICA') {
     // Los clientes visibles derivan de las cajas asignadas al usuario
-    // (asignacion_caja_* -> modulos_caja -> moduloscliente -> sub_modulos).
-    const tablaAsignacion = rol === 'CALIDAD' ? 'asignacion_caja_calidad' : 'asignacion_caja_tecnica';
+    // (asignacion_caja_tecnica -> modulos_caja -> moduloscliente -> sub_modulos).
     sql = `SELECT sm.* FROM sub_modulos sm
       WHERE sm.sede_submodulos = ? AND EXISTS (
         SELECT 1 FROM moduloscliente m
         JOIN modulos_caja mc ON mc.id_modulo_caja = m.id
-        JOIN ${tablaAsignacion} a ON a.modulo_id = mc.id
+        JOIN asignacion_caja_tecnica a ON a.modulo_id = mc.id
         WHERE m.id_submodulo = sm.id AND a.usuario_id = ?
       )`;
     params.push(sede, id);

@@ -4,7 +4,7 @@
  *   npx tsx scripts/pruebas/roles.ts            (contra http://localhost:3000)
  *   API=https://… npx tsx scripts/pruebas/roles.ts
  *
- * Comprueba, endpoint por endpoint, que ADMIN, LIDER, TECNICA, CALIDAD y un
+ * Comprueba, endpoint por endpoint, que ADMIN, LIDER, TECNICA y un
  * visitante sin sesión reciben exactamente el acceso que les corresponde. Lo
  * que se afirma no es el resultado de la operación, sino **quién puede
  * intentarla**: 401 sin sesión, 403 cuando el perfil no alcanza, y cualquier
@@ -16,7 +16,7 @@
  * tiene puesto el guardia que le toca, que es un olvido fácil al añadir un
  * endpoint nuevo.
  *
- * Crea sus propios usuarios de los cuatro perfiles y los borra al terminar,
+ * Crea sus propios usuarios de los tres perfiles y los borra al terminar,
  * incluso si algo falla: no usa cuentas reales ni deja datos detrás.
  */
 import bcrypt from 'bcryptjs';
@@ -26,9 +26,9 @@ const API = process.env.API ?? 'http://localhost:3000';
 const MARCA = 'PRUEBA-PERMISOS';
 const CLAVE = 'prueba-permisos-2026';
 
-type Rol = 'ADMIN' | 'LIDER' | 'TECNICA' | 'CALIDAD';
-const ROLES: Rol[] = ['ADMIN', 'LIDER', 'TECNICA', 'CALIDAD'];
-/** Quién intenta: los cuatro perfiles y quien no ha iniciado sesión. */
+type Rol = 'ADMIN' | 'LIDER' | 'TECNICA';
+const ROLES: Rol[] = ['ADMIN', 'LIDER', 'TECNICA'];
+/** Quién intenta: los tres perfiles y quien no ha iniciado sesión. */
 type Sujeto = Rol | 'ANONIMO';
 const SUJETOS: Sujeto[] = [...ROLES, 'ANONIMO'];
 
@@ -37,7 +37,6 @@ const CEDULA: Record<Rol, string> = {
   ADMIN: '990000001',
   LIDER: '990000002',
   TECNICA: '990000003',
-  CALIDAD: '990000004',
 };
 
 interface Caso {
@@ -96,7 +95,6 @@ const CASOS: Caso[] = [
   { modulo: 'Cajas', metodo: 'GET', ruta: '/modulos_caja/tecnica-stats', permitidos: SOLO_TECNICA },
   { modulo: 'Cajas', metodo: 'GET', ruta: '/modulos_caja/next-upd/999C999999', permitidos: TODOS },
   { modulo: 'Cajas', metodo: 'GET', ruta: '/modulos_caja/999999/usuarios', permitidos: TODOS },
-  { modulo: 'Cajas', metodo: 'GET', ruta: '/modulos_caja_calidad/999999/usuarios', permitidos: TODOS },
   { modulo: 'Cajas', metodo: 'GET', ruta: '/modulos_caja/next/999', permitidos: GESTION },
   { modulo: 'Cajas', metodo: 'POST', ruta: '/modulos_caja', permitidos: GESTION, cuerpo: {} },
   { modulo: 'Cajas', metodo: 'POST', ruta: '/modulos_caja/serie', permitidos: GESTION, cuerpo: {} },
@@ -108,9 +106,6 @@ const CASOS: Caso[] = [
   // ── Asignación de cajas ───────────────────────────────────────────────
   { modulo: 'Asignaciones', metodo: 'POST', ruta: '/asignacion_caja_tecnica', permitidos: GESTION, cuerpo: {} },
   { modulo: 'Asignaciones', metodo: 'POST', ruta: '/asignacion_caja_tecnica/999999/eliminar', permitidos: GESTION, cuerpo: {} },
-  { modulo: 'Asignaciones', metodo: 'POST', ruta: '/asignacion_caja_calidad', permitidos: GESTION, cuerpo: {} },
-  { modulo: 'Asignaciones', metodo: 'POST', ruta: '/asignacion_caja_calidad/999999/eliminar', permitidos: GESTION, cuerpo: {} },
-  { modulo: 'Asignaciones', metodo: 'POST', ruta: '/asignacion_caja_calidad/rango', permitidos: GESTION, cuerpo: {} },
   { modulo: 'Asignaciones', metodo: 'GET', ruta: '/usuarios/TECNICA', permitidos: TODOS },
 
   // ── Digitación (FUID) ─────────────────────────────────────────────────

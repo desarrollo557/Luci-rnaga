@@ -33,6 +33,19 @@ export const DEFAULT_FRONTEND_DIST = '../frontend/dist';
 export const DB_CONNECTION_LIMIT = envInt('DB_CONNECTION_LIMIT', 10);
 export const DB_QUEUE_LIMIT = 0;
 
+// ── Hora ─────────────────────────────────────────────────────────────────
+/**
+ * Zona horaria de todo el software.
+ *
+ * Todas las sedes operan en Colombia, así que cada fecha y hora —el "hoy" al
+ * digitar, la creación de un usuario, un cambio en el historial— se calcula y
+ * se guarda en la hora de Bogotá (UTC-5, sin horario de verano). El servidor
+ * (Render) y la base (Supabase) corren en UTC: sin fijarla, un usuario creado
+ * a las 8 de la mañana aparecía creado a la 1 de la tarde. `db.ts` la fija en
+ * cada conexión y `fechaHoyLocal` la usa para saber qué día es.
+ */
+export const ZONA_HORARIA = 'America/Bogota';
+
 // ── Seguridad ─────────────────────────────────────────────────────────────
 export const BCRYPT_SALT_ROUNDS = 10;
 
@@ -171,8 +184,8 @@ export const ETIQUETA_CAMPO_FUID: Record<keyof typeof LONGITUD_MAXIMA_FUID, stri
   nro_acta_transferible: 'El número de acta',
   notas: 'Las notas',
   sede: 'La sede',
-  cambio_calidad: 'El cambio de calidad',
-  sede_calidad: 'La sede de calidad',
+  cambio_calidad: 'Quién revisó',
+  sede_calidad: 'La sede de la revisión',
   asunto_2: 'El asunto automático',
   asunto_3: 'El asunto manual',
   historial_y_cambios: 'El historial de cambios',
@@ -207,8 +220,8 @@ export const VALOR_NO_DILIGENCIADO = 'N/A';
  * - `elaborado_por` y `sede`: los pone el sistema con los datos de quien digita.
  *   `elaborado_por` guarda "NOMBRE (CC)" y los reportes lo cruzan con `users`
  *   por la cédula: un `N/A` ahí rompería ese cruce.
- * - `historial_y_cambios`, `cambio_calidad` y `sede_calidad`: los escribe el
- *   flujo de calidad, no el formulario de digitación.
+ * - `historial_y_cambios`, `cambio_calidad` y `sede_calidad`: los escribe la
+ *   revisión (marcar OK), no el formulario de digitación.
  */
 export const CAMPOS_NO_DILIGENCIADOS = [
   'codigo',

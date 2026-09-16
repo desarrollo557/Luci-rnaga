@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { formatearHora } from '@/lib/fechas';
 import {
   Activity,
   Boxes,
@@ -173,9 +174,9 @@ export default function ProduccionPage() {
     <div className="space-y-6">
       <PageHeader
         title="Producción"
-        description={`Cifras calculadas directamente sobre la base de datos · actualizadas a las ${new Date(
+        description={`Cifras calculadas directamente sobre la base de datos · actualizadas a las ${formatearHora(
           dataUpdatedAt || Date.now(),
-        ).toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' })}`}
+        )}`}
       />
 
       {/* Cifra guía del panel: una sola, y el resto la contextualiza. */}
@@ -198,8 +199,8 @@ export default function ProduccionPage() {
               valor={stats.fuids_aprobados}
               total={stats.total_fuids}
               color={SERIES.tres}
-              etiquetaValor="aprobado por calidad"
-              etiquetaTotal="aprobados por calidad"
+              etiquetaValor="aprobado"
+              etiquetaTotal="aprobados"
             />
           </div>
         </div>
@@ -248,13 +249,13 @@ export default function ProduccionPage() {
           alto={280}
           series={[
             { clave: 'digitados', nombre: 'Digitados', color: SERIES.uno, area: true },
-            { clave: 'aprobados', nombre: 'Aprobados por calidad', color: SERIES.tres },
+            { clave: 'aprobados', nombre: 'Aprobados', color: SERIES.tres },
           ]}
         />
         <Leyenda
           items={[
             { nombre: 'Digitados', color: SERIES.uno, forma: 'linea' },
-            { nombre: 'Aprobados por calidad', color: SERIES.tres, forma: 'linea' },
+            { nombre: 'Aprobados', color: SERIES.tres, forma: 'linea' },
           ]}
         />
       </ChartCard>
@@ -293,7 +294,7 @@ export default function ProduccionPage() {
 
         <ChartCard
           title="Avance por cliente"
-          subtitle="Los 8 clientes con más registros digitados y cuántos ya pasaron calidad"
+          subtitle="Los 8 clientes con más registros digitados y cuántos ya están aprobados"
           icon={<Layers className="size-4 text-primary-600" />}
         >
           <BarrasHorizontales
@@ -310,7 +311,7 @@ export default function ProduccionPage() {
           />
           <Leyenda
             items={[
-              { nombre: 'Aprobados por calidad', color: SERIES.tres, forma: 'area' },
+              { nombre: 'Aprobados', color: SERIES.tres, forma: 'area' },
               { nombre: 'Pendientes de revisión', color: SERIES.uno, forma: 'area' },
             ]}
           />
@@ -332,7 +333,7 @@ export default function ProduccionPage() {
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
         <ChartCard
           title="Digitadores"
-          subtitle={`${stats.digitadores.length} personas con registros digitados · volumen, aprobación por calidad y cajas trabajadas`}
+          subtitle={`${stats.digitadores.length} personas con registros digitados · volumen, aprobación y cajas trabajadas`}
           icon={<Users className="size-4 text-primary-600" />}
           className="lg:col-span-2"
         >
@@ -454,7 +455,7 @@ function PanelDelCliente({ cliente, estadoCaja }: { cliente: ClienteConDetalle; 
         />
         <Cifra etiqueta="Registros" valor={cliente.registros} detalle={`${cliente.pendientes} sin revisar`} />
         <Cifra
-          etiqueta="Aprobados por calidad"
+          etiqueta="Aprobados"
           valor={`${avance}%`}
           detalle={`${cliente.aprobados} de ${cliente.registros}`}
         />

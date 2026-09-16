@@ -189,7 +189,7 @@ async function main(): Promise<void> {
   comprobar('el bloqueo optimista rechaza la versión vieja', versionVieja.estado === 409, `HTTP ${versionVieja.estado}`);
 
   const marcar = await llamar('POST', '/api/fuiddatosreal/marcar-ok', lider, { ids: [creado.fuid] });
-  comprobar('marcar OK en calidad', marcar.estado < 300, `HTTP ${marcar.estado}`);
+  comprobar('marcar OK', marcar.estado < 300, `HTTP ${marcar.estado}`);
 
   const sugerencias = await llamar('GET', `/api/fuiddatosreal/${CODIGO}C000001/suggestions/serie?q=AB`, lider);
   comprobar('autocompletado de campos', sugerencias.estado === 200);

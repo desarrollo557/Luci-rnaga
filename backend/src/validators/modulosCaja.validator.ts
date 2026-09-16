@@ -91,5 +91,4 @@ export const createSerieCajasSchema = createModuloCajaSchema
       .string({ message: 'El número final es requerido' })
       .regex(/^\d{6}$/, 'El número final debe tener 6 dígitos'),
     usuarios_tecnica: z.array(z.coerce.number().int().positive()).optional(),
-    usuarios_calidad: z.array(z.coerce.number().int().positive()).optional(),
   });

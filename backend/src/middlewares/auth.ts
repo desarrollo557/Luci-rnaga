@@ -24,7 +24,7 @@ export const isLiderOrAdmin: RequestHandler = (req, res, next) => {
 
 export const isTecnica: RequestHandler = (req, res, next) => {
   const rol = req.session.user?.rol;
-  if (rol === 'TECNICA' || rol === 'LIDER' || rol === 'ADMIN' || rol === 'CALIDAD') {
+  if (rol === 'TECNICA' || rol === 'LIDER' || rol === 'ADMIN') {
     return next();
   }
   res.status(403).json({ error: 'Acceso denegado' });

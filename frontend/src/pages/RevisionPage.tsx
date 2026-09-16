@@ -20,11 +20,12 @@ import { invalidateDomain } from '@/lib/queryInvalidation';
 import { retornoDeCaja } from '@/lib/navegacion';
 import { useAuthStore } from '@/stores/authStore';
 import { descargarBlob, exportExcel } from '@/lib/utils';
+import { fechaHoyLocal, formatearFechaHora } from '@/lib/fechas';
 import type { FuidDato } from '@/types';
 
 const PAGE_SIZE = 25;
 
-const EDITABLE_ROLES = ['LIDER', 'ADMIN', 'TECNICA', 'CALIDAD'] as const;
+const EDITABLE_ROLES = ['LIDER', 'ADMIN', 'TECNICA'] as const;
 
 function FieldValue({ label, value }: { label: string; value: string | number | null | undefined }) {
   return (
@@ -331,7 +332,7 @@ export default function RevisionPage() {
         { label: 'Registros', key: 'total_registros' },
       ],
       filas,
-      `resumen_cajas_${new Date().toISOString().slice(0, 10)}`,
+      `resumen_cajas_${fechaHoyLocal()}`,
     );
     toast.success('Reporte descargado correctamente');
   };
@@ -342,7 +343,7 @@ export default function RevisionPage() {
     setDescargandoPlantilla(true);
     try {
       const response = await plantillaApi.generar('plantilla_fuid', { vacia: true });
-      descargarBlob(response.data as Blob, `plantilla_fuid_${new Date().toISOString().slice(0, 10)}.xlsx`);
+      descargarBlob(response.data as Blob, `plantilla_fuid_${fechaHoyLocal()}.xlsx`);
       toast.success('Plantilla descargada correctamente');
     } catch {
       toast.error('No se pudo descargar la plantilla general');
@@ -380,12 +381,12 @@ export default function RevisionPage() {
     {
       key: 'created_at',
       header: 'Creado',
-      render: (registro: FuidDato) => (registro.created_at ? registro.created_at.slice(0, 19).replace('T', ' ') : '—'),
+      render: (registro: FuidDato) => formatearFechaHora(registro.created_at),
     },
     {
       key: 'updated_at',
       header: 'Actualizado',
-      render: (registro: FuidDato) => (registro.updated_at ? registro.updated_at.slice(0, 19).replace('T', ' ') : '—'),
+      render: (registro: FuidDato) => formatearFechaHora(registro.updated_at),
     },
     { key: 'estado', header: 'Estado', render: renderEstado },
     {
@@ -426,7 +427,7 @@ export default function RevisionPage() {
   return (
     <div className="space-y-6">
       <PageHeader
-        title={`Revisión de Calidad — Caja ${cajaCode}`}
+        title={`Revisión — Caja ${cajaCode}`}
         description="Clientes / Actas / Cajas / Revisión"
         backTo={retorno.to}
         backLabel={retorno.label}

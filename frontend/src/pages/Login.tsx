@@ -89,7 +89,7 @@ export default function Login() {
               <br />y control documental
             </h1>
             <p className="mt-4 max-w-xs text-sm leading-relaxed text-white/80">
-              Registro técnico, evaluación de calidad y seguimiento de proyectos en un solo lugar.
+              Registro técnico, revisión y seguimiento de proyectos en un solo lugar.
             </p>
           </div>
           <p className="relative text-xs text-white/60">Sistema de gestión FUID · v2.0</p>

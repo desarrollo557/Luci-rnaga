@@ -117,10 +117,8 @@ describe('serie de cajas del formulario', () => {
     const resultado = createSerieCajasSchema.safeParse({
       ...serie,
       usuarios_tecnica: [4, 7],
-      usuarios_calidad: [9],
     });
     expect(resultado.success && resultado.data.usuarios_tecnica).toEqual([4, 7]);
-    expect(resultado.success && resultado.data.usuarios_calidad).toEqual([9]);
   });
 });
 

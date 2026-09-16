@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-export const ROLES = ['ADMIN', 'LIDER', 'TECNICA', 'CALIDAD'] as const;
+export const ROLES = ['ADMIN', 'LIDER', 'TECNICA'] as const;
 
 const ccField = z
   .string({ message: 'La cédula es requerida' })

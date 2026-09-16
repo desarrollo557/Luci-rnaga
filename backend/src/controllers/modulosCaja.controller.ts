@@ -29,10 +29,7 @@ export async function listModulosCaja(req: Request, res: Response): Promise<void
     sql = `SELECT mc.*, (SELECT COUNT(*) FROM fuiddatosreal f WHERE f.caja = mc.caja_modulo) AS total_fuids,
       (SELECT string_agg(u.nombre, ', ' ORDER BY u.nombre)
          FROM asignacion_caja_tecnica a JOIN users u ON u.id = a.usuario_id
-         WHERE a.modulo_id = mc.id) AS tecnicos_asignados,
-      (SELECT string_agg(u.nombre, ', ' ORDER BY u.nombre)
-         FROM asignacion_caja_calidad a JOIN users u ON u.id = a.usuario_id
-         WHERE a.modulo_id = mc.id) AS calidad_asignados
+         WHERE a.modulo_id = mc.id) AS tecnicos_asignados
       FROM modulos_caja mc
       WHERE mc.id_modulo_caja = ?`;
   } else if (user.rol === 'TECNICA') {
@@ -40,12 +37,6 @@ export async function listModulosCaja(req: Request, res: Response): Promise<void
       FROM modulos_caja mc
       JOIN asignacion_caja_tecnica act ON mc.id = act.modulo_id
       WHERE act.usuario_id = ? AND mc.id_modulo_caja = ?`;
-    params.unshift(user.id);
-  } else if (user.rol === 'CALIDAD') {
-    sql = `SELECT mc.*, (SELECT COUNT(*) FROM fuiddatosreal f WHERE f.caja = mc.caja_modulo) AS total_fuids
-      FROM modulos_caja mc
-      JOIN asignacion_caja_calidad ac ON mc.id = ac.modulo_id
-      WHERE ac.usuario_id = ? AND mc.id_modulo_caja = ?`;
     params.unshift(user.id);
   } else {
     res.status(403).json({ message: 'No tienes permiso para acceder a estos datos' });
@@ -373,7 +364,6 @@ export async function createCajasSerie(req: Request, res: Response): Promise<voi
     estado_caja: string;
     /** Usuarios que quedan asignados a todas las cajas de la serie (opcional). */
     usuarios_tecnica?: number[];
-    usuarios_calidad?: number[];
   };
 
   const {
@@ -389,7 +379,6 @@ export async function createCajasSerie(req: Request, res: Response): Promise<voi
     objeto_caja,
     estado_caja,
     usuarios_tecnica,
-    usuarios_calidad,
   } = body;
 
   // El cuerpo ya viene validado por `createSerieCajasSchema`: los campos
@@ -421,11 +410,6 @@ export async function createCajasSerie(req: Request, res: Response): Promise<voi
   const tecnica = await validarUsuariosDeRol(usuarios_tecnica ?? [], 'TECNICA');
   if (tecnica.error) {
     res.status(400).json({ message: tecnica.error });
-    return;
-  }
-  const calidad = await validarUsuariosDeRol(usuarios_calidad ?? [], 'CALIDAD');
-  if (calidad.error) {
-    res.status(400).json({ message: calidad.error });
     return;
   }
 
@@ -488,26 +472,23 @@ export async function createCajasSerie(req: Request, res: Response): Promise<voi
   );
 
   // Asignar los usuarios indicados a todas las cajas recién creadas
-  if (tecnica.ids.length > 0 || calidad.ids.length > 0) {
+  if (tecnica.ids.length > 0) {
     const creadas = await query<{ id: number }>(
       `SELECT id FROM modulos_caja
        WHERE id_modulo_caja = ? AND CAST(SUBSTRING(caja_modulo FROM 5) AS INTEGER) BETWEEN ? AND ?`,
       [id_modulo_caja, ini, fin],
     );
     const cajaIds = creadas.map((c) => c.id);
-    await asignarUsuariosACajas('asignacion_caja_tecnica', cajaIds, tecnica.ids);
-    await asignarUsuariosACajas('asignacion_caja_calidad', cajaIds, calidad.ids);
+    await asignarUsuariosACajas(cajaIds, tecnica.ids);
   }
 
   const resumenAsignacion =
-    tecnica.ids.length > 0 || calidad.ids.length > 0
-      ? ` y se asignaron ${tecnica.ids.length} técnico(s) y ${calidad.ids.length} de calidad`
-      : '';
+    tecnica.ids.length > 0 ? ` y se asignaron ${tecnica.ids.length} técnico(s)` : '';
 
   res.status(201).json({
     message: `Se crearon ${values.length} cajas correctamente (${prefijo}${String(ini).padStart(6, '0')} a ${prefijo}${String(fin).padStart(6, '0')})${resumenAsignacion}`,
     cantidad: values.length,
-    asignados: { tecnica: tecnica.ids.length, calidad: calidad.ids.length },
+    asignados: { tecnica: tecnica.ids.length },
     primer_caja: `${prefijo}${String(ini).padStart(6, '0')}`,
     ultima_caja: `${prefijo}${String(fin).padStart(6, '0')}`,
   });
@@ -607,7 +588,7 @@ export async function deleteModuloCaja(req: Request, res: Response): Promise<voi
   }
 
   // Borrado jerárquico en una sola transacción: primero los registros FUID (UPD)
-  // de la caja, luego sus asignaciones de técnica y calidad y por último la caja.
+  // de la caja, luego sus asignaciones de técnica y por último la caja.
   // Si existe otra caja con el mismo número (duplicado pendiente de limpiar), los
   // FUID se conservan porque también pertenecen a esa otra caja.
   const [otras] = await query<{ total: number }>(
@@ -629,7 +610,6 @@ export async function deleteModuloCaja(req: Request, res: Response): Promise<voi
       fuidsEliminados = resultadoFuid.affectedRows;
     }
     await conn.query('DELETE FROM asignacion_caja_tecnica WHERE modulo_id = ?', [id]);
-    await conn.query('DELETE FROM asignacion_caja_calidad WHERE modulo_id = ?', [id]);
     await conn.query('DELETE FROM modulos_caja WHERE id = ?', [id]);
     await conn.commit();
   } catch (error) {
@@ -695,18 +675,6 @@ export async function listTecnicaUsersOfCaja(req: Request, res: Response): Promi
      FROM users u
      JOIN asignacion_caja_tecnica act ON u.id = act.usuario_id
      WHERE act.modulo_id = ?`,
-    [modulo_id],
-  );
-  res.json(results);
-}
-
-export async function listCalidadUsersOfCaja(req: Request, res: Response): Promise<void> {
-  const { modulo_id } = req.params;
-  const results = await query(
-    `SELECT u.id, u.nombre, u.sede
-     FROM users u
-     JOIN asignacion_caja_calidad acc ON u.id = acc.usuario_id
-     WHERE acc.modulo_id = ?`,
     [modulo_id],
   );
   res.json(results);

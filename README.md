@@ -207,7 +207,6 @@ caja no compiten por el mismo número.
 | `ADMIN` | `/admin` — CRUD de usuarios, módulos cliente, sub-módulos, asignaciones |
 | `LIDER` | `/clientes` — módulos cliente y cajas, producción e historial |
 | `TECNICA` | `/clientes` — digitación FUID en `/cajas/:id/datos` |
-| `CALIDAD` | `/clientes` — revisión FUID en `/cajas/:id/revision` |
 
 ## Endpoints principales (prefijo `/api`)
 
@@ -219,13 +218,13 @@ caja no compiten por el mismo número.
 | GET/POST/PUT/DELETE | `/users` | CRUD de usuarios (admin) |
 | GET/POST/PUT/DELETE | `/sub_modulos` | Sub-módulos |
 | GET/POST/PUT/DELETE | `/moduloscliente` | Módulos cliente |
-| GET/POST/PUT/DELETE | `/modulos_caja` | Cajas por acta (para líder/admin incluye `tecnicos_asignados` y `calidad_asignados`) |
-| POST | `/modulos_caja/serie` | Crea una serie de cajas y, opcionalmente, asigna técnicos y calidad (`usuarios_tecnica`, `usuarios_calidad`) |
+| GET/POST/PUT/DELETE | `/modulos_caja` | Cajas por acta (para líder/admin incluye `tecnicos_asignados`) |
+| POST | `/modulos_caja/serie` | Crea una serie de cajas y, opcionalmente, asigna técnicos (`usuarios_tecnica`) |
 | GET/POST/PUT/DELETE | `/fuiddatosreal` | Registros FUID |
 | GET | `/estadisticas` | Métricas agregadas del panel de Producción |
 | GET | `/modulos_caja/next-upd/:caja` | Siguiente UPD del técnico (`requiere_inicio` si aún no arrancó) |
 | PUT | `/modulos_caja/:caja/upd-inicio` | Fija el UPD de arranque del técnico (recibe solo el número) |
-| POST | `/fuiddatosreal/marcar-ok` | Aprueba FUID (calidad) |
+| POST | `/fuiddatosreal/marcar-ok` | Aprueba FUID (revisión) |
 | GET | `/inventario` | Inventario |
 | GET | `/historial` | Historial paginado (`page`, `pageSize`, `q`, `tipo`, `sede`, `desde`, `hasta`) |
 | POST | `/generarPlantilla` | Exporta plantilla Excel |
@@ -270,7 +269,7 @@ en el log del servidor con la cédula de la cuenta, para saber a quién falta mi
 | Cliente | ADMIN; LIDER solo de su sede | No debe tener actas. |
 | Acta | ADMIN; LIDER solo de su sede | No debe tener cajas. |
 | Caja | ADMIN; LIDER solo de su sede | Borrado jerárquico en una transacción: primero sus registros FUID (el trigger deja copia en `historial`), luego sus asignaciones y por último la caja. Si existe otra caja con el mismo número, los FUID se conservan. |
-| Registro FUID | ADMIN cualquiera; LIDER los de su sede; TECNICA solo los que digitó el mismo día (hora de Colombia); CALIDAD no elimina | El trigger `after_delete_fuiddatosreal` guarda una copia en `historial`. |
+| Registro FUID | ADMIN cualquiera; LIDER los de su sede; TECNICA solo los que digitó el mismo día (hora de Colombia) | El trigger `after_delete_fuiddatosreal` guarda una copia en `historial`. |
 | Inventario | ADMIN y LIDER | — |
 
 Toda eliminación queda registrada en la tabla `auditoria` (entidad, id, acción, detalle y usuario).

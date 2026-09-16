@@ -20,7 +20,6 @@ import {
   type SelectOption,
 } from '@/components/ui';
 import {
-  asignacionCajaCalidadApi,
   asignacionCajaTecnicaApi,
   getApiErrorMessage,
   modulosCajaApi,
@@ -30,6 +29,7 @@ import {
 } from '@/lib/api';
 import { OPCIONES_OBJETO_CAJA } from '@/lib/catalogos';
 import { invalidateDomain } from '@/lib/queryInvalidation';
+import { formatearFechaHora } from '@/lib/fechas';
 import { useAuthStore } from '@/stores/authStore';
 import type { ModuloCaja } from '@/types';
 
@@ -68,10 +68,9 @@ const EMPTY_CAJA_FORM: CajaForm = {
 
 interface AsignacionCaja {
   tecnica: Set<number>;
-  calidad: Set<number>;
 }
 
-const sinAsignacion = (): AsignacionCaja => ({ tecnica: new Set(), calidad: new Set() });
+const sinAsignacion = (): AsignacionCaja => ({ tecnica: new Set() });
 
 function ListaUsuariosAsignables({
   titulo,
@@ -198,11 +197,6 @@ export default function ActasPage() {
     queryFn: () => usersApi.byRol('TECNICA', { sede: user?.sede }).then((res) => res.data),
     enabled: isManager,
   });
-  const calidadQuery = useQuery({
-    queryKey: ['users', 'rol', 'CALIDAD'],
-    queryFn: () => usersApi.byRol('CALIDAD', { sede: user?.sede }).then((res) => res.data),
-    enabled: isManager,
-  });
 
   const toggleAsignacion = (rol: keyof AsignacionCaja, id: number) => {
     setAsignacion((prev) => {
@@ -219,16 +213,10 @@ export default function ActasPage() {
     setAsignacionOriginal(sinAsignacion());
     setCargandoAsignacion(true);
     try {
-      const [tecnica, calidad] = await Promise.all([
-        modulosCajaApi.usuariosTecnica(cajaId).then((res) => res.data),
-        modulosCajaApi.usuariosCalidad(cajaId).then((res) => res.data),
-      ]);
-      const actual: AsignacionCaja = {
-        tecnica: new Set(tecnica.map((u) => u.id)),
-        calidad: new Set(calidad.map((u) => u.id)),
-      };
+      const tecnica = await modulosCajaApi.usuariosTecnica(cajaId).then((res) => res.data);
+      const actual: AsignacionCaja = { tecnica: new Set(tecnica.map((u) => u.id)) };
       setAsignacion(actual);
-      setAsignacionOriginal({ tecnica: new Set(actual.tecnica), calidad: new Set(actual.calidad) });
+      setAsignacionOriginal({ tecnica: new Set(actual.tecnica) });
     } catch (error) {
       toast.error(getApiErrorMessage(error));
     } finally {
@@ -238,10 +226,7 @@ export default function ActasPage() {
 
   /** Aplica sobre la caja solo las altas y bajas respecto a la asignación original. */
   const sincronizarAsignacion = async (cajaId: number) => {
-    const roles = [
-      { rol: 'tecnica' as const, cliente: asignacionCajaTecnicaApi },
-      { rol: 'calidad' as const, cliente: asignacionCajaCalidadApi },
-    ];
+    const roles = [{ rol: 'tecnica' as const, cliente: asignacionCajaTecnicaApi }];
     for (const { rol, cliente } of roles) {
       const actual = asignacion[rol];
       const original = asignacionOriginal[rol];
@@ -346,7 +331,6 @@ export default function ActasPage() {
       fecha_trans_caja: cajaForm.fecha_trans_caja || null,
       estado_caja: cajaForm.estado_caja,
       usuarios_tecnica: [...asignacion.tecnica],
-      usuarios_calidad: [...asignacion.calidad],
     };
 
     if (editingCaja) {
@@ -393,7 +377,6 @@ export default function ActasPage() {
       { label: 'Fecha', key: 'fecha_trans_caja' },
       { label: 'Estado', key: 'estado_caja' },
       { label: 'Técnicos', key: 'tecnicos_asignados' },
-      { label: 'Calidad', key: 'calidad_asignados' },
     ];
 
     exportExcel(
@@ -505,10 +488,6 @@ export default function ActasPage() {
                 <span className="font-medium text-silver-500">Técnica:</span>{' '}
                 <span className="text-silver-700">{caja.tecnicos_asignados || '—'}</span>
               </p>
-              <p>
-                <span className="font-medium text-silver-500">Calidad:</span>{' '}
-                <span className="text-silver-700">{caja.calidad_asignados || '—'}</span>
-              </p>
             </div>
           ),
         },
@@ -517,12 +496,12 @@ export default function ActasPage() {
     {
       key: 'created_at',
       header: 'Creada',
-      render: (caja: ModuloCaja) => (caja.created_at ? caja.created_at.slice(0, 19).replace('T', ' ') : '—'),
+      render: (caja: ModuloCaja) => formatearFechaHora(caja.created_at),
     },
     {
       key: 'updated_at',
       header: 'Actualizada',
-      render: (caja: ModuloCaja) => (caja.updated_at ? caja.updated_at.slice(0, 19).replace('T', ' ') : '—'),
+      render: (caja: ModuloCaja) => formatearFechaHora(caja.updated_at),
     },
     {
       key: 'acciones',
@@ -721,20 +700,13 @@ export default function ActasPage() {
                 ? 'Marque o desmarque usuarios; los cambios se aplican al guardar.'
                 : 'Los usuarios marcados quedan asignados a todas las cajas de la serie.'}
             </p>
-            <div className="grid gap-3 md:grid-cols-2">
+            <div className="grid gap-3">
               <ListaUsuariosAsignables
                 titulo="Técnicos"
                 usuarios={tecnicosQuery.data ?? []}
                 seleccionados={asignacion.tecnica}
                 onToggle={(id) => toggleAsignacion('tecnica', id)}
                 cargando={tecnicosQuery.isPending || cargandoAsignacion}
-              />
-              <ListaUsuariosAsignables
-                titulo="Calidad"
-                usuarios={calidadQuery.data ?? []}
-                seleccionados={asignacion.calidad}
-                onToggle={(id) => toggleAsignacion('calidad', id)}
-                cargando={calidadQuery.isPending || cargandoAsignacion}
               />
             </div>
           </div>
