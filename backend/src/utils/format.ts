@@ -30,3 +30,25 @@ export function fechaLocal(instante: Date, timeZone: string = ZONA_HORARIA): str
 export function fechaHoyLocal(timeZone: string = ZONA_HORARIA): string {
   return fechaLocal(new Date(), timeZone);
 }
+
+/**
+ * El nombre de una persona, sin la cédula que lo acompaña.
+ *
+ * `elaborado_por` se guarda como "NOMBRE (CC)" porque los informes de producción
+ * cruzan al digitador con la tabla de usuarios por esa cédula. Pero el FUID que
+ * se genera se le entrega al cliente, y ahí la cédula de quien digitó no pinta
+ * nada: al líder le tocaba borrarla a mano de cada fila antes de entregar.
+ *
+ * Solo se quita el paréntesis **final**, que es donde va la cédula. Un nombre que
+ * lleve paréntesis en medio los conserva. Si al quitarlo no quedara nada —un
+ * valor que fuera solo "(123)"— se devuelve el original, porque una celda vacía
+ * dice menos que un dato raro.
+ *
+ * Es solo para lo que sale del sistema: lo guardado no cambia, o los informes de
+ * producción se quedarían sin con qué cruzar al digitador.
+ */
+export function soloNombre(valor: unknown): unknown {
+  if (typeof valor !== 'string') return valor;
+  const sinCedula = valor.replace(/\s*\([^)]*\)\s*$/, '').trim();
+  return sinCedula === '' ? valor : sinCedula;
+}
