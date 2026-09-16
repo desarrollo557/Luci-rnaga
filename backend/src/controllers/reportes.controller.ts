@@ -1,5 +1,12 @@
 import type { Request, Response } from 'express';
 import { query } from '../config/db.js';
+import { audit } from '../services/audit.service.js';
+import { fechaHoyLocal } from '../utils/format.js';
+import {
+  construirSeguimientoInventario,
+  seguimientoFilename,
+  type FilaSeguimiento,
+} from '../services/seguimientoInventario.service.js';
 
 export interface FuidConEstado {
   id: number;
@@ -582,4 +589,100 @@ export async function produccionDetallada(req: Request, res: Response): Promise<
   }
 
   res.json([...clientes.values()].sort((a, b) => b.registros - a.registros));
+}
+
+/**
+ * Seguimiento de inventario, en el formato oficial F-PSD-IDA-001.
+ *
+ * Una fila por jornada, cliente, colaborador y acta: el rango de cajas que tocó,
+ * el rango de UPD que consumió y cuántos registros sacó. Es el reporte de avance
+ * que hasta ahora se llenaba a mano.
+ *
+ * Sobre los números de caja y de UPD: el formato los pide como cifras, no como
+ * los códigos completos. Una caja es `051C002406` y en el seguimiento va 2406; un
+ * UPD es `UPD1040018` y va 1040018. Se extraen con una expresión regular que
+ * además **descarta lo que no tenga la forma esperada**: un `N/A` o un código a
+ * medias dejaría la columna en blanco en lugar de tumbar la consulta con un error
+ * de conversión.
+ *
+ * El recuento de cajas es `COUNT(DISTINCT)` y no la resta de los extremos: si una
+ * jornada saltó cajas, restar el primero del último contaría cajas que nadie
+ * tocó.
+ */
+const SEGUIMIENTO_QUERY = `
+  SELECT f.fecha_del_dato AS fecha,
+         mcl.codigo AS codigo_cliente,
+         MIN(NULLIF(substring(f.caja from '^[0-9]{3}C([0-9]{6})$'), '')::int) AS caja_ini,
+         MAX(NULLIF(substring(f.caja from '^[0-9]{3}C([0-9]{6})$'), '')::int) AS caja_fin,
+         COUNT(DISTINCT f.caja) AS total_cajas,
+         MIN(NULLIF(substring(f.upd from '^UPD([0-9]{7})$'), '')::int) AS upd_ini,
+         MAX(NULLIF(substring(f.upd from '^UPD([0-9]{7})$'), '')::int) AS upd_fin,
+         COUNT(*) AS total_registros,
+         f.elaborado_por AS colaborador,
+         mcl.acta_transferencia_modulo AS acta
+  FROM fuiddatosreal f
+  JOIN modulos_caja mc ON mc.caja_modulo = f.caja
+  JOIN moduloscliente mcl ON mcl.id = mc.id_modulo_caja
+`;
+
+const SEGUIMIENTO_AGRUPACION = `
+  GROUP BY f.fecha_del_dato, mcl.codigo, f.elaborado_por, mcl.acta_transferencia_modulo
+  ORDER BY f.fecha_del_dato, mcl.codigo, f.elaborado_por
+`;
+
+/** `GET /seguimiento-inventario/excel?desde=&hasta=&persona=` */
+export async function descargarSeguimientoInventario(req: Request, res: Response): Promise<void> {
+  const desde = String(req.query.desde ?? '').trim();
+  const hasta = String(req.query.hasta ?? '').trim();
+  const persona = String(req.query.persona ?? '').trim();
+
+  const condiciones: string[] = ["f.elaborado_por IS NOT NULL", "f.elaborado_por <> ''"];
+  const params: unknown[] = [];
+  if (desde) {
+    condiciones.push('f.fecha_del_dato >= ?');
+    params.push(desde);
+  }
+  if (hasta) {
+    condiciones.push('f.fecha_del_dato <= ?');
+    params.push(hasta);
+  }
+  if (persona) {
+    condiciones.push('f.elaborado_por = ?');
+    params.push(persona);
+  }
+
+  const filas = await query<FilaSeguimiento>(
+    `${SEGUIMIENTO_QUERY} WHERE ${condiciones.join(' AND ')} ${SEGUIMIENTO_AGRUPACION}`,
+    params,
+  );
+
+  if (filas.length === 0) {
+    res.status(404).json({
+      error:
+        desde || hasta || persona
+          ? 'No hay registros digitados con esos filtros para armar el seguimiento'
+          : 'Todavía no hay registros digitados para armar el seguimiento',
+    });
+    return;
+  }
+
+  const buffer = await construirSeguimientoInventario(filas);
+  const nombre = seguimientoFilename(desde || null, hasta || null, fechaHoyLocal());
+
+  res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  // `filename*` va con el nombre codificado: algunos navegadores cortan la
+  // descarga si llegan caracteres sin codificar.
+  res.setHeader(
+    'Content-Disposition',
+    `attachment; filename="${nombre.replace(/[^ -~]/g, '_')}"; filename*=UTF-8''${encodeURIComponent(nombre)}`,
+  );
+  res.send(buffer);
+
+  void audit({
+    entidad: 'reportes',
+    entidadId: 'seguimiento-inventario',
+    accion: 'DESCARGAR',
+    detalle: `Seguimiento de inventario${desde || hasta ? ` (${desde || 'inicio'} a ${hasta || 'hoy'})` : ''} con ${filas.length} jornadas`,
+    usuario: req.session.user,
+  });
 }

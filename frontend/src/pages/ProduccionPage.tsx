@@ -1,10 +1,14 @@
 import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { formatearHora } from '@/lib/fechas';
+import { toast } from 'sonner';
+import { fechaHoyLocal, formatearHora } from '@/lib/fechas';
+import { toastApiError } from '@/lib/feedback';
+import { descargarBlob } from '@/lib/utils';
 import {
   Activity,
   Boxes,
   CheckCircle2,
+  Download,
   FileStack,
   FileText,
   FilterX,
@@ -21,6 +25,7 @@ import {
   DatePicker,
   Input,
   LoadingState,
+  Modal,
   PageHeader,
   Select,
   Table,
@@ -174,6 +179,44 @@ export default function ProduccionPage() {
 
   const sedePrincipal = stats.fuids_por_sede[0];
 
+  /*
+   * Descarga del seguimiento de inventario en el formato oficial F-PSD-IDA-001.
+   * El periodo se elige al descargar y no con los filtros de más abajo, que son
+   * del explorador por cliente: el seguimiento se entrega por semana o por mes y
+   * quien lo pide viene a eso, no a explorar.
+   */
+  const [eligiendoPeriodo, setEligiendoPeriodo] = useState(false);
+  const [segDesde, setSegDesde] = useState('');
+  const [segHasta, setSegHasta] = useState('');
+  const [descargandoSeguimiento, setDescargandoSeguimiento] = useState(false);
+
+  const descargarSeguimiento = async () => {
+    setDescargandoSeguimiento(true);
+    try {
+      const respuesta = await reportesApi.descargarSeguimiento({ desde: segDesde, hasta: segHasta });
+      const periodo = segDesde && segHasta ? `_${segDesde}_a_${segHasta}` : segDesde ? `_desde_${segDesde}` : segHasta ? `_hasta_${segHasta}` : `_${fechaHoyLocal()}`;
+      descargarBlob(respuesta.data as Blob, `Seguimiento_Inventario${periodo}.xlsx`);
+      toast.success('Seguimiento de inventario descargado');
+      setEligiendoPeriodo(false);
+    } catch (error) {
+      // El servidor puede responder con un error en JSON; como la petición pide
+      // un blob, ese mensaje llega como blob y hay que leerlo para mostrarlo.
+      const datos = (error as { response?: { data?: unknown } }).response?.data;
+      if (datos instanceof Blob) {
+        try {
+          const { error: mensaje } = JSON.parse(await datos.text()) as { error?: string };
+          toast.error(mensaje ?? 'No se pudo descargar el seguimiento');
+          return;
+        } catch {
+          // No era JSON: cae al aviso genérico de abajo.
+        }
+      }
+      toastApiError(error, { context: 'No se pudo descargar el seguimiento:' });
+    } finally {
+      setDescargandoSeguimiento(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <PageHeader
@@ -181,7 +224,47 @@ export default function ProduccionPage() {
         description={`Cifras calculadas directamente sobre la base de datos · actualizadas a las ${formatearHora(
           dataUpdatedAt || Date.now(),
         )}`}
+        actions={
+          <Button variant="secondary" onClick={() => setEligiendoPeriodo(true)}>
+            <Download className="size-4" />
+            Seguimiento de inventario
+          </Button>
+        }
       />
+
+      {/*
+        Periodo del seguimiento. Se pregunta antes de generar porque este
+        documento se entrega por semana o por mes: bajarlo siempre completo
+        obligaría a recortarlo a mano después.
+      */}
+      <Modal
+        open={eligiendoPeriodo}
+        onClose={() => setEligiendoPeriodo(false)}
+        title="Descargar seguimiento de inventario"
+        size="sm"
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setEligiendoPeriodo(false)}>
+              Cancelar
+            </Button>
+            <Button onClick={() => void descargarSeguimiento()} loading={descargandoSeguimiento}>
+              <Download className="mr-2 size-4" />
+              Descargar
+            </Button>
+          </>
+        }
+      >
+        <div className="space-y-4">
+          <p className="text-sm text-silver-600">
+            Sale en el formato oficial F-PSD-IDA-001, con una fila por jornada, cliente y colaborador.
+            Deje las fechas vacías para incluir todo lo digitado.
+          </p>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <DatePicker label="Desde" value={segDesde} onChange={setSegDesde} max={segHasta || undefined} />
+            <DatePicker label="Hasta" value={segHasta} onChange={setSegHasta} min={segDesde || undefined} />
+          </div>
+        </div>
+      </Modal>
 
       {/* Cifra guía del panel: una sola, y el resto la contextualiza. */}
       <section className="rounded-xl border border-silver-200 bg-surface p-6 shadow-sm">

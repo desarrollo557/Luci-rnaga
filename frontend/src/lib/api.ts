@@ -565,6 +565,19 @@ export const reportesApi = {
   /** Quién digitó, en qué caja y qué día, dentro de cada cliente. */
   produccionDetallada: (filtros: { desde?: string; hasta?: string; persona?: string } = {}) =>
     api.get<ClienteConDetalle[]>('/estadisticas/detalle', { params: filtros }),
+  /**
+   * Seguimiento de inventario en el formato oficial F-PSD-IDA-001.
+   *
+   * Sin fechas trae todo lo digitado; con ellas, solo ese periodo. Los filtros
+   * vacíos no se envían para que no lleguen como cadena vacía al servidor.
+   */
+  descargarSeguimiento: (filtros: { desde?: string; hasta?: string; persona?: string } = {}) => {
+    const params: Record<string, string> = {};
+    for (const [clave, valor] of Object.entries(filtros)) {
+      if (valor) params[clave] = valor;
+    }
+    return api.get('/seguimiento-inventario/excel', { responseType: 'blob', params });
+  },
   resumenCajasAgrupado: () => api.get<Array<{
     caja_inicial: string;
     caja_fin: string;
