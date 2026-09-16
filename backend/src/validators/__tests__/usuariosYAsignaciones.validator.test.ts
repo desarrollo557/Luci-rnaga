@@ -126,3 +126,46 @@ describe('crear un cliente', () => {
     expect(createSubModuloSchema.safeParse({ codigo: '051', entidad_remitente: '' }).success).toBe(false);
   });
 });
+
+/**
+ * Segundo perfil de una cuenta.
+ *
+ * Es opcional y solo suma permisos. Lo que no puede pasar es que repita el
+ * principal —seria ruido en pantalla y un caso que ninguna comprobacion espera—
+ * ni que acepte un perfil inventado, porque de ahi sale directo a una sesion con
+ * permisos que nadie definio.
+ */
+describe('segundo perfil', () => {
+  it('se puede crear una cuenta sin segundo perfil', () => {
+    expect(createUserSchema.safeParse({ ...usuarioBase }).success).toBe(true);
+  });
+
+  it('acepta el caso que lo motivo: lider que ademas administra', () => {
+    const r = createUserSchema.safeParse({ ...usuarioBase, rol: 'LIDER', rol_secundario: 'ADMIN' });
+    expect(r.success).toBe(true);
+  });
+
+  it('un selector en blanco cuenta como sin segundo perfil', () => {
+    const r = createUserSchema.safeParse({ ...usuarioBase, rol_secundario: '' });
+    expect(r.success).toBe(true);
+    if (r.success) expect(r.data.rol_secundario).toBeNull();
+  });
+
+  it('rechaza repetir el perfil principal', () => {
+    const r = createUserSchema.safeParse({ ...usuarioBase, rol: 'ADMIN', rol_secundario: 'ADMIN' });
+    expect(r.success).toBe(false);
+  });
+
+  it('rechaza un perfil que no existe', () => {
+    expect(createUserSchema.safeParse({ ...usuarioBase, rol_secundario: 'SUPERUSUARIO' }).success).toBe(false);
+  });
+
+  it('rechaza el perfil CALIDAD tambien como segundo', () => {
+    expect(createUserSchema.safeParse({ ...usuarioBase, rol_secundario: 'CALIDAD' }).success).toBe(false);
+  });
+
+  it('las mismas reglas valen al editar', () => {
+    expect(updateUserSchema.safeParse({ ...usuarioBase, rol: 'LIDER', rol_secundario: 'ADMIN' }).success).toBe(true);
+    expect(updateUserSchema.safeParse({ ...usuarioBase, rol: 'LIDER', rol_secundario: 'LIDER' }).success).toBe(false);
+  });
+});

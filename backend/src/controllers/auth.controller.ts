@@ -14,7 +14,13 @@ export async function currentUser(req: Request, res: Response): Promise<void> {
     res.status(401).json({ error: 'No autenticado' });
     return;
   }
-  res.json({ cc: user.cc, nombre: user.nombre, rol: user.rol, sede: user.sede });
+  res.json({
+    cc: user.cc,
+    nombre: user.nombre,
+    rol: user.rol,
+    rol_secundario: user.rol_secundario ?? null,
+    sede: user.sede,
+  });
 }
 
 export async function checkAuth(req: Request, res: Response): Promise<void> {
@@ -84,6 +90,7 @@ export async function login(req: Request, res: Response): Promise<void> {
       cc: user.cc,
       nombre: user.nombre,
       rol: user.rol,
+      rol_secundario: user.rol_secundario ?? null,
       sede: user.sede ?? '',
     };
 

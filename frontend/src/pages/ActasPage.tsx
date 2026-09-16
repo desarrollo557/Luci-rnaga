@@ -31,7 +31,7 @@ import { OPCIONES_OBJETO_CAJA } from '@/lib/catalogos';
 import { invalidateDomain } from '@/lib/queryInvalidation';
 import { formatearFechaHora } from '@/lib/fechas';
 import { useAuthStore } from '@/stores/authStore';
-import type { ModuloCaja } from '@/types';
+import { type ModuloCaja, tieneAlgunRol } from '@/types';
 
 const ESTADOS_CAJA = ['EN PROCESO', 'FINALIZADO'] as const;
 
@@ -127,7 +127,7 @@ export default function ActasPage() {
   const queryClient = useQueryClient();
   const { id } = useParams<{ id: string }>();
   const user = useAuthStore((state) => state.user);
-  const isManager = user?.rol === 'ADMIN' || user?.rol === 'LIDER';
+  const isManager = tieneAlgunRol(user, ['ADMIN', 'LIDER']);
 
   const [filtroCajas, setFiltroCajas] = useState('');
   const [modalOpen, setModalOpen] = useState(false);

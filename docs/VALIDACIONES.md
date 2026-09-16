@@ -99,13 +99,46 @@ El formato de error es siempre el mismo:
 | La cédula son solo dígitos (1 a 20) | `users.validator.ts` → `ccField`; `auth.validator.ts` en el login | `Login.tsx` y `AdminPage.tsx` |
 | El nombre tiene al menos 3 caracteres | `users.validator.ts` | `AdminPage.tsx` |
 | La contraseña tiene al menos 4 caracteres | `users.validator.ts` | `AdminPage.tsx` |
-| El rol es uno de los cuatro definidos | `users.validator.ts` → `z.enum(ROLES)` | `Select` de roles |
+| El perfil principal es uno de los tres definidos | `users.validator.ts` → `z.enum(ROLES)` | `Select` de perfil principal |
+| El segundo perfil es opcional y tiene que ser distinto del principal | `users.validator.ts` → `perfilesDistintos`; restricción `users_rol_secundario_distinto` en la base | `Select` de segundo perfil, que no ofrece el principal |
+| Siempre queda al menos un administrador | `users.controller.ts`: cuenta las cuentas con `ADMIN` en cualquiera de los dos perfiles | La interfaz oculta el botón |
 | La sede es obligatoria | `users.validator.ts` | `lib/sedes.ts` |
 | Una cuenta con la contraseña sin cifrar no entra | `auth.controller.ts` con `PERMITIR_PASSWORD_PLANO` (apagada por defecto) | — |
 | Un usuario suspendido no entra | `auth.controller.ts` compara `suspendido_hasta` con `fechaHoyLocal()` | — |
-| No se elimina el propio usuario ni el único administrador | `users.controller.ts` | La interfaz oculta el botón |
+| No se elimina el propio usuario | `users.controller.ts` | La interfaz oculta el botón |
 | Límite de intentos de login | `loginLimiter` en `app.ts` | — |
 | Límite general de peticiones | `generalLimiter` en `app.ts` | — |
+
+---
+
+## Cuentas con dos perfiles
+
+Una cuenta lleva un perfil principal y, opcionalmente, un segundo. La regla es
+una sola: **el segundo perfil solo suma permisos, nunca quita ninguno.**
+
+El caso que lo motivó es la persona que administra el sistema y además lleva
+clientes. Antes hacían falta dos cuentas, con dos contraseñas, y había que salir
+de una para entrar en la otra. Ahora la misma cuenta ve la administración y las
+pantallas de líder.
+
+| Qué decide el perfil principal | Qué decide el segundo |
+| --- | --- |
+| En qué pantalla aterriza la persona al entrar | Nada de navegación |
+| Qué devuelven las consultas que buscan gente por su oficio, como la lista de técnicas para asignar a una caja | Nada: una técnica de segundo perfil no aparece en esa lista |
+| Los permisos, sumados con los del segundo | Los permisos, sumados con los del principal |
+
+Dónde vive:
+
+| Capa | Qué hace |
+| --- | --- |
+| `database/supabase/05-rol-secundario.sql` | Columna `users.rol_secundario` y la restricción de que sea distinta del principal |
+| `backend/src/utils/roles.ts` | `tieneRol()`, `tieneAlgunRol()` y `rolesDe()`: el único sitio donde se decide qué perfiles tiene una cuenta |
+| `backend/src/middlewares/auth.ts` | Los cinco guardias miran los dos perfiles |
+| `frontend/src/types.ts` | Los mismos tres ayudantes, para el enrutado, el menú y las pantallas |
+
+Lo que **no** cambia: una cuenta de un solo perfil se comporta exactamente igual
+que antes de que esto existiera. El segundo perfil es NULL y ninguna comprobación
+lo encuentra.
 
 ---
 
