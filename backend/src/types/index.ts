@@ -2,7 +2,10 @@ export interface SessionUser {
   id: number;
   cc: string;
   nombre: string;
+  /** Perfil principal: decide dónde aterriza la persona al entrar. */
   rol: string;
+  /** Segundo perfil opcional. Suma permisos al principal; nunca los quita. */
+  rol_secundario?: string | null;
   sede: string;
 }
 
@@ -29,6 +32,8 @@ export interface CreateUserDto {
   nombre: string;
   contrasena: string;
   rol: string;
+  /** Segundo perfil opcional. Suma permisos al principal; nunca los quita. */
+  rol_secundario?: string | null;
   sede: string;
   suspendido_hasta?: string | null;
 }
@@ -38,6 +43,8 @@ export interface UpdateUserDto {
   nombre: string;
   contrasena: string;
   rol: string;
+  /** Segundo perfil opcional. Suma permisos al principal; nunca los quita. */
+  rol_secundario?: string | null;
   sede: string;
   suspendido_hasta?: string | null;
 }

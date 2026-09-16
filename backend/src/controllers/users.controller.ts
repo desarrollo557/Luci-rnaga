@@ -1,6 +1,7 @@
 import type { Request, Response } from 'express';
 import bcrypt from 'bcryptjs';
 import { query, queryOne, queryResult } from '../config/db.js';
+import { tieneRol } from '../utils/roles.js';
 import { audit } from '../services/audit.service.js';
 import type { User } from '../types/db.js';
 import type { CreateUserDto, UpdateUserDto } from '../types/index.js';
@@ -8,7 +9,8 @@ import { fechaHoyLocal } from '../utils/format.js';
 
 const saltRounds = 10;
 
-const userSafeFields = 'id, cc, nombre, rol, sede, suspendido_hasta, created_at, updated_at';
+const userSafeFields =
+  'id, cc, nombre, rol, rol_secundario, sede, suspendido_hasta, created_at, updated_at';
 
 export async function listUsers(_req: Request, res: Response): Promise<void> {
   const users = await query<User>(`SELECT ${userSafeFields} FROM users`);
@@ -26,16 +28,13 @@ export async function getUser(req: Request, res: Response): Promise<void> {
 }
 
 export async function createUser(req: Request, res: Response): Promise<void> {
-  const { cc, nombre, contrasena, rol, sede } = req.body as CreateUserDto;
+  const { cc, nombre, contrasena, rol, rol_secundario, sede } = req.body as CreateUserDto;
   try {
     const hashedPassword = await bcrypt.hash(contrasena, saltRounds);
-    await query('INSERT INTO users (cc, nombre, contrasena, rol, sede) VALUES (?, ?, ?, ?, ?)', [
-      cc,
-      nombre,
-      hashedPassword,
-      rol,
-      sede,
-    ]);
+    await query(
+      'INSERT INTO users (cc, nombre, contrasena, rol, rol_secundario, sede) VALUES (?, ?, ?, ?, ?, ?)',
+      [cc, nombre, hashedPassword, rol, rol_secundario ?? null, sede],
+    );
     res.status(201).send('Usuario creado');
   } catch (error) {
     console.error('Error al crear usuario:', error);
@@ -45,7 +44,7 @@ export async function createUser(req: Request, res: Response): Promise<void> {
 
 export async function updateUser(req: Request, res: Response): Promise<void> {
   const { id } = req.params;
-  const { cc, nombre, contrasena, rol, sede } = req.body as UpdateUserDto;
+  const { cc, nombre, contrasena, rol, rol_secundario, sede } = req.body as UpdateUserDto;
   try {
     const fields: string[] = [];
     const values: unknown[] = [];
@@ -55,8 +54,8 @@ export async function updateUser(req: Request, res: Response): Promise<void> {
       values.push(await bcrypt.hash(contrasena, saltRounds));
     }
 
-    fields.push('cc = ?', 'nombre = ?', 'rol = ?', 'sede = ?');
-    values.push(cc, nombre, rol, sede, id);
+    fields.push('cc = ?', 'nombre = ?', 'rol = ?', 'rol_secundario = ?', 'sede = ?');
+    values.push(cc, nombre, rol, rol_secundario ?? null, sede, id);
 
     const result = await queryResult(`UPDATE users SET ${fields.join(', ')} WHERE id = ?`, values);
     if (result.affectedRows === 0) {
@@ -80,7 +79,7 @@ export async function deleteUser(req: Request, res: Response): Promise<void> {
   }
 
   const objetivo = await queryOne<Pick<User, 'id' | 'nombre' | 'rol'>>(
-    'SELECT id, nombre, rol FROM users WHERE id = ?',
+    'SELECT id, nombre, rol, rol_secundario FROM users WHERE id = ?',
     [id],
   );
   if (!objetivo) {
@@ -88,9 +87,18 @@ export async function deleteUser(req: Request, res: Response): Promise<void> {
     return;
   }
 
-  // Siempre debe quedar al menos un administrador para gestionar el sistema.
-  if (objetivo.rol === 'ADMIN') {
-    const [admins] = await query<{ total: number }>("SELECT COUNT(*) AS total FROM users WHERE rol = 'ADMIN'");
+  /*
+   * Siempre debe quedar al menos un administrador para gestionar el sistema.
+   *
+   * Se cuentan los dos perfiles: una cuenta de líder que además administra vale
+   * como administrador a todos los efectos. Contar solo el perfil principal
+   * habría dejado borrar al último administrador "puro" creyendo que quedaban
+   * más, o al revés, bloqueado un borrado legítimo.
+   */
+  if (tieneRol(objetivo, 'ADMIN')) {
+    const [admins] = await query<{ total: number }>(
+      `SELECT COUNT(*) AS total FROM users WHERE rol = 'ADMIN' OR rol_secundario = 'ADMIN'`,
+    );
     if ((admins?.total ?? 0) <= 1) {
       res.status(409).json({ message: 'No se puede eliminar el único administrador del sistema' });
       return;

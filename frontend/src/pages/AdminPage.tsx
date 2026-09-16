@@ -34,7 +34,7 @@ import { sedeOptionsCon } from '@/lib/sedes';
 import { createValidator, minLength, onlyDigits } from '@/lib/validation';
 import { fechaHoyLocal, formatearFechaHora } from '@/lib/fechas';
 import type { Role, User } from '@/types';
-import { ROLES } from '@/types';
+import { ROLES, rolesDe, tieneRol } from '@/types';
 
 const ROLE_BADGE: Record<Role, BadgeColor> = {
   ADMIN: 'red',
@@ -59,6 +59,7 @@ const EMPTY_FORM: UserInput = {
   nombre: '',
   contrasena: '',
   rol: 'TECNICA',
+  rol_secundario: '',
   sede: '',
 };
 
@@ -153,8 +154,8 @@ export default function AdminPage() {
   const stats = useMemo(
     () => ({
       total: users.length,
-      tecnicas: users.filter((user) => user.rol === 'TECNICA').length,
-      lideresAdmin: users.filter((user) => user.rol === 'LIDER' || user.rol === 'ADMIN').length,
+      tecnicas: users.filter((user) => tieneRol(user, 'TECNICA')).length,
+      lideresAdmin: users.filter((user) => tieneRol(user, 'LIDER') || tieneRol(user, 'ADMIN')).length,
     }),
     [users],
   );
@@ -172,7 +173,7 @@ export default function AdminPage() {
         term === '' ||
         user.nombre.toLowerCase().includes(term) ||
         user.cc.toLowerCase().includes(term);
-      const matchesRole = roleFilter === '' || user.rol === roleFilter;
+      const matchesRole = roleFilter === '' || tieneRol(user, roleFilter as Role);
       const matchesSede = sedeFilter === '' || (user.sede ?? '') === sedeFilter;
       return matchesTerm && matchesRole && matchesSede;
     });
@@ -195,7 +196,14 @@ export default function AdminPage() {
 
   const handleEdit = (user: User) => {
     setEditingUser(user);
-    setForm({ cc: user.cc, nombre: user.nombre, contrasena: '', rol: user.rol, sede: user.sede ?? '' });
+    setForm({
+      cc: user.cc,
+      nombre: user.nombre,
+      contrasena: '',
+      rol: user.rol,
+      rol_secundario: user.rol_secundario ?? '',
+      sede: user.sede ?? '',
+    });
     setErrors({});
     setFormOpen(true);
   };
@@ -222,6 +230,9 @@ export default function AdminPage() {
     }
 
     if (!form.rol) nextErrors.rol = 'El rol es requerido';
+    if (form.rol_secundario && form.rol_secundario === form.rol) {
+      nextErrors.rol_secundario = 'El segundo perfil tiene que ser distinto del principal';
+    }
     if (!form.sede.trim()) nextErrors.sede = 'La sede es requerida';
 
     setErrors(nextErrors);
@@ -235,6 +246,7 @@ export default function AdminPage() {
           nombre: form.nombre,
           contrasena: form.contrasena || undefined,
           rol: form.rol,
+          rol_secundario: form.rol_secundario || null,
           sede: form.sede,
         },
       });
@@ -283,7 +295,15 @@ export default function AdminPage() {
     {
       key: 'rol',
       header: 'Rol',
-      render: (user) => <Badge color={ROLE_BADGE[user.rol]}>{ROLE_LABEL[user.rol]}</Badge>,
+      render: (user) => (
+        <div className="flex flex-wrap items-center gap-1">
+          {rolesDe(user).map((rol) => (
+            <Badge key={rol} color={ROLE_BADGE[rol]}>
+              {ROLE_LABEL[rol]}
+            </Badge>
+          ))}
+        </div>
+      ),
     },
     {
       key: 'sede',
@@ -439,11 +459,29 @@ export default function AdminPage() {
             autoComplete="new-password"
           />
           <Select
-            label="Rol"
+            label="Perfil principal"
             options={ROLES.map((rol) => ({ value: rol, label: ROLE_LABEL[rol] }))}
             value={form.rol}
             onChange={(value) => setForm({ ...form, rol: value as Role })}
             error={errors.rol}
+            hint="Decide en qué pantalla entra la persona"
+          />
+          {/*
+            Segundo perfil. Existe para la persona que administra el sistema y
+            además lleva clientes: antes hacían falta dos cuentas, con dos
+            contraseñas, y había que salir de una para entrar en la otra.
+          */}
+          <Select
+            label="Segundo perfil (opcional)"
+            options={ROLES.filter((rol) => rol !== form.rol).map((rol) => ({
+              value: rol,
+              label: ROLE_LABEL[rol],
+            }))}
+            value={form.rol_secundario ?? ''}
+            onChange={(value) => setForm({ ...form, rol_secundario: (value || '') as Role | '' })}
+            placeholder="Sin segundo perfil"
+            error={errors.rol_secundario}
+            hint="Suma permisos al principal; no quita ninguno"
           />
           <Select
             label="Sede"

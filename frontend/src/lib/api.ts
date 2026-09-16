@@ -130,6 +130,8 @@ export interface UserInput {
   nombre: string;
   contrasena?: string;
   rol: Role;
+  /** Segundo perfil opcional. Suma permisos al principal; nunca los quita. */
+  rol_secundario?: Role | '' | null;
   sede: string;
 }
 

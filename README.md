@@ -208,6 +208,8 @@ caja no compiten por el mismo número.
 | `LIDER` | `/clientes` — módulos cliente y cajas, producción e historial |
 | `TECNICA` | `/clientes` — digitación FUID en `/cajas/:id/datos` |
 
+Una cuenta puede llevar **dos perfiles**: el principal decide en qué pantalla entra, y el segundo suma permisos sin quitar ninguno. Es lo que permite que quien administra el sistema lleve además clientes sin necesitar dos cuentas. Ver `docs/VALIDACIONES.md`.
+
 ## Endpoints principales (prefijo `/api`)
 
 | Método | Ruta | Descripción |

@@ -17,7 +17,7 @@ import {
 import { Badge, ThemeToggle } from '@/components/ui';
 import { cn } from '@/lib/cn';
 import { useAuthStore } from '@/stores/authStore';
-import type { Role } from '@/types';
+import { rolesDe, tieneRol, type Role } from '@/types';
 
 interface NavItem {
   label: string;
@@ -57,7 +57,12 @@ export default function AppLayout() {
 
   if (!user) return null;
 
-  const items = NAV_ITEMS.filter((item) => item.roles.includes(user.rol));
+  /*
+   * El menú muestra la unión de lo que permiten los perfiles de la cuenta. Es lo
+   * que hace que un líder con el segundo perfil de administrador vea también
+   * Administración, sin dejar de ver lo suyo.
+   */
+  const items = NAV_ITEMS.filter((item) => item.roles.some((rol) => tieneRol(user, rol as Role)));
 
   const handleLogout = () => {
     void logout();
@@ -178,7 +183,13 @@ export default function AppLayout() {
               <p className="text-sm font-medium leading-tight text-silver-800">{user.nombre}</p>
               <p className="text-xs leading-tight text-silver-500">C.C. {user.cc}</p>
             </div>
-            <Badge color="red">{ROL_LABEL[user.rol]}</Badge>
+            {/* Con dos perfiles se muestran los dos: quien entra tiene que saber
+                con qué permisos está trabajando. */}
+            {rolesDe(user).map((rol) => (
+              <Badge key={rol} color="red">
+                {ROL_LABEL[rol]}
+              </Badge>
+            ))}
             <button
               type="button"
               onClick={handleLogout}

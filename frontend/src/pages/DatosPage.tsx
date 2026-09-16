@@ -30,13 +30,7 @@ import { limiteDe } from '@/lib/limites';
 import { fechaHoyLocal, formatearFechaHora } from '@/lib/fechas';
 import { FECHA_MINIMA_DOCUMENTAL, dateInRange, dateOrderValid, onlyDigits } from '@/lib/validation';
 import { useAuthStore } from '@/stores/authStore';
-import {
-  SUGGESTION_FIELDS,
-  type DataRow,
-  type FuidDato,
-  type ModuloCaja,
-  type SessionUser,
-} from '@/types';
+import { SUGGESTION_FIELDS, type DataRow, type FuidDato, type ModuloCaja, type SessionUser, tieneAlgunRol, tieneRol } from '@/types';
 
 type SuggestionField = (typeof SUGGESTION_FIELDS)[number];
 
@@ -906,7 +900,7 @@ export default function DatosPage() {
   const location = useLocation();
   const { cajaId } = useParams<{ cajaId: string }>();
   const user = useAuthStore((state) => state.user);
-  const canMarcarOk = user?.rol === 'LIDER' || user?.rol === 'ADMIN' || user?.rol === 'TECNICA';
+  const canMarcarOk = tieneAlgunRol(user, ['LIDER', 'ADMIN', 'TECNICA']);
   // Todos los perfiles que llegan aquí digitan y pueden borrar; las reglas de
   // autor y de fecha las aplica el backend.
   const canCrear = true;
@@ -941,7 +935,7 @@ export default function DatosPage() {
   });
 
   // El técnico necesita fijar su UPD de arranque antes de digitar en esta caja.
-  const esTecnica = user?.rol === 'TECNICA';
+  const esTecnica = tieneRol(user, 'TECNICA');
   const updInicioQuery = useQuery({
     queryKey: ['modulos-caja', 'next-upd', cajaCode],
     queryFn: () => modulosCajaApi.siguienteUpd(cajaCode).then((res) => res.data),

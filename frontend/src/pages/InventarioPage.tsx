@@ -37,7 +37,7 @@ import { cn } from '@/lib/cn';
 import { descargarBlob } from '@/lib/utils';
 import { invalidateDomain } from '@/lib/queryInvalidation';
 import { aFechaISO, fechaHoyLocal, formatearFecha, hace } from '@/lib/fechas';
-import type { DataRow, FuidConEstado, Inventario } from '@/types';
+import { type DataRow, type FuidConEstado, type Inventario, tieneAlgunRol } from '@/types';
 import { useAuthStore } from '@/stores/authStore';
 
 const ESTADOS_INVENTARIO = ['PENDIENTE', 'EN PROCESO', 'FINALIZADO'];
@@ -378,7 +378,7 @@ function Chip({ label, active, onClick }: { label: string; active: boolean; onCl
 export default function InventarioPage() {
   const queryClient = useQueryClient();
   const { user } = useAuthStore();
-  const canEdit = user?.rol === 'LIDER' || user?.rol === 'ADMIN';
+  const canEdit = tieneAlgunRol(user, ['LIDER', 'ADMIN']);
 
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<Inventario | null>(null);
