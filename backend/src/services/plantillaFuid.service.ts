@@ -3,6 +3,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import ExcelJS from 'exceljs';
 import { FUID_COLUMNS } from './zohoSheet.service.js';
+import { soloNombre } from '../utils/format.js';
 
 /**
  * El formato oficial del inventario: F-PSD-001 ÚNICO DE INVENTARIO DOCUMENTAL
@@ -106,11 +107,30 @@ export async function abrirPlantillaFuid(): Promise<{
 }
 
 /**
+ * Columnas que no se escriben tal cual están guardadas.
+ *
+ * Por ahora solo una: `elaborado_por` se guarda como "NOMBRE (CC)" porque los
+ * informes de producción cruzan al digitador por esa cédula, pero el FUID se le
+ * entrega al cliente y la cédula de quien digitó no pinta nada ahí. Al líder le
+ * tocaba borrarla a mano de cada fila antes de entregar.
+ *
+ * Se transforma aquí, al escribir, y no en la base: cambiar lo guardado dejaría
+ * a los informes de producción sin con qué cruzar al digitador.
+ */
+const AL_ESCRIBIR: Readonly<Record<string, (valor: unknown) => unknown>> = {
+  elaborado_por: soloNombre,
+};
+
+/**
  * Vuelca los registros en la hoja, uno por fila, a partir de la fila 8.
  *
  * El orden de las columnas no se repite aquí: se toma de `FUID_COLUMNS`, que es
  * el mismo que usan la hoja de Zoho y la exportación del inventario. Así, si
  * algún día se añade una columna al FUID, se añade en un solo sitio.
+ *
+ * Este es el único punto por el que pasan todos los archivos FUID que produce el
+ * sistema —la descarga del inventario, la del acta, la plantilla y lo que se sube
+ * a Zoho—, así que lo que se ajuste aquí sale igual en todos.
  */
 export function escribirFilasFuid<T extends object>(
   hoja: ExcelJS.Worksheet,
@@ -124,7 +144,8 @@ export function escribirFilasFuid<T extends object>(
     FUID_COLUMNS.forEach(([, campo], columna) => {
       const celda = fila.getCell(columna + 1);
       celda.style = { ...modelo[columna] };
-      const valor = (registro as Record<string, unknown>)[campo];
+      const guardado = (registro as Record<string, unknown>)[campo];
+      const valor = AL_ESCRIBIR[campo] ? AL_ESCRIBIR[campo](guardado) : guardado;
       if (COLUMNAS_FECHA.has(campo)) {
         const fecha = comoFecha(valor);
         if (fecha) {
