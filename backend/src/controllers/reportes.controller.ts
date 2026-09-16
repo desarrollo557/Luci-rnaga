@@ -608,6 +608,16 @@ export async function produccionDetallada(req: Request, res: Response): Promise<
  * El recuento de cajas es `COUNT(DISTINCT)` y no la resta de los extremos: si una
  * jornada saltó cajas, restar el primero del último contaría cajas que nadie
  * tocó.
+ *
+ * **Los JOIN son LEFT a propósito.** Con JOIN interno, un registro cuya caja no
+ * tenga fila en `modulos_caja` —cosa corriente entre los registros heredados de
+ * la base antigua— desaparecía del informe sin dejar rastro, y el seguimiento
+ * salía casi vacío sin que nada avisara. Ahora el registro aparece igual, con el
+ * código de cliente en blanco si no se pudo averiguar: el documento es de
+ * productividad, y una jornada de trabajo cuenta aunque falte su ficha de caja.
+ *
+ * El número de acta se toma del propio registro FUID, que es lo que escribió
+ * quien digitó, y solo si viene vacío se cae al del acta relacionada.
  */
 const SEGUIMIENTO_QUERY = `
   SELECT f.fecha_del_dato AS fecha,
@@ -619,14 +629,15 @@ const SEGUIMIENTO_QUERY = `
          MAX(NULLIF(substring(f.upd from '^UPD([0-9]{7})$'), '')::int) AS upd_fin,
          COUNT(*) AS total_registros,
          f.elaborado_por AS colaborador,
-         mcl.acta_transferencia_modulo AS acta
+         COALESCE(NULLIF(f.nro_acta_transferible, 'N/A'), mcl.acta_transferencia_modulo) AS acta
   FROM fuiddatosreal f
-  JOIN modulos_caja mc ON mc.caja_modulo = f.caja
-  JOIN moduloscliente mcl ON mcl.id = mc.id_modulo_caja
+  LEFT JOIN modulos_caja mc ON mc.caja_modulo = f.caja
+  LEFT JOIN moduloscliente mcl ON mcl.id = mc.id_modulo_caja
 `;
 
 const SEGUIMIENTO_AGRUPACION = `
-  GROUP BY f.fecha_del_dato, mcl.codigo, f.elaborado_por, mcl.acta_transferencia_modulo
+  GROUP BY f.fecha_del_dato, mcl.codigo, f.elaborado_por,
+           COALESCE(NULLIF(f.nro_acta_transferible, 'N/A'), mcl.acta_transferencia_modulo)
   ORDER BY f.fecha_del_dato, mcl.codigo, f.elaborado_por
 `;
 
@@ -636,7 +647,13 @@ export async function descargarSeguimientoInventario(req: Request, res: Response
   const hasta = String(req.query.hasta ?? '').trim();
   const persona = String(req.query.persona ?? '').trim();
 
-  const condiciones: string[] = ["f.elaborado_por IS NOT NULL", "f.elaborado_por <> ''"];
+  /*
+   * Sin exigir colaborador. Antes se pedía `elaborado_por IS NOT NULL`, y eso
+   * borraba del informe toda la producción heredada de la base antigua, que no
+   * lo trae. El seguimiento tiene que llevar todo lo digitado: si no se sabe
+   * quién lo hizo, la columna va en blanco y la jornada se cuenta igual.
+   */
+  const condiciones: string[] = ['TRUE'];
   const params: unknown[] = [];
   if (desde) {
     condiciones.push('f.fecha_del_dato >= ?');
@@ -657,11 +674,18 @@ export async function descargarSeguimientoInventario(req: Request, res: Response
   );
 
   if (filas.length === 0) {
+    /*
+     * Si no salió nada, el aviso dice si es porque no hay registros o porque los
+     * filtros los dejaron todos fuera. Un "no hay datos" a secas obliga a quien
+     * lo lee a adivinar cuál de las dos cosas pasó.
+     */
+    const [total] = await query<{ total: number }>('SELECT COUNT(*) AS total FROM fuiddatosreal');
+    const registros = total?.total ?? 0;
     res.status(404).json({
       error:
-        desde || hasta || persona
-          ? 'No hay registros digitados con esos filtros para armar el seguimiento'
-          : 'Todavía no hay registros digitados para armar el seguimiento',
+        registros === 0
+          ? 'Todavía no hay registros digitados para armar el seguimiento'
+          : `Ningún registro encaja con esos filtros. Hay ${registros.toLocaleString('es-CO')} registros digitados en total.`,
     });
     return;
   }
@@ -676,6 +700,14 @@ export async function descargarSeguimientoInventario(req: Request, res: Response
     'Content-Disposition',
     `attachment; filename="${nombre.replace(/[^ -~]/g, '_')}"; filename*=UTF-8''${encodeURIComponent(nombre)}`,
   );
+  /*
+   * Cuántas jornadas lleva el documento. La pantalla lo dice al terminar, para
+   * que quien descarga sepa si trae lo que esperaba sin abrir el archivo: un
+   * seguimiento que sale con dos filas cuando deberían ser mil es un problema
+   * que conviene ver en el momento, no al entregarlo.
+   */
+  res.setHeader('X-Total-Jornadas', String(filas.length));
+  res.setHeader('Access-Control-Expose-Headers', 'X-Total-Jornadas, Content-Disposition');
   res.send(buffer);
 
   void audit({
