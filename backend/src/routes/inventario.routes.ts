@@ -14,6 +14,7 @@ import {
   getClienteParaInventario,
   descargarInventarioExcel,
   descargarFuidDeCliente,
+  recalcularInventarioController,
 } from '../controllers/inventario.controller.js';
 
 const router = Router();
@@ -32,5 +33,7 @@ router.post('/inventario', isAuthenticated, isLiderOrAdmin, asyncHandler(createI
 router.put('/inventario/:id', isAuthenticated, isLiderOrAdmin, asyncHandler(updateInventario));
 router.delete('/inventario/:id', isAuthenticated, isLiderOrAdmin, asyncHandler(deleteInventario));
 router.post('/inventario/:id/sync', isAuthenticated, isLiderOrAdmin, asyncHandler(syncInventarioController));
+// Vuelve a leer las cifras del cliente y las guarda en su inventario.
+router.post('/inventario/:id/recalcular', isAuthenticated, isLiderOrAdmin, asyncHandler(recalcularInventarioController));
 
 export default router;
