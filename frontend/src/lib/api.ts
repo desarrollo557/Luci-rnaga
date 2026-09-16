@@ -560,6 +560,13 @@ export interface ClienteConDetalle {
   detalle_cajas: CajaDeCliente[];
 }
 
+/** Los filtros vacíos no se envían: llegarían como cadena vacía al servidor. */
+function sinVacios(filtros: Record<string, string | undefined>): Record<string, string> {
+  const params: Record<string, string> = {};
+  for (const [clave, valor] of Object.entries(filtros)) if (valor) params[clave] = valor;
+  return params;
+}
+
 export const reportesApi = {
   fuidConEstadoCaja: () => api.get<FuidConEstado[]>('/fuid-con-estado-caja'),
   /** Quién digitó, en qué caja y qué día, dentro de cada cliente. */
@@ -571,13 +578,16 @@ export const reportesApi = {
    * Sin fechas trae todo lo digitado; con ellas, solo ese periodo. Los filtros
    * vacíos no se envían para que no lleguen como cadena vacía al servidor.
    */
-  descargarSeguimiento: (filtros: { desde?: string; hasta?: string; persona?: string } = {}) => {
-    const params: Record<string, string> = {};
-    for (const [clave, valor] of Object.entries(filtros)) {
-      if (valor) params[clave] = valor;
-    }
-    return api.get('/seguimiento-inventario/excel', { responseType: 'blob', params });
-  },
+  descargarSeguimiento: (filtros: { desde?: string; hasta?: string; persona?: string } = {}) =>
+    api.get('/seguimiento-inventario/excel', { responseType: 'blob', params: sinVacios(filtros) }),
+  /**
+   * Cuántas jornadas y registros llevará el seguimiento con esos filtros. Se pide
+   * antes de generar, para que la pantalla diga qué está armando.
+   */
+  resumenSeguimiento: (filtros: { desde?: string; hasta?: string; persona?: string } = {}) =>
+    api.get<{ jornadas: number; registros: number }>('/seguimiento-inventario/resumen', {
+      params: sinVacios(filtros),
+    }),
   resumenCajasAgrupado: () => api.get<Array<{
     caja_inicial: string;
     caja_fin: string;

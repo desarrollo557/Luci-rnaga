@@ -3,6 +3,7 @@ import { isAuthenticated, isLiderOrAdmin } from '../middlewares/auth.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import {
   descargarSeguimientoInventario,
+  resumenSeguimientoInventario,
   estadisticasProduccion,
   fuidConEstadoCaja,
   produccionDetallada,
@@ -16,6 +17,12 @@ router.get('/resumen-cajas-agrupado', isAuthenticated, asyncHandler(resumenCajas
 router.get('/estadisticas', isAuthenticated, asyncHandler(estadisticasProduccion));
 router.get('/estadisticas/detalle', isAuthenticated, asyncHandler(produccionDetallada));
 // Seguimiento de inventario en el formato oficial F-PSD-IDA-001.
+router.get(
+  '/seguimiento-inventario/resumen',
+  isAuthenticated,
+  isLiderOrAdmin,
+  asyncHandler(resumenSeguimientoInventario),
+);
 router.get(
   '/seguimiento-inventario/excel',
   isAuthenticated,

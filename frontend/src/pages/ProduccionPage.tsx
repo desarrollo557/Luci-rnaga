@@ -1,9 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { toast } from 'sonner';
-import { fechaHoyLocal, formatearHora } from '@/lib/fechas';
-import { toastApiError } from '@/lib/feedback';
-import { descargarBlob } from '@/lib/utils';
+import { formatearHora } from '@/lib/fechas';
 import {
   Activity,
   Boxes,
@@ -28,6 +25,7 @@ import {
   Modal,
   PageHeader,
   Select,
+  Spinner,
   Table,
   type Column,
 } from '@/components/ui';
@@ -51,6 +49,7 @@ import {
   type Digitador,
 } from '@/lib/api';
 import { intervaloRefresco } from '@/lib/refresco';
+import { useDescargaSeguimiento } from '@/lib/useDescargaSeguimiento';
 
 /** El estado de la caja es una escala reservada, no una serie más. */
 const COLOR_ESTADO_CAJA: Record<string, string> = {
@@ -89,42 +88,10 @@ export default function ProduccionPage() {
   const [eligiendoPeriodo, setEligiendoPeriodo] = useState(false);
   const [segDesde, setSegDesde] = useState('');
   const [segHasta, setSegHasta] = useState('');
-  const [descargandoSeguimiento, setDescargandoSeguimiento] = useState(false);
-
+  const seguimiento = useDescargaSeguimiento();
   const descargarSeguimiento = async () => {
-    setDescargandoSeguimiento(true);
-    try {
-      const respuesta = await reportesApi.descargarSeguimiento({ desde: segDesde, hasta: segHasta });
-      const periodo = segDesde && segHasta ? `_${segDesde}_a_${segHasta}` : segDesde ? `_desde_${segDesde}` : segHasta ? `_hasta_${segHasta}` : `_${fechaHoyLocal()}`;
-      descargarBlob(respuesta.data as Blob, `Seguimiento_Inventario${periodo}.xlsx`);
-      // El servidor dice cuántas jornadas trae: así se sabe si el documento salió
-      // con lo que se esperaba sin tener que abrirlo.
-      const jornadas = Number(respuesta.headers['x-total-jornadas'] ?? 0);
-      toast.success(
-        jornadas > 0
-          ? `Seguimiento descargado con ${jornadas.toLocaleString('es-CO')} ${jornadas === 1 ? 'jornada' : 'jornadas'}`
-          : 'Seguimiento de inventario descargado',
-      );
-      setEligiendoPeriodo(false);
-    } catch (error) {
-      // El servidor puede responder con un error en JSON; como la petición pide
-      // un blob, ese mensaje llega como blob y hay que leerlo para mostrarlo.
-      const datos = (error as { response?: { data?: unknown } }).response?.data;
-      if (datos instanceof Blob) {
-        try {
-          const { error: mensaje } = JSON.parse(await datos.text()) as { error?: string };
-          toast.error(mensaje ?? 'No se pudo descargar el seguimiento');
-          return;
-        } catch {
-          // No era JSON: cae al aviso genérico de abajo.
-        }
-      }
-      toastApiError(error, { context: 'No se pudo descargar el seguimiento:' });
-    } finally {
-      setDescargandoSeguimiento(false);
-    }
+    if (await seguimiento.descargar({ desde: segDesde, hasta: segHasta })) setEligiendoPeriodo(false);
   };
-
 
   const serieMensual = useMemo(
     () =>
@@ -260,9 +227,9 @@ export default function ProduccionPage() {
             <Button variant="ghost" onClick={() => setEligiendoPeriodo(false)}>
               Cancelar
             </Button>
-            <Button onClick={() => void descargarSeguimiento()} loading={descargandoSeguimiento}>
+            <Button onClick={() => void descargarSeguimiento()} loading={seguimiento.descargando}>
               <Download className="mr-2 size-4" />
-              Descargar
+              {seguimiento.descargando ? 'Generando…' : 'Descargar'}
             </Button>
           </>
         }
@@ -273,9 +240,23 @@ export default function ProduccionPage() {
             Deje las fechas vacías para incluir todo lo digitado.
           </p>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <DatePicker label="Desde" value={segDesde} onChange={setSegDesde} max={segHasta || undefined} />
-            <DatePicker label="Hasta" value={segHasta} onChange={setSegHasta} min={segDesde || undefined} />
+            <DatePicker label="Desde" value={segDesde} onChange={setSegDesde} max={segHasta || undefined} disabled={seguimiento.descargando} />
+            <DatePicker label="Hasta" value={segHasta} onChange={setSegHasta} min={segDesde || undefined} disabled={seguimiento.descargando} />
           </div>
+          {/*
+            La etapa en curso. Son etapas de verdad —consultar, armar, guardar—,
+            así que lo que se lee corresponde a lo que el servidor está haciendo.
+          */}
+          {seguimiento.mensaje && (
+            <div
+              role="status"
+              aria-live="polite"
+              className="flex items-center gap-3 rounded-lg border border-silver-200 bg-surface-2 px-3 py-2.5 text-sm text-silver-700"
+            >
+              <Spinner className="size-4 shrink-0 text-primary-600" />
+              <span>{seguimiento.mensaje}</span>
+            </div>
+          )}
         </div>
       </Modal>
 
