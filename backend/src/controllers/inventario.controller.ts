@@ -255,8 +255,22 @@ async function inventarioExistsByCode(codigo: unknown, excludeItems?: number | s
 }
 
 /** Lista todos los inventarios. */
+/**
+ * Listado de inventarios, uno por cliente.
+ *
+ * Trae además cuántas actas de transferencia tiene ese cliente. La pantalla lo
+ * usa para saber qué filas se pueden desplegar en árbol sin tener que preguntar
+ * por cada una: con una sola acta no hay nada que desplegar.
+ */
 export async function listInventario(_req: Request, res: Response): Promise<void> {
-  const rows = await query<Inventario>('SELECT * FROM inventario');
+  const rows = await query<Inventario>(`
+    SELECT i.*,
+           (SELECT COUNT(*) FROM moduloscliente mcl
+            WHERE mcl.id_submodulo = (
+              SELECT id_submodulo FROM moduloscliente WHERE codigo = i."CODIGO_DEL_CLIENTE" ORDER BY id LIMIT 1
+            )) AS total_actas
+    FROM inventario i
+  `);
   res.json(rows);
 }
 
@@ -471,6 +485,21 @@ export async function descargarInventarioExcel(req: Request, res: Response): Pro
     acta,
   );
 
+  enviarExcel(res, buffer, nombre);
+
+  void audit({
+    entidad: 'inventario',
+    entidadId: String(id),
+    accion: 'DESCARGAR',
+    detalle: `Descarga del inventario de ${inventario.CLIENTE ?? codigoCliente}${
+      acta ? `, acta ${acta}` : ''
+    } (${filas.length} registros)`,
+    usuario: req.session.user,
+  });
+}
+
+/** Cabeceras y cuerpo de una descarga de Excel. */
+function enviarExcel(res: Response, buffer: Buffer, nombre: string): void {
   res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
   // `filename*` va con el nombre codificado: el del cliente puede llevar tildes
   // y algunos navegadores cortan la descarga si llegan sin codificar.
@@ -479,13 +508,56 @@ export async function descargarInventarioExcel(req: Request, res: Response): Pro
     `attachment; filename="${nombre.replace(/[^ -~]/g, '_')}"; filename*=UTF-8''${encodeURIComponent(nombre)}`,
   );
   res.send(buffer);
+}
+
+/**
+ * Descarga el FUID de un cliente por su código, sin pasar por un registro de
+ * inventario.
+ *
+ * Existe aparte de `descargarInventarioExcel` por dos razones. La primera es que
+ * hace falta poder bajar el documento mientras se está creando el inventario,
+ * cuando todavía no hay fila en `inventario` de la que colgar la descarga. La
+ * segunda es el árbol de la pantalla: cada acta cuelga de un cliente, no de un
+ * inventario, y pedirla por el código del cliente evita tener que arrastrar el
+ * identificador del inventario hasta cada rama.
+ *
+ * Con `?acta=` baja solo esa acta de transferencia; sin ella, el cliente entero.
+ */
+export async function descargarFuidDeCliente(req: Request, res: Response): Promise<void> {
+  const { codigo } = req.params;
+  const cliente = await queryOne<{ entidad_remitente: string | null }>(
+    'SELECT entidad_remitente FROM moduloscliente WHERE codigo = ? ORDER BY id LIMIT 1',
+    [codigo],
+  );
+  if (!cliente) {
+    res.status(404).json({ error: `No se encontró un cliente con código ${codigo}` });
+    return;
+  }
+
+  const actaRaw = typeof req.query.acta === 'string' ? req.query.acta.trim() : '';
+  const acta = actaRaw.length > 0 ? actaRaw : null;
+
+  const filas = await query<FuidConEstadoRow>(fuidQueryPorActa(acta), acta ? [codigo, acta] : [codigo]);
+  if (filas.length === 0) {
+    res.status(404).json({
+      error: acta
+        ? `El acta ${acta} no tiene datos FUID registrados para generar el inventario`
+        : 'El cliente no tiene datos FUID registrados para generar el inventario',
+    });
+    return;
+  }
+
+  const buffer = await buildInventarioFuidExcel(filas);
+  // Sin fecha de creación el nombre toma la de hoy, que es cuando se descarga.
+  const nombre = inventarioFuidFilename(cliente.entidad_remitente, codigo, null, acta);
+  enviarExcel(res, buffer, nombre);
 
   void audit({
     entidad: 'inventario',
-    entidadId: String(id),
+    entidadId: codigo,
     accion: 'DESCARGAR',
-    detalle: `Descarga del inventario de ${inventario.CLIENTE ?? codigoCliente}${
-      acta ? `, acta ${acta}` : ''
+    detalle: `Descarga del FUID de ${cliente.entidad_remitente ?? codigo}${
+      acta ? `, acta ${acta}` : ' (cliente completo)'
     } (${filas.length} registros)`,
     usuario: req.session.user,
   });

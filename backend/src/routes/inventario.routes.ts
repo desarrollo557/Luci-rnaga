@@ -13,6 +13,7 @@ import {
   listClientesParaInventario,
   getClienteParaInventario,
   descargarInventarioExcel,
+  descargarFuidDeCliente,
 } from '../controllers/inventario.controller.js';
 
 const router = Router();
@@ -20,6 +21,9 @@ router.param('id', idNumerico);
 
 router.get('/inventario', isAuthenticated, isLiderOrAdmin, asyncHandler(listInventario));
 router.get('/inventario/clientes', isAuthenticated, isLiderOrAdmin, asyncHandler(listClientesParaInventario));
+// La ruta del Excel va antes que la del cliente a secas: si no, `:codigo`
+// capturaría también el segmento `excel`.
+router.get('/inventario/clientes/:codigo/excel', isAuthenticated, isLiderOrAdmin, asyncHandler(descargarFuidDeCliente));
 router.get('/inventario/clientes/:codigo', isAuthenticated, isLiderOrAdmin, asyncHandler(getClienteParaInventario));
 router.get('/inventario/:id/fuid', isAuthenticated, isLiderOrAdmin, asyncHandler(getInventarioFuid));
 router.get('/inventario/:id', isAuthenticated, isLiderOrAdmin, asyncHandler(getInventario));

@@ -376,6 +376,16 @@ export const inventarioApi = {
       responseType: 'blob',
       params: acta ? { acta } : undefined,
     }),
+  /**
+   * El FUID de un cliente por su código, sin depender de que exista el registro
+   * de inventario. Es lo que usan el árbol de actas y el formulario, donde se
+   * puede querer el documento antes de guardar nada.
+   */
+  descargarExcelDeCliente: (codigo: string, acta?: string | null) =>
+    api.get(`/inventario/clientes/${encodeURIComponent(codigo)}/excel`, {
+      responseType: 'blob',
+      params: acta ? { acta } : undefined,
+    }),
   clientesParaInventario: () =>
     api.get<Array<Pick<ClienteParaInventario, 'codigo' | 'entidad_remitente'>>>('/inventario/clientes'),
   clienteParaInventario: (codigo: string) =>
