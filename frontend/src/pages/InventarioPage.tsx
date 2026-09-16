@@ -36,6 +36,7 @@ import { toastApiError } from '@/lib/feedback';
 import { cn } from '@/lib/cn';
 import { descargarBlob } from '@/lib/utils';
 import { invalidateDomain } from '@/lib/queryInvalidation';
+import { intervaloRefresco } from '@/lib/refresco';
 import { aFechaISO, fechaHoyLocal, formatearFecha, hace } from '@/lib/fechas';
 import { type DataRow, type FuidConEstado, type Inventario, tieneAlgunRol } from '@/types';
 import { useAuthStore } from '@/stores/authStore';
@@ -221,6 +222,9 @@ function ArbolDeActas({
     queryKey: ['inventario', 'actas', codigo],
     queryFn: () => inventarioApi.clienteParaInventario(codigo).then((r) => r.data.actas ?? []),
     enabled: Boolean(codigo),
+    // Solo mientras el árbol está desplegado: preguntar por actas que nadie
+    // está viendo es tráfico regalado.
+    refetchInterval: intervaloRefresco(Boolean(codigo)),
   });
 
   const actas = actasQuery.data ?? [];
@@ -427,6 +431,9 @@ export default function InventarioPage() {
   const { data: rows = [], isLoading } = useQuery({
     queryKey: ['inventario'],
     queryFn: async () => (await inventarioApi.list()).data,
+    // Se mantiene al día sola: la digitación de otras personas cambia las cifras
+    // de trabajo sin reflejar mientras esta pantalla está abierta.
+    refetchInterval: intervaloRefresco(),
   });
 
   const { data: clientesParaInventario = [] } = useQuery({

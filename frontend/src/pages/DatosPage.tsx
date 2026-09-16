@@ -24,6 +24,7 @@ import { fuidApi, getApiErrorCode, modulosCajaApi } from '@/lib/api';
 import { cn } from '@/lib/cn';
 import { toastApiError } from '@/lib/feedback';
 import { invalidateDomain } from '@/lib/queryInvalidation';
+import { intervaloRefresco } from '@/lib/refresco';
 import { retornoDeCaja } from '@/lib/navegacion';
 import { OPCIONES_FRECUENCIA, OPCIONES_OTRO, OPCIONES_SOPORTE } from '@/lib/catalogos';
 import { limiteDe } from '@/lib/limites';
@@ -932,6 +933,9 @@ export default function DatosPage() {
     queryKey: ['fuiddatosreal', 'list', cajaCode],
     queryFn: () => fuidApi.list({ caja: cajaCode }).then((res) => res.data),
     enabled: Boolean(cajaCode),
+    // Dos técnicas pueden digitar en la misma caja: la tabla muestra lo que
+    // lleva la otra sin tener que recargar.
+    refetchInterval: intervaloRefresco(Boolean(cajaCode)),
   });
 
   // El técnico necesita fijar su UPD de arranque antes de digitar en esta caja.
