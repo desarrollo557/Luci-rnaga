@@ -197,8 +197,6 @@ interface ArbolDeActasProps {
   claveDescarga: (codigo: string, acta?: string | null) => string;
   onDescargar: (acta: string | null) => void;
   onVerPrevia: (acta: string | null) => void;
-  /** Registros que el inventario del cliente tiene ya reflejados. */
-  registrosReflejados: number;
 }
 
 /**
@@ -218,7 +216,6 @@ function ArbolDeActas({
   claveDescarga,
   onDescargar,
   onVerPrevia,
-  registrosReflejados,
 }: ArbolDeActasProps) {
   const actasQuery = useQuery({
     queryKey: ['inventario', 'actas', codigo],
@@ -229,13 +226,6 @@ function ArbolDeActas({
   const actas = actasQuery.data ?? [];
   const registrosVivos = actas.reduce((suma, acta) => suma + (acta.registros ?? 0), 0);
   const cajasVivas = actas.reduce((suma, acta) => suma + (acta.totalCajas ?? 0), 0);
-  /*
-   * Con el cliente desfasado, el desfase viene de alguna acta. No se puede saber
-   * de cuál con exactitud —el inventario guarda un único total—, pero sí señalar
-   * la más reciente, que es de donde suele venir el trabajo nuevo.
-   */
-  const hayDesfase = registrosVivos !== registrosReflejados;
-  const actaMasReciente = hayDesfase && actas.length > 0 ? actas[actas.length - 1].id : null;
 
   return (
     <div className="space-y-2 pl-2">
@@ -301,7 +291,7 @@ function ArbolDeActas({
             <div
               className={cn(
                 'flex flex-wrap items-center justify-between gap-3 rounded-lg border px-3 py-2',
-                acta.id === actaMasReciente
+                (acta.registrosSinReflejar ?? 0) > 0
                   ? 'border-amber-300 bg-amber-50/40'
                   : 'border-silver-200 bg-surface',
               )}
@@ -313,8 +303,14 @@ function ArbolDeActas({
                   {(acta.registros ?? 0).toLocaleString('es-CO')}{' '}
                   {acta.registros === 1 ? 'registro' : 'registros'}
                 </span>
-                {acta.id === actaMasReciente && (
-                  <Badge color="amber">sin reflejar</Badge>
+                {/*
+                  Cuenta exacta, no una estimación: son los registros de esta
+                  acta creados después de la última lectura del inventario.
+                */}
+                {(acta.registrosSinReflejar ?? 0) > 0 && (
+                  <Badge color="amber">
+                    {acta.registrosSinReflejar.toLocaleString('es-CO')} sin reflejar
+                  </Badge>
                 )}
                 {acta.cajaIniciar && acta.cajaFin && (
                   <span className="text-xs text-silver-500">
@@ -1193,7 +1189,6 @@ export default function InventarioPage() {
             claveDescarga={claveDescarga}
             onDescargar={(acta) => void descargarFuid(row.CODIGO_DEL_CLIENTE, acta, row.CLIENTE)}
             onVerPrevia={(acta) => abrirVistaPrevia(row, acta)}
-            registrosReflejados={row.REGISTROS_PROCESADOS ?? 0}
           />
         )}
       />
