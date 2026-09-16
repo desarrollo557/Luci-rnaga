@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { Download, ExternalLink, Eye, Pencil, Plus, RefreshCw, RotateCcw, Search, Trash2 } from 'lucide-react';
-import { Badge, Button, ConfirmDialog, DatePicker, Input, Modal, PageHeader, Select, Table, type Column } from '@/components/ui';
+import { ChevronRight, Download, ExternalLink, Eye, Pencil, Plus, RefreshCw, RotateCcw, Search, Trash2 } from 'lucide-react';
+import { Badge, Button, ConfirmDialog, DatePicker, Input, Modal, PageHeader, Select, Spinner, Table, type Column } from '@/components/ui';
 import { inventarioApi, type ActaDelCliente } from '@/lib/api';
 import { toastApiError } from '@/lib/feedback';
 import { cn } from '@/lib/cn';
@@ -137,6 +137,122 @@ function camposDelActa(
   };
 }
 
+interface ArbolDeActasProps {
+  codigo: string;
+  cliente: string | null;
+  /** Clave de la descarga en curso, o null si no hay ninguna. */
+  descargando: string | null;
+  claveDescarga: (codigo: string, acta?: string | null) => string;
+  onDescargar: (acta: string | null) => void;
+}
+
+/**
+ * Las actas de transferencia que cuelgan de un cliente, dentro de su fila del
+ * inventario.
+ *
+ * El inventario se lleva por cliente, pero el trabajo se entrega por acta, así
+ * que hacía falta ver de un vistazo cuántas actas tiene un cliente, qué cajas
+ * abarca cada una y poder bajarse el FUID de una sola sin arrastrar el del resto.
+ *
+ * Las actas se piden al desplegar y no antes: la tabla lista muchos clientes y
+ * preguntar por todos de entrada serían tantas consultas como filas.
+ */
+function ArbolDeActas({ codigo, cliente, descargando, claveDescarga, onDescargar }: ArbolDeActasProps) {
+  const actasQuery = useQuery({
+    queryKey: ['inventario', 'actas', codigo],
+    queryFn: () => inventarioApi.clienteParaInventario(codigo).then((r) => r.data.actas ?? []),
+    enabled: Boolean(codigo),
+  });
+
+  const actas = actasQuery.data ?? [];
+
+  return (
+    <div className="space-y-2 pl-2">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <p className="text-xs font-semibold uppercase tracking-wide text-silver-500">
+          Actas de {cliente ?? codigo}
+        </p>
+        <Button
+          size="sm"
+          variant="secondary"
+          loading={descargando === claveDescarga(codigo, null)}
+          disabled={descargando !== null}
+          onClick={() => onDescargar(null)}
+        >
+          <Download className="mr-2 size-4" />
+          Todo el FUID del cliente
+        </Button>
+      </div>
+
+      {actasQuery.isLoading && (
+        <div className="flex items-center gap-2 py-3 text-sm text-silver-500">
+          <Spinner className="size-4" />
+          <span>Cargando las actas…</span>
+        </div>
+      )}
+
+      {actasQuery.isError && (
+        <p className="py-2 text-sm text-red-600">No se pudieron cargar las actas de este cliente.</p>
+      )}
+
+      {!actasQuery.isLoading && !actasQuery.isError && actas.length === 0 && (
+        <p className="py-2 text-sm text-silver-500">Este cliente no tiene actas registradas.</p>
+      )}
+
+      {actas.map((acta, i) => {
+        const ultima = i === actas.length - 1;
+        const sinCajas = acta.totalCajas === 0;
+        return (
+          <div key={acta.id} className="relative pl-6">
+            {/*
+              Conector del árbol, dibujado con dos líneas en vez de con caracteres
+              como "├─": la tipografía los recortaba y su ancho cambiaba con la
+              fuente. El tramo vertical sube 0,5rem para cubrir la separación
+              entre tarjetas y que la línea se lea continua; en la última acta se
+              corta a media altura, que es donde la rama termina.
+            */}
+            <span
+              aria-hidden="true"
+              className={cn(
+                'absolute left-2 w-px bg-silver-300',
+                ultima ? 'top-[-0.5rem] h-[calc(50%+0.5rem)]' : 'top-[-0.5rem] h-[calc(100%+0.5rem)]',
+              )}
+            />
+            <span aria-hidden="true" className="absolute left-2 top-1/2 h-px w-3 bg-silver-300" />
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-silver-200 bg-surface px-3 py-2">
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+                <span className="font-medium text-silver-800">{acta.acta ?? 'SIN NÚMERO'}</span>
+                <span className="text-xs text-silver-500">
+                  {acta.totalCajas} {acta.totalCajas === 1 ? 'caja' : 'cajas'}
+                </span>
+                {acta.cajaIniciar && acta.cajaFin && (
+                  <span className="text-xs text-silver-500">
+                    {acta.cajaIniciar} a {acta.cajaFin}
+                  </span>
+                )}
+                {acta.fecha && (
+                  <span className="text-xs text-silver-500">{formatearFecha(acta.fecha)}</span>
+                )}
+              </div>
+              <Button
+                size="sm"
+                variant="ghost"
+                loading={descargando === claveDescarga(codigo, acta.acta)}
+                disabled={sinCajas || descargando !== null}
+                onClick={() => onDescargar(acta.acta)}
+                title={sinCajas ? 'Esta acta no tiene cajas' : `Descargar el FUID del acta ${acta.acta ?? ''}`}
+              >
+                <Download className="mr-2 size-4" />
+                Descargar
+              </Button>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 const PAGE_SIZE = 25;
 
 function Chip({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
@@ -178,17 +294,11 @@ export default function InventarioPage() {
    * siempre, y con varias hay que decir de cuál habla este inventario.
    */
   const [actasDelCliente, setActasDelCliente] = useState<ActaDelCliente[]>([]);
-  /** Inventario cuyo FUID se va a descargar cuando el cliente tiene varias actas. */
-  const [eligiendoActa, setEligiendoActa] = useState<{
-    inventario: Inventario;
-    actas: ActaDelCliente[];
-  } | null>(null);
   /*
-   * Qué se está bajando ahora mismo dentro del diálogo de elección: `acta: null`
-   * es el FUID completo. Hace falta distinguirlo para marcar como ocupado el
-   * botón que se pulsó y no otro, porque todos pertenecen al mismo inventario.
+   * Clientes cuyo árbol de actas está desplegado en la tabla, por su ITEMS. Se
+   * guarda aquí y no en la tabla porque es la pantalla la que decide qué se abre.
    */
-  const [descargandoActa, setDescargandoActa] = useState<{ acta: string | null } | null>(null);
+  const [desplegados, setDesplegados] = useState<Set<number>>(new Set());
 
   const [q, setQ] = useState('');
   const [estado, setEstado] = useState('');
@@ -401,78 +511,62 @@ export default function InventarioPage() {
   });
 
   /**
-   * Descarga del inventario en Excel.
+   * Qué descarga está en curso, identificada por cliente y acta.
    *
-   * El servidor responde con el archivo, pero también puede responder con un
-   * error en JSON —por ejemplo si el cliente todavía no tiene registros—; como
-   * la petición pide un blob, ese mensaje llega como blob y hay que leerlo para
-   * poder mostrarlo.
+   * Hace falta la pareja y no un simple booleano porque en el árbol conviven
+   * varios botones a la vez: el del cliente y el de cada una de sus actas. Con
+   * una sola marca se pondrían todos a girar.
    */
-  const [descargando, setDescargando] = useState<number | null>(null);
+  const [descargando, setDescargando] = useState<string | null>(null);
+  const claveDescarga = (codigo: string, acta?: string | null) => `${codigo}|${acta ?? ''}`;
 
   /**
-   * Descarga el FUID de un inventario.
+   * Descarga el FUID de un cliente en Excel.
    *
-   * Sin `acta` baja el del cliente completo; con ella, solo el de esa acta de
-   * transferencia. El nombre del archivo lleva el acta cuando la hay, para poder
-   * distinguir varios archivos del mismo cliente en la carpeta de descargas.
+   * Sin `acta` baja el documento completo del cliente; con ella, solo el de esa
+   * acta de transferencia. El nombre del archivo lleva el acta cuando la hay,
+   * para distinguir varios archivos del mismo cliente en la carpeta de descargas.
+   *
+   * Va por el código del cliente y no por el identificador del inventario para
+   * que funcione igual desde el árbol y desde el formulario, incluso cuando el
+   * inventario todavía no se ha guardado.
+   *
+   * El servidor responde con el archivo, pero también puede responder con un
+   * error en JSON —por ejemplo si esa acta no tiene registros—; como la petición
+   * pide un blob, ese mensaje llega como blob y hay que leerlo para mostrarlo.
    */
-  const descargarInventario = async (row: Inventario, acta?: string | null) => {
-    setDescargando(row.ITEMS);
-    setDescargandoActa({ acta: acta ?? null });
+  const descargarFuid = async (
+    codigo: string | null | undefined,
+    acta: string | null,
+    nombreCliente?: string | null,
+  ) => {
+    if (!codigo) {
+      toast.error('El inventario no tiene código de cliente, no hay de dónde sacar el FUID');
+      return;
+    }
+    setDescargando(claveDescarga(codigo, acta));
     try {
-      const respuesta = await inventarioApi.descargarExcel(row.ITEMS, acta);
+      const respuesta = await inventarioApi.descargarExcelDeCliente(codigo, acta);
       const limpio = (valor: unknown) => String(valor ?? '').replace(/[^A-Za-z0-9]+/g, '_');
       const porActa = acta ? `_Acta_${limpio(acta)}` : '';
-      const nombre = `Inventario_${limpio(
-        row.CLIENTE ?? row.CODIGO_DEL_CLIENTE ?? 'cliente',
-      )}${porActa}_${fechaHoyLocal()}.xlsx`;
+      const nombre = `Inventario_${limpio(nombreCliente ?? codigo)}${porActa}_${fechaHoyLocal()}.xlsx`;
       descargarBlob(respuesta.data as Blob, nombre);
-      toast.success(acta ? `Inventario del acta ${acta} descargado` : 'Inventario completo descargado');
-      setEligiendoActa(null);
+      toast.success(acta ? `FUID del acta ${acta} descargado` : 'FUID completo del cliente descargado');
     } catch (error) {
       const datos = (error as { response?: { data?: unknown } }).response?.data;
       if (datos instanceof Blob) {
         try {
           const { error: mensaje } = JSON.parse(await datos.text()) as { error?: string };
-          toast.error(mensaje ?? 'No se pudo descargar el inventario');
+          toast.error(mensaje ?? 'No se pudo descargar el FUID');
           return;
         } catch {
           // No era JSON: cae al aviso genérico de abajo.
         }
       }
-      toastApiError(error, { context: 'No se pudo descargar el inventario:' });
+      toastApiError(error, { context: 'No se pudo descargar el FUID:' });
     } finally {
       setDescargando(null);
-      setDescargandoActa(null);
     }
-  };
-
-  /**
-   * Lo que hace el botón de descarga.
-   *
-   * Con un cliente de una sola acta baja el archivo de una vez, que es lo que
-   * esta pantalla hacía siempre. Solo cuando el cliente tiene varias hay algo que
-   * decidir —todo el FUID o el de un acta concreta—, y entonces pregunta.
-   *
-   * Si la consulta de actas falla se baja el FUID completo: quedarse sin descarga
-   * por no haber podido ofrecer una opción sería peor que no ofrecerla.
-   */
-  const iniciarDescarga = async (row: Inventario) => {
-    setDescargando(row.ITEMS);
-    let actas: ActaDelCliente[] = [];
-    try {
-      const { data } = await inventarioApi.clienteParaInventario(row.CODIGO_DEL_CLIENTE ?? '');
-      actas = data.actas ?? [];
-    } catch {
-      // Se sigue de largo con la descarga completa.
-    }
-    setDescargando(null);
-    if (actas.length > 1) {
-      setEligiendoActa({ inventario: row, actas });
-      return;
-    }
-    await descargarInventario(row);
   };
 
   const retryMutation = useMutation({
@@ -532,11 +626,52 @@ export default function InventarioPage() {
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const pageRows = filtered.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
 
+  const alternarDespliegue = (items: number) =>
+    setDesplegados((previos) => {
+      const siguiente = new Set(previos);
+      if (siguiente.has(items)) siguiente.delete(items);
+      else siguiente.add(items);
+      return siguiente;
+    });
+
   const columns: Column<Inventario>[] = [
+    {
+      // Solo se despliegan los clientes con más de un acta: con una sola, lo que
+      // habría debajo es lo mismo que ya dice la fila.
+      key: 'desplegar',
+      header: '',
+      render: (row) => {
+        if ((row.total_actas ?? 0) <= 1) return <span className="inline-block w-5" />;
+        const abierta = desplegados.has(row.ITEMS);
+        return (
+          <button
+            type="button"
+            onClick={() => alternarDespliegue(row.ITEMS)}
+            className="rounded p-0.5 text-silver-500 transition-colors hover:bg-silver-100 hover:text-silver-700"
+            aria-expanded={abierta}
+            aria-label={abierta ? 'Ocultar las actas' : `Ver las ${row.total_actas} actas`}
+            title={abierta ? 'Ocultar las actas' : `Ver las ${row.total_actas} actas`}
+          >
+            <ChevronRight className={cn('size-4 transition-transform', abierta && 'rotate-90')} />
+          </button>
+        );
+      },
+    },
     { key: 'ITEMS', header: 'ID' },
     { key: 'CODIGO_DEL_CLIENTE', header: 'Código Cliente' },
     { key: 'CLIENTE', header: 'Cliente' },
-    { key: 'No_ACTA', header: 'N° Acta' },
+    {
+      key: 'No_ACTA',
+      header: 'N° Acta',
+      render: (row) => (
+        <div className="flex items-center gap-2">
+          <span>{row.No_ACTA ?? '—'}</span>
+          {(row.total_actas ?? 0) > 1 && (
+            <Badge color="blue">{row.total_actas} actas</Badge>
+          )}
+        </div>
+      ),
+    },
     {
       key: 'TOTAL_CAJAS',
       header: 'Total Cajas',
@@ -641,8 +776,8 @@ export default function InventarioPage() {
           <Button
             size="sm"
             variant="ghost"
-            onClick={() => void iniciarDescarga(row)}
-            loading={descargando === row.ITEMS}
+            onClick={() => void descargarFuid(row.CODIGO_DEL_CLIENTE, null, row.CLIENTE)}
+            loading={descargando === claveDescarga(row.CODIGO_DEL_CLIENTE ?? '', null)}
             aria-label="Descargar inventario en Excel"
             title="Descargar en Excel"
           >
@@ -773,6 +908,16 @@ export default function InventarioPage() {
         rowKey={(row) => row.ITEMS}
         loading={isLoading}
         emptyMessage={hayFiltros ? 'No se encontraron registros con esos filtros' : 'No hay inventario registrado'}
+        isExpanded={(row) => desplegados.has(row.ITEMS)}
+        renderExpansion={(row) => (
+          <ArbolDeActas
+            codigo={row.CODIGO_DEL_CLIENTE ?? ''}
+            cliente={row.CLIENTE}
+            descargando={descargando}
+            claveDescarga={claveDescarga}
+            onDescargar={(acta) => void descargarFuid(row.CODIGO_DEL_CLIENTE, acta, row.CLIENTE)}
+          />
+        )}
       />
 
       {totalPages > 1 && (
@@ -870,6 +1015,46 @@ export default function InventarioPage() {
                 value={form.ANEXOS}
                 onChange={(e) => setForm({ ...form, ANEXOS: e.target.value })}
               />
+            </div>
+
+            {/* Descargas desde el propio formulario. Van por el código del
+                cliente, no por el inventario, así que también sirven mientras se
+                está creando uno que todavía no se ha guardado. */}
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              <Button
+                type="button"
+                size="sm"
+                variant="secondary"
+                disabled={!form.CODIGO_DEL_CLIENTE || !form.No_ACTA || descargando !== null}
+                loading={descargando === claveDescarga(form.CODIGO_DEL_CLIENTE, form.No_ACTA)}
+                onClick={() =>
+                  void descargarFuid(form.CODIGO_DEL_CLIENTE, form.No_ACTA, form.CLIENTE)
+                }
+                title={
+                  form.No_ACTA
+                    ? `Descargar el FUID del acta ${form.No_ACTA}`
+                    : 'Elija primero un número de acta'
+                }
+              >
+                <Download className="mr-2 size-4" />
+                FUID del acta {form.No_ACTA || '—'}
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="secondary"
+                disabled={!form.CODIGO_DEL_CLIENTE || descargando !== null}
+                loading={descargando === claveDescarga(form.CODIGO_DEL_CLIENTE, null)}
+                onClick={() => void descargarFuid(form.CODIGO_DEL_CLIENTE, null, form.CLIENTE)}
+              >
+                <Download className="mr-2 size-4" />
+                Todo el FUID del cliente
+              </Button>
+              {actasDelCliente.length > 1 && (
+                <span className="text-xs text-silver-500">
+                  Este cliente tiene {actasDelCliente.length} actas.
+                </span>
+              )}
             </div>
           </div>
 
@@ -1126,57 +1311,6 @@ export default function InventarioPage() {
         onCancel={() => setDeleting(null)}
       />
 
-      {/* Elección de qué FUID bajar. Solo aparece cuando el cliente tiene más de
-          un acta; con una sola no hay nada que preguntar y el archivo baja de una
-          vez desde el botón de la tabla. */}
-      <Modal
-        open={eligiendoActa !== null}
-        onClose={() => setEligiendoActa(null)}
-        title="Descargar FUID"
-        size="sm"
-      >
-        {eligiendoActa && (
-          <div className="space-y-4">
-            <p className="text-sm text-silver-600">
-              {eligiendoActa.inventario.CLIENTE ?? eligiendoActa.inventario.CODIGO_DEL_CLIENTE} tiene{' '}
-              {eligiendoActa.actas.length} actas de transferencia. Elija qué descargar.
-            </p>
-
-            <Button
-              className="w-full justify-center"
-              loading={descargandoActa?.acta === null}
-              disabled={descargandoActa !== null}
-              onClick={() => void descargarInventario(eligiendoActa.inventario)}
-            >
-              <Download className="mr-2 size-4" />
-              Todo el FUID del cliente
-            </Button>
-
-            <div>
-              <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-silver-500">
-                O solo una acta
-              </p>
-              <div className="space-y-2">
-                {eligiendoActa.actas.map((acta) => (
-                  <Button
-                    key={acta.id}
-                    variant="secondary"
-                    className="w-full justify-between"
-                    loading={descargandoActa?.acta === acta.acta}
-                    disabled={acta.totalCajas === 0 || descargandoActa !== null}
-                    onClick={() => void descargarInventario(eligiendoActa.inventario, acta.acta)}
-                  >
-                    <span>{acta.acta ?? 'SIN NÚMERO'}</span>
-                    <span className="text-xs text-silver-500">
-                      {acta.totalCajas} {acta.totalCajas === 1 ? 'caja' : 'cajas'}
-                    </span>
-                  </Button>
-                ))}
-              </div>
-            </div>
-          </div>
-        )}
-      </Modal>
     </div>
   );
 }
