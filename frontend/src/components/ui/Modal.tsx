@@ -1,4 +1,4 @@
-import { useEffect, useId, type ReactNode } from 'react';
+import { useEffect, useId, useRef, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
 import { cn } from '@/lib/cn';
@@ -39,6 +39,27 @@ export function Modal({
   dismissible = true,
 }: ModalProps) {
   const titleId = useId();
+  const panel = useRef<HTMLDivElement>(null);
+
+  /*
+   * Al abrir, el foco pasa al propio diálogo, no a un campo.
+   *
+   * Ningún campo lleva foco automático a propósito: en un formulario largo,
+   * uno resaltado al abrir parece el que hay que llenar, y quien digita recorre
+   * los campos en el orden del documento que tiene delante. Pero el foco tiene
+   * que entrar en el diálogo de todos modos: si se quedara en la página de
+   * detrás, tabular movería por lo que está tapado por el fondo oscuro y quien
+   * use teclado o lector de pantalla no encontraría el formulario.
+   *
+   * El panel no muestra contorno al recibirlo, así que no se resalta nada.
+   */
+  useEffect(() => {
+    if (!open) return;
+    // Si algo dentro del diálogo ya pidió el foco, se respeta: hay pantallas,
+    // como un buscador, donde empezar escribiendo sí es lo que toca.
+    const dentro = panel.current?.contains(document.activeElement);
+    if (!dentro) panel.current?.focus();
+  }, [open]);
 
   useEffect(() => {
     if (!open) return;
@@ -64,11 +85,13 @@ export function Modal({
         aria-hidden="true"
       />
       <div
+        ref={panel}
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
+        tabIndex={-1}
         className={cn(
-          'relative z-10 w-full rounded-xl bg-surface shadow-2xl ring-1 ring-silver-900/5 animate-[modal-panel-in_0.25s_ease-out]',
+          'relative z-10 w-full rounded-xl bg-surface shadow-2xl ring-1 ring-silver-900/5 outline-none animate-[modal-panel-in_0.25s_ease-out]',
           sizeClasses[size],
         )}
       >
