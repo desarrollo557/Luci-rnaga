@@ -195,7 +195,7 @@ export async function createFuid(req: Request, res: Response): Promise<void> {
      * no se atribuiría a ninguna jornada.
      */
     await registrarDigitacion(
-      (sql, params) => conn.query(sql, params),
+      async (sql, params) => (await conn.query<{ affectedRows: number }>(sql, params))[0].affectedRows,
       body.caja,
       body.elaborado_por ?? `${user.nombre.toUpperCase()} (${user.cc})`,
     );

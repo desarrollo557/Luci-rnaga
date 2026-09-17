@@ -620,9 +620,22 @@ export async function produccionDetallada(req: Request, res: Response): Promise<
  * sigue abierta aparece como caja final de un día y como caja inicial del
  * siguiente. Cuándo se cierra una caja y por qué está en `cicloCaja.service.ts`.
  *
- * El cierre se atribuye a una sola jornada porque se exige que coincidan las dos
- * cosas: el día de cierre y la persona. Si dos técnicas tocaron la misma caja el
- * mismo día, la caja cuenta para quien digitó su último registro, no para las dos.
+ * **Una caja pertenece a la jornada de su último registro**, y eso se deduce de
+ * los propios registros, no de ningún estado guardado en la caja. Es una
+ * decisión deliberada y costó un fallo aprenderla: contar con el estado dejaba
+ * fuera todo lo digitado antes de que ese estado existiera, y el informe salía
+ * con cero cajas terminadas en jornadas en las que se habían terminado varias.
+ * Deducirlo de los registros vale para todo el histórico sin tocar un solo dato,
+ * y no le pide a nadie que marque nada.
+ *
+ * El cierre cae en una sola jornada porque se exigen las dos cosas a la vez: el
+ * día del último registro y su autor. Si dos técnicas tocaron la misma caja el
+ * mismo día, la caja cuenta para quien digitó el último registro, no para las dos.
+ *
+ * La contrapartida: una caja que queda a medias al acabar el día cuenta ese día
+ * y se mueve al siguiente en cuanto se retoma. El total de un periodo ya cerrado
+ * siempre es exacto; solo el día en curso puede ir por delante, y como mucho por
+ * la caja que se está trabajando.
  *
  * **Los JOIN son LEFT a propósito.** Con JOIN interno, un registro cuya caja no
  * tenga fila en `modulos_caja` —cosa corriente entre los registros heredados de
@@ -651,7 +664,7 @@ export const SEGUIMIENTO_QUERY = `
          (array_agg(${NUMERO_DE_CAJA} ORDER BY ${CRONOLOGICO}) FILTER (WHERE ${NUMERO_DE_CAJA} IS NOT NULL))[1] AS caja_ini,
          (array_agg(${NUMERO_DE_CAJA} ORDER BY ${CRONOLOGICO_INVERSO}) FILTER (WHERE ${NUMERO_DE_CAJA} IS NOT NULL))[1] AS caja_fin,
          COUNT(DISTINCT f.caja) FILTER (
-           WHERE mc.fecha_finalizacion = f.fecha_del_dato AND mc.finalizada_por = f.elaborado_por
+           WHERE cierre.fecha_cierre = f.fecha_del_dato AND cierre.autor_cierre = f.elaborado_por
          ) AS total_cajas,
          MIN(NULLIF(substring(f.upd from '^UPD([0-9]{7})$'), '')::int) AS upd_ini,
          MAX(NULLIF(substring(f.upd from '^UPD([0-9]{7})$'), '')::int) AS upd_fin,
@@ -661,6 +674,13 @@ export const SEGUIMIENTO_QUERY = `
   FROM fuiddatosreal f
   LEFT JOIN modulos_caja mc ON mc.caja_modulo = f.caja
   LEFT JOIN moduloscliente mcl ON mcl.id = mc.id_modulo_caja
+  LEFT JOIN (
+    SELECT DISTINCT ON (caja) caja,
+           fecha_del_dato AS fecha_cierre,
+           elaborado_por  AS autor_cierre
+      FROM fuiddatosreal
+     ORDER BY caja, created_at DESC NULLS LAST, id DESC
+  ) cierre ON cierre.caja = f.caja
 `;
 
 export const SEGUIMIENTO_AGRUPACION = `

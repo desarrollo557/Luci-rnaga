@@ -33,12 +33,29 @@ pg.types.setTypeParser(1114, (v) => v); // timestamp sin zona
 pg.types.setTypeParser(1083, (v) => v); // time
 pg.types.setTypeParser(20, (v) => Number(v)); // bigint: los COUNT(*) vuelven como número
 
+/**
+ * Qué le falta a la configuración de la base para poder conectar, o null si
+ * está completa.
+ *
+ * Se comprueba al arrancar y no al primer uso. Antes el pool aceptaba como
+ * respaldo las variables `DB_*` de la época de MySQL: un `.env` antiguo, con
+ * `DB_HOST=localhost` y sin ninguna `PG_*`, dejaba arrancar el servidor y cada
+ * petición moría con un `ECONNREFUSED` a `localhost:5432` sin que nada dijera
+ * cuál era el problema. Ese respaldo ya no existe: solo se leen las `PG_*`.
+ */
+export function faltaConfiguracionDeBase(): string | null {
+  const faltan = ['PG_HOST', 'PG_USER', 'PG_PASSWORD'].filter((variable) => !process.env[variable]);
+  if (faltan.length > 0) return `faltan ${faltan.join(', ')} en backend/.env`;
+  if (process.env.PG_PASSWORD === 'change-me') return 'PG_PASSWORD todavía tiene el valor de ejemplo';
+  return null;
+}
+
 export const pool = new Pool({
-  host: process.env.PG_HOST || process.env.DB_HOST,
+  host: process.env.PG_HOST,
   port: Number(process.env.PG_PORT || 5432),
-  database: process.env.PG_DATABASE || process.env.DB_NAME || 'postgres',
-  user: process.env.PG_USER || process.env.DB_USER,
-  password: process.env.PG_PASSWORD || process.env.DB_PASSWORD,
+  database: process.env.PG_DATABASE || 'postgres',
+  user: process.env.PG_USER,
+  password: process.env.PG_PASSWORD,
   max: DB_CONNECTION_LIMIT,
   // Supabase exige TLS; su certificado lo firma una CA propia que no está en el
   // almacén del sistema, de ahí que no se verifique la cadena.

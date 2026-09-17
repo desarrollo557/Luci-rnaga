@@ -56,7 +56,19 @@ function columnaDelMensaje(sqlMessage: string | undefined): string | null {
 }
 
 /** Middleware de errores central. */
-export function errorHandler(err: unknown, _req: Request, res: Response, _next: NextFunction): void {
+export function errorHandler(err: unknown, _req: Request, res: Response, next: NextFunction): void {
+  /*
+   * Si la respuesta ya salió no se puede enviar otra: Express lanzaría
+   * ERR_HTTP_HEADERS_SENT y el error real quedaría enterrado bajo ese ruido.
+   * Pasa, por ejemplo, cuando express-session no consigue guardar la sesión al
+   * terminar la respuesta y avisa con next(err). Se delega en el manejador por
+   * defecto de Express, que cierra la conexión.
+   */
+  if (res.headersSent) {
+    next(err);
+    return;
+  }
+
   if (err instanceof ApiError) {
     res.status(err.status).json({ error: err.message });
     return;

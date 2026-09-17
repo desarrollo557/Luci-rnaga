@@ -1,4 +1,4 @@
-import { afterAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { PGlite } from '@electric-sql/pglite';
 import { AJUSTES } from '../../config/esquema.js';
 import { SEGUIMIENTO_AGRUPACION, SEGUIMIENTO_QUERY } from '../../controllers/reportes.controller.js';
@@ -54,7 +54,8 @@ const numerar = (sql: string) => {
   return sql.replace(/\?/g, () => `$${++n}`);
 };
 const ejecutar = async (sql: string, params: unknown[] = []) => {
-  await db.query(numerar(sql), params as never[]);
+  const r = await db.query(numerar(sql), params as never[]);
+  return r.affectedRows ?? 0;
 };
 
 /** Una persona guarda un registro en una caja: es lo único que hace en el software. */
@@ -77,16 +78,21 @@ async function estadoDe(numeroDeCaja: number) {
   return rows[0];
 }
 
-beforeEach(async () => {
+beforeAll(async () => {
+  // Una sola base para todo el archivo: levantar PostgreSQL cuesta un segundo y
+  // hacerlo trece veces se nota en la integración continua.
   db = new PGlite();
-  reloj = 0;
   await db.exec(TABLAS);
+  for (const ajuste of AJUSTES) await db.exec(ajuste.sql);
+});
+
+beforeEach(async () => {
+  reloj = 0;
+  await db.exec('TRUNCATE fuiddatosreal, modulos_caja, moduloscliente RESTART IDENTITY');
   await db.exec(`INSERT INTO moduloscliente (codigo, acta_transferencia_modulo) VALUES ('051', 'ACTA-7')`);
   for (let n = 2400; n <= 2412; n += 1) {
     await db.query('INSERT INTO modulos_caja (caja_modulo, id_modulo_caja, estado_caja) VALUES ($1, 1, NULL)', [caja(n)]);
   }
-  // Las columnas las crea el propio arranque: así se prueba el ajuste real.
-  for (const ajuste of AJUSTES) await db.exec(ajuste.sql);
 });
 
 afterAll(async () => {
@@ -214,7 +220,8 @@ describe('columnas del seguimiento de inventario', () => {
     await digitar(LUNES, 2407, ANA);
     await digitar(LUNES, 2408, ANA);
 
-    expect(await informe()).toEqual([{ quien: ANA, ini: 2406, fin: 2408, cerradas: 2, registros: 4 }]);
+    // Las tres cuentan el lunes: el último registro de cada una es de ese día.
+    expect(await informe()).toEqual([{ quien: ANA, ini: 2406, fin: 2408, cerradas: 3, registros: 4 }]);
 
     // Martes: retoma la 2408, la termina, y sigue con dos más.
     await digitar(MARTES, 2408, ANA);
@@ -222,13 +229,15 @@ describe('columnas del seguimiento de inventario', () => {
     await digitar(MARTES, 2410, ANA);
 
     const filas = await informe();
-    // La caja que cruzó de un día a otro se ve sola: cierra el lunes y abre el martes.
+    // La caja que cruzó de un día a otro se ve sola: es final del lunes e inicial
+    // del martes. Y deja de contar el lunes para contar el martes, que es cuando
+    // se terminó: el lunes baja de tres a dos.
     expect(filas).toEqual([
       { quien: ANA, ini: 2406, fin: 2408, cerradas: 2, registros: 4 },
-      { quien: ANA, ini: 2408, fin: 2410, cerradas: 2, registros: 3 },
+      { quien: ANA, ini: 2408, fin: 2410, cerradas: 3, registros: 3 },
     ]);
-    // Y no se cuenta dos veces: cuatro cajas cerradas en total, la 2410 sigue abierta.
-    expect(filas.reduce((suma, f) => suma + f.cerradas, 0)).toBe(4);
+    // Cinco cajas trabajadas, cinco contadas, ninguna dos veces.
+    expect(filas.reduce((suma, f) => suma + f.cerradas, 0)).toBe(5);
   });
 
   it('la caja compartida cuenta para quien digitó su último registro, no para las dos', async () => {
@@ -237,17 +246,14 @@ describe('columnas del seguimiento de inventario', () => {
     await digitar(LUNES, 2412, ANA);
 
     const filas = await informe();
-    expect(filas.find((f) => f.quien === ANA)).toMatchObject({ cerradas: 0 });
-    expect(filas.find((f) => f.quien === BETO)).toMatchObject({ cerradas: 0 });
-    // La 2411 sigue abierta porque Beto no se ha movido; nadie la cuenta todavía.
+    // La 2411 cuenta solo para Beto, que digitó su último registro, y la 2412
+    // para Ana. La caja compartida no se cuenta dos veces.
+    expect(filas.find((f) => f.quien === BETO)).toMatchObject({ cerradas: 1 });
+    expect(filas.find((f) => f.quien === ANA)).toMatchObject({ cerradas: 1 });
+    expect(filas.reduce((suma, f) => suma + f.cerradas, 0)).toBe(2);
+    // En pantalla sigue abierta, porque Beto no se ha movido de ella. Eso es
+    // información para él, no un número del informe.
     expect((await estadoDe(2411)).estado_caja).toBe(CAJA_EN_PROCESO);
-
-    // Cuando Beto pasa a otra caja, la 2411 se cierra y cuenta solo para él.
-    await digitar(LUNES, 2410, BETO);
-    const despues = await informe();
-    expect(despues.find((f) => f.quien === BETO)?.cerradas).toBe(1);
-    // Ana no se lleva nada: la 2412, la única que ella tiene, sigue abierta.
-    expect(despues.find((f) => f.quien === ANA)?.cerradas).toBe(0);
   });
 
   it('el primero y el último no son el menor y el mayor, sino el orden en que se trabajó', async () => {
