@@ -657,7 +657,7 @@ export async function changeEstadoCaja(req: Request, res: Response): Promise<voi
    * en que pulsa, para que el seguimiento atribuya la caja al día en que se
    * trabajó de verdad.
    */
-  await cambiarEstadoCaja(query, id, estado_caja);
+  await cambiarEstadoCaja(async (sql, params) => (await queryResult(sql, params)).affectedRows, id, estado_caja);
   res.json({ message: `Estado cambiado a ${estado_caja} correctamente` });
 }
 
