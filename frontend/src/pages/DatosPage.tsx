@@ -14,7 +14,6 @@ import {
   PageHeader,
   Select,
   Table,
-  Textarea,
   UpdInput,
   numeroAUpd,
   updANumero,
@@ -699,17 +698,24 @@ function FuidFormModal({
           error={(faltantesALaVista && faltaAsuntoAutomatico) || undefined}
         />
 
-        {/* Asunto Manual ocupa la fila entera y crece hacia abajo: es uno de los
-            dos campos donde se escribe de corrido, y en una columna estrecha no
-            se alcanza a leer lo que ya se puso. Tampoco hereda nada del registro
-            anterior. */}
+        {/* Asunto Manual ocupa la fila entera, que es lo único que lo distingue
+            del resto: es donde se escribe de corrido y en una columna estrecha no
+            se alcanza a leer lo que ya se puso. Por lo demás se comporta como
+            cualquier otro campo, sin saltos de línea. Tampoco hereda nada del
+            registro anterior.
+
+            Es el campo que recibe el foco al abrir el formulario, y el único que
+            lo pide. Es el que de verdad hay que escribir en cada registro: el
+            resto viene de la caja o se repite del anterior, y este describe el
+            documento concreto que se tiene en la mano. */}
         <div className="sm:col-span-2 lg:col-span-4">
-          <Textarea
+          <Input
             label="Asunto Manual *"
             value={form.asunto_3}
             onChange={(event) => updateField('asunto_3')(event.target.value)}
             maxLength={limiteDe('asunto_3')}
             error={(faltantesALaVista && faltaAsuntoManual) || undefined}
+            autoFocus
           />
         </div>
 
@@ -793,11 +799,11 @@ function FuidFormModal({
           placeholder="—"
         />
 
-        {/* Notas, igual que Asunto Manual: fila entera, crece hacia abajo y sin
-            sugerencias. La lista de sugerencias proponía lo escrito en otros
-            registros de la caja, que es justo lo que aquí no sirve. */}
+        {/* Notas, igual que Asunto Manual: fila entera y sin sugerencias. La
+            lista de sugerencias proponía lo escrito en otros registros de la
+            caja, que es justo lo que aquí no sirve. */}
         <div className="sm:col-span-2 lg:col-span-4">
-          <Textarea
+          <Input
             label="Notas"
             value={form.notas}
             onChange={(event) => updateField('notas')(event.target.value)}
