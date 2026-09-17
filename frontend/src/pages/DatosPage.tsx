@@ -331,7 +331,6 @@ interface SuggestionInputProps {
   onChange: (value: string) => void;
   disabled?: boolean;
   readOnly?: boolean;
-  autoFocus?: boolean;
   className?: string;
   error?: string;
 }
@@ -344,7 +343,6 @@ function SuggestionInput({
   onChange,
   disabled,
   readOnly,
-  autoFocus,
   className,
   error,
 }: SuggestionInputProps) {
@@ -365,7 +363,6 @@ function SuggestionInput({
         list={`sug-${campo}`}
         disabled={disabled}
         readOnly={readOnly}
-        autoFocus={autoFocus}
         error={error}
         // El componente ya recibe el nombre de la columna, así que el tope sale
         // del mapa sin tener que repetirlo en cada uno de los campos del FUID.
@@ -665,13 +662,19 @@ function FuidFormModal({
           onChange={updateField('objeto')}
         />
 
+        {/*
+          Sin foco automático. Al abrir el formulario, este campo aparecía
+          resaltado como si fuera el que hay que llenar, y no lo es: quien digita
+          recorre los campos en el orden del documento que tiene delante, no
+          empezando por el código. El diálogo se encarga de recoger el foco sin
+          señalar ningún campo.
+        */}
         <SuggestionInput
           caja={form.caja}
           campo="codigo"
           label="Codigo"
           value={form.codigo}
           onChange={updateField('codigo')}
-          autoFocus
         />
         <SuggestionInput
           caja={form.caja}
