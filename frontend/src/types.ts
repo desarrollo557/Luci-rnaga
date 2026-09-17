@@ -67,6 +67,8 @@ export interface ModuloCaja {
   oficina_productora_caja: string;
   objeto_caja: string;
   estado_caja: string;
+  /** Jornada a la que se atribuyó la caja terminada; la pone el servidor. */
+  fecha_finalizacion?: string | null;
   upd_inicio?: string | null;
   total_fuids?: number;
   /** Nombres separados por coma; solo llegan en el listado para líder/admin. */
