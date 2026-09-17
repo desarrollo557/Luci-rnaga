@@ -7,6 +7,7 @@ import { fuidValues, isSuggestionField } from '../services/fuid.service.js';
 import { audit } from '../services/audit.service.js';
 import { fechaHoyLocal } from '../utils/format.js';
 import { validarOrdenDeFechasParcial } from '../validators/fuiddatosreal.validator.js';
+import { registrarDigitacion } from '../services/cicloCaja.service.js';
 
 // La fecha del dato la fija el navegador en hora local; aquí se compara con la
 // fecha local de Colombia para que "hoy" coincida también después de las 7 p. m.
@@ -182,6 +183,22 @@ export async function createFuid(req: Request, res: Response): Promise<void> {
         [body.upd, body.upd, user.id, body.caja],
       );
     }
+
+    /*
+     * El estado de las cajas se deduce de este mismo guardado: esta caja queda
+     * abierta y la que esta persona tuviera abierta antes se cierra. Va dentro
+     * de la transacción para que un registro que no llega a guardarse tampoco
+     * mueva ninguna caja.
+     *
+     * Se usa el autor que quedó escrito en el registro, no el de la sesión: el
+     * seguimiento agrupa por esa misma cadena, y si las dos no coinciden la caja
+     * no se atribuiría a ninguna jornada.
+     */
+    await registrarDigitacion(
+      (sql, params) => conn.query(sql, params),
+      body.caja,
+      body.elaborado_por ?? `${user.nombre.toUpperCase()} (${user.cc})`,
+    );
 
     await conn.commit();
     res.status(200).json({ message: 'Registro insertado correctamente' });

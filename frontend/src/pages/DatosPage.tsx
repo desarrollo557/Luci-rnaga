@@ -29,6 +29,7 @@ import { retornoDeCaja } from '@/lib/navegacion';
 import { OPCIONES_FRECUENCIA, OPCIONES_OTRO, OPCIONES_SOPORTE } from '@/lib/catalogos';
 import { limiteDe } from '@/lib/limites';
 import { fechaHoyLocal, formatearFechaHora } from '@/lib/fechas';
+import { estadoDeCaja } from '@/lib/estadoCaja';
 import { FECHA_MINIMA_DOCUMENTAL, dateInRange, dateOrderValid, onlyDigits } from '@/lib/validation';
 import { useAuthStore } from '@/stores/authStore';
 import { SUGGESTION_FIELDS, type DataRow, type FuidDato, type ModuloCaja, type SessionUser, tieneAlgunRol, tieneRol } from '@/types';
@@ -965,6 +966,25 @@ export default function DatosPage() {
 
   const registros = useMemo(() => fuidQuery.data ?? [], [fuidQuery.data]);
 
+  /*
+   * Estado de la caja, con lo que ya está cargado: ninguna petición más. Se
+   * muestra porque quien digita necesita saber si esta caja viene de días
+   * anteriores, y porque el estado ya no lo marca nadie a mano: el servidor lo
+   * deduce de esta misma digitación.
+   */
+  const estadoCaja = useMemo(() => {
+    const fechas = registros.map((r) => r.fecha_del_dato).filter((f): f is string => Boolean(f));
+    return estadoDeCaja(
+      {
+        estado: cajaQuery.data?.estado_caja,
+        registros: registros.length,
+        desde: fechas.length > 0 ? fechas.reduce((a, b) => (a < b ? a : b)) : null,
+        fechaFinalizacion: cajaQuery.data?.fecha_finalizacion,
+      },
+      fechaHoyLocal(),
+    );
+  }, [cajaQuery.data?.estado_caja, cajaQuery.data?.fecha_finalizacion, registros]);
+
   const defaultNOrden = useMemo(() => {
     if (registros.length === 0) return 1;
     return Math.max(...registros.map((registro) => registro.n_orden ?? 0)) + 1;
@@ -1132,11 +1152,12 @@ export default function DatosPage() {
 
       <PageHeader
         title={`Digitación FUID — Caja ${cajaCode}`}
-        description="Clientes / Actas / Cajas / Digitación"
+        description={estadoCaja.detalle ?? 'Clientes / Actas / Cajas / Digitación'}
         backTo={retorno.to}
         backLabel={retorno.label}
         actions={
           <>
+            <Badge color={estadoCaja.color}>{estadoCaja.etiqueta}</Badge>
             {canCrear && (
               <Button onClick={openNuevo}>
                 <Plus className="size-4" /> Nuevo Registro
