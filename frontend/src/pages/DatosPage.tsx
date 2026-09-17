@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { CheckCircle2, Pencil, Plus, Trash2 } from 'lucide-react';
+import { CheckCircle2, Pencil, Search, Trash2, X } from 'lucide-react';
 import { toast } from 'sonner';
 import {
   Badge,
@@ -24,8 +24,7 @@ import { cn } from '@/lib/cn';
 import { toastApiError } from '@/lib/feedback';
 import { invalidateDomain } from '@/lib/queryInvalidation';
 import { intervaloRefresco } from '@/lib/refresco';
-import { PanelDigitados } from './digitacion/PanelDigitados';
-import { DetalleRegistro } from './digitacion/DetalleRegistro';
+import { filtrarPorTexto } from '@/lib/busqueda';
 import { retornoDeCaja } from '@/lib/navegacion';
 import { OPCIONES_FRECUENCIA, OPCIONES_OTRO, OPCIONES_SOPORTE } from '@/lib/catalogos';
 import { limiteDe } from '@/lib/limites';
@@ -386,17 +385,16 @@ function opcionesCon(lista: readonly string[], actual: string) {
   return valor && !lista.includes(valor) ? [...base, { value: valor, label: valor }] : base;
 }
 
-interface FuidFormModalProps {
-  open: boolean;
+interface FormularioFuidProps {
   cajaId: string;
+  /** Registro que se corrige, o `null` para digitar uno nuevo. */
   editing: FuidDato | null;
   defaultNOrden: number;
   /** Asunto automático del último registro de la caja, para no reescribirlo. */
   asuntoAutomaticoDeLaCaja: string;
   caja?: ModuloCaja | null;
-  /** Lo ya digitado en la caja, que el panel lateral muestra mientras se digita. */
-  registros: FuidDato[];
-  onClose: () => void;
+  /** Se llama al terminar de corregir; solo tiene sentido dentro del diálogo. */
+  onTerminar?: () => void;
 }
 
 /**
@@ -406,17 +404,21 @@ interface FuidFormModalProps {
  * va en blanco se guarda vacío y el servidor solo exige caja y UPD. Los datos
  * derivados (caja, fecha del dato, N° orden, elaborado por, sede, acta y fecha
  * de transferencia) viajan sin mostrarse.
+ *
+ * Sirve para las dos cosas y no sabe dónde está. En la pantalla de la caja vive
+ * fijo, arriba de la lista de registros: digitar es lo que se hace ahí todo el
+ * día y no tiene sentido abrir un diálogo para cada uno. Para corregir un
+ * registro ya guardado, la misma pieza se monta dentro de un diálogo, que es lo
+ * que corresponde a una acción puntual sobre una fila concreta.
  */
-function FuidFormModal({
-  open,
+function FormularioFuid({
   cajaId,
   editing,
   defaultNOrden,
   asuntoAutomaticoDeLaCaja,
   caja,
-  registros,
-  onClose,
-}: FuidFormModalProps) {
+  onTerminar,
+}: FormularioFuidProps) {
   const queryClient = useQueryClient();
   const user = useAuthStore((state) => state.user);
 
@@ -427,25 +429,6 @@ function FuidFormModal({
   );
   /** Registros guardados sin cerrar el formulario; remonta el formulario para volver a enfocar Asunto Manual. */
   const [racha, setRacha] = useState(0);
-  /*
-   * Los UPD guardados desde que se abrió el formulario. El panel los marca para
-   * separar lo hecho ahora mismo de lo que ya estaba en la caja: es lo que
-   * responde a "¿qué llevo hecho?" sin cerrar nada ni contar a mano.
-   */
-  const [updsDeLaSesion, setUpdsDeLaSesion] = useState<Set<string>>(() => new Set());
-  /** Registro que se está mirando en detalle desde el panel. */
-  const [detalle, setDetalle] = useState<FuidDato | null>(null);
-  /**
-   * Registro que se está corrigiendo desde el panel, sin cerrar la racha.
-   *
-   * Lo que se estuviera escribiendo se guarda aparte y se devuelve al terminar:
-   * corregir un registro anterior no puede costar perder el que se lleva a
-   * medias. Es distinto de la propiedad `editing`, que es entrar a editar desde
-   * la tabla, con el formulario dedicado a eso y sin racha que conservar.
-   */
-  const [editandoDesdePanel, setEditandoDesdePanel] = useState<FuidDato | null>(null);
-  const [borrador, setBorrador] = useState<FuidFormValues | null>(null);
-  const registroEnEdicion = editing ?? editandoDesdePanel;
   // Los campos obligatorios no se marcan en rojo hasta el primer intento de
   // guardar: un formulario recién abierto está vacío por definición y teñirlo
   // de avisos desde el principio solo estorba a quien digita de corrido.
@@ -464,21 +447,21 @@ function FuidFormModal({
     queryKey: ['fuiddatosreal', 'check-upd', debouncedUpd],
     queryFn: () =>
       fuidApi.checkDuplicateUpd(debouncedUpd).then((res) => (res.data as unknown as CheckUpdResponse).exists),
-    enabled: Boolean(debouncedUpd) && !registroEnEdicion,
+    enabled: Boolean(debouncedUpd) && !editing,
   });
   const nextUpdQuery = useQuery({
     queryKey: ['modulos-caja', 'next-upd', cajaId],
     queryFn: () => modulosCajaApi.siguienteUpd(cajaId).then((res) => res.data),
-    enabled: open && !registroEnEdicion && Boolean(cajaId),
+    enabled: !editing && Boolean(cajaId),
   });
   const updSugerido = nextUpdQuery.data?.upd ?? '';
 
   useEffect(() => {
-    if (!registroEnEdicion && updSugerido && !form.upd.trim()) {
+    if (!editing && updSugerido && !form.upd.trim()) {
       setForm((prev) => (prev.upd ? prev : { ...prev, upd: updSugerido }));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [updSugerido, registroEnEdicion, open]);
+  }, [updSugerido, editing, open]);
 
   const setField = (field: keyof FuidFormValues) => (event: ChangeEvent<HTMLInputElement>) =>
     setForm((prev) => ({ ...prev, [field]: event.target.value }));
@@ -508,7 +491,6 @@ function FuidFormModal({
         upd: siguienteUpd,
       });
       setRacha((r) => r + 1);
-      setUpdsDeLaSesion((previos) => new Set(previos).add(guardado));
       setFaltantesALaVista(false);
       setConfirmacion({ id: Date.now(), upd: guardado, siguiente: siguienteUpd });
       // El servidor confirma el consecutivo libre (salta UPD ya usados); solo se
@@ -535,10 +517,7 @@ function FuidFormModal({
     onSuccess: () => {
       toast.success('Registro FUID actualizado correctamente');
       void invalidateDomain(queryClient, 'fuiddatosreal');
-      // Corrigiendo desde el panel no se cierra nada: se devuelve lo que se
-      // estaba escribiendo y se sigue donde se iba.
-      if (editandoDesdePanel) volverDeLaCorreccion();
-      else onClose();
+      onTerminar?.();
     },
     onError: (error) => {
       // Otra persona guardó este mismo registro mientras estaba abierto. No se
@@ -588,24 +567,6 @@ function FuidFormModal({
 
   const hoy = fechaHoyLocal();
 
-  /** Pasar de mirar un registro a corregirlo, guardando lo que se llevaba escrito. */
-  const corregirRegistro = (registro: FuidDato) => {
-    setBorrador(form);
-    setForm(formFromRecord(registro));
-    setEditandoDesdePanel(registro);
-    setDetalle(null);
-    setFaltantesALaVista(false);
-  };
-
-  /** Volver a la racha: se devuelve el borrador tal como estaba. */
-  const volverDeLaCorreccion = () => {
-    setForm(borrador ?? emptyFormFor(cajaId, user, defaultNOrden + racha, caja, asuntoAutomaticoDeLaCaja));
-    setBorrador(null);
-    setEditandoDesdePanel(null);
-    setDetalle(null);
-    setFaltantesALaVista(false);
-  };
-
   // El submit se bloquea, pero el formulario no se toca: lo escrito sigue ahí
   // para que la persona corrija solo la fecha.
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
@@ -616,299 +577,239 @@ function FuidFormModal({
       toast.error(primerError);
       return;
     }
-    const payload = buildPayload(form, registroEnEdicion);
-    if (registroEnEdicion) updateMutation.mutate({ id: registroEnEdicion.id, data: payload });
+    const payload = buildPayload(form, editing);
+    if (editing) updateMutation.mutate({ id: editing.id, data: payload });
     else createMutation.mutate(payload);
   };
 
-  const updDuplicado = !registroEnEdicion && updExistsQuery.data ? 'Este UPD ya existe en la base de datos' : undefined;
+  const updDuplicado = !editing && updExistsQuery.data ? 'Este UPD ya existe en la base de datos' : undefined;
 
   return (
-    <Modal
-      open={open}
-      onClose={onClose}
-      title={
-        detalle
-          ? `Registro ${detalle.upd ?? ''}`
-          : registroEnEdicion
-            ? 'Editar Registro FUID'
-            : 'Nuevo Registro FUID'
-      }
-      /*
-       * Al crear se digita de corrido y hace falta sitio para el formulario y
-       * para el panel de lo ya digitado. Al editar se corrige un registro suelto:
-       * ni se encadena nada ni el panel aporta, así que el diálogo no crece.
-       */
-      size={editing ? 'xl' : 'full'}
-      /*
-       * El pie cambia con lo que se está haciendo. Mirando un registro no hay
-       * nada que enviar, y corrigiendo uno la salida no es cerrar el formulario
-       * sino volver a la racha donde se iba.
-       */
-      /*
-       * Las claves separan los botones de cada modo, y no son decorativas.
-       * Sin ellas React reutiliza el mismo nodo del DOM al cambiar el pie: el
-       * botón que abre la corrección se convertía, en ese mismo clic, en el de
-       * enviar, y el navegador ejecutaba su acción por defecto. Resultado: al
-       * entrar a corregir un registro se enviaba el formulario solo, con sus
-       * avisos de campos obligatorios.
-       */
-      footer={
-        detalle ? (
-          <>
-            <Button key="volver" variant="ghost" onClick={() => setDetalle(null)}>
-              Volver
-            </Button>
-            <Button key="corregir" onClick={() => corregirRegistro(detalle)}>
-              <Pencil className="mr-2 size-4" />
-              Editar este registro
-            </Button>
-          </>
-        ) : (
-          <>
-            <Button
-              key="salir"
-              variant="ghost"
-              onClick={editandoDesdePanel ? volverDeLaCorreccion : onClose}
-              disabled={isSaving}
-            >
-              {editandoDesdePanel ? 'Descartar cambios' : 'Cancelar'}
-            </Button>
-            <Button
-              key="enviar"
-              type="submit"
-              form="fuid-form"
-              loading={isSaving}
-              disabled={isSaving || hayErrorDeFormulario}
-            >
-              {registroEnEdicion ? 'Guardar cambios' : 'Enviar'}
-            </Button>
-          </>
-        )
-      }
-    >
-      {/*
-        El formulario a la izquierda y lo ya digitado a la derecha, los dos a la
-        vez. Antes, al guardar, un cartel verde grande se superponía al
-        formulario durante dos segundos y medio: tapaba los campos justo cuando
-        hay que empezar a escribir el registro siguiente, y al apagarse no
-        dejaba rastro de lo hecho. Ahora el aviso va en el panel, donde el
-        registro guardado se queda a la vista.
+    /*
+     * El destello verde confirma el guardado al instante sin tapar nada. El
+     * registro recién guardado aparece además en la lista de abajo, así que la
+     * confirmación no tiene que dejar rastro por sí sola.
+     */
+    <div className={cn('rounded-xl', confirmacion && 'animate-[fuid-flash_1.2s_ease-out]')}>
+      <form
+        key={racha}
+        id="fuid-form"
+        onSubmit={handleSubmit}
+        autoComplete="off"
+        /*
+         * Cuatro columnas y el mismo orden de siempre; lo que se ajusta es el
+         * aire. El margen de los rótulos se aprieta solo aquí: son veintiún
+         * campos, y el par de píxeles por fila decide si la lista de abajo se
+         * ve o hay que buscarla desplazando.
+         */
+        className="grid grid-cols-1 gap-x-5 gap-y-2 [&_label]:mb-0.5 sm:grid-cols-2 lg:grid-cols-4"
+      >
+        <SuggestionInput
+          caja={form.caja}
+          campo="entidad_productora"
+          label="Entidad Productora"
+          value={form.entidad_productora}
+          onChange={updateField('entidad_productora')}
+        />
+        <SuggestionInput
+          caja={form.caja}
+          campo="unidad_administrativa"
+          label="Unidad Administrativa"
+          value={form.unidad_administrativa}
+          onChange={updateField('unidad_administrativa')}
+        />
+        <SuggestionInput
+          caja={form.caja}
+          campo="oficina_productora"
+          label="Oficina Productora"
+          value={form.oficina_productora}
+          onChange={updateField('oficina_productora')}
+        />
+        <SuggestionInput
+          caja={form.caja}
+          campo="objeto"
+          label="Objeto"
+          value={form.objeto}
+          onChange={updateField('objeto')}
+        />
 
-        El destello del formulario sí se conserva: confirma el guardado al
-        instante y no tapa nada.
-      */}
-      <div className="flex flex-col gap-4 lg:h-[70vh] lg:flex-row lg:items-stretch">
-        <div
-          className={cn(
-            'min-w-0 flex-1 rounded-xl lg:overflow-y-auto lg:pr-2',
-            confirmacion && 'animate-[fuid-flash_1.2s_ease-out]',
-          )}
-        >
-          {detalle ? (
-            <DetalleRegistro registro={detalle} />
-          ) : (
-          <form
-            key={racha}
-            id="fuid-form"
-            onSubmit={handleSubmit}
-            autoComplete="off"
-            className="grid grid-cols-1 gap-x-5 gap-y-4 sm:grid-cols-2 lg:grid-cols-4"
-          >
-            <SuggestionInput
-              caja={form.caja}
-              campo="entidad_productora"
-              label="Entidad Productora"
-              value={form.entidad_productora}
-              onChange={updateField('entidad_productora')}
-            />
-            <SuggestionInput
-              caja={form.caja}
-              campo="unidad_administrativa"
-              label="Unidad Administrativa"
-              value={form.unidad_administrativa}
-              onChange={updateField('unidad_administrativa')}
-            />
-            <SuggestionInput
-              caja={form.caja}
-              campo="oficina_productora"
-              label="Oficina Productora"
-              value={form.oficina_productora}
-              onChange={updateField('oficina_productora')}
-            />
-            <SuggestionInput
-              caja={form.caja}
-              campo="objeto"
-              label="Objeto"
-              value={form.objeto}
-              onChange={updateField('objeto')}
-            />
+        {/*
+          Sin foco automático. Al abrir el formulario, este campo aparecía
+          resaltado como si fuera el que hay que llenar, y no lo es: quien digita
+          recorre los campos en el orden del documento que tiene delante, no
+          empezando por el código. El diálogo se encarga de recoger el foco sin
+          señalar ningún campo.
+        */}
+        <SuggestionInput
+          caja={form.caja}
+          campo="codigo"
+          label="Codigo"
+          value={form.codigo}
+          onChange={updateField('codigo')}
+        />
+        <SuggestionInput
+          caja={form.caja}
+          campo="serie"
+          label="Serie"
+          value={form.serie}
+          onChange={updateField('serie')}
+        />
+        <SuggestionInput
+          caja={form.caja}
+          campo="subserie"
+          label="Subserie"
+          value={form.subserie}
+          onChange={updateField('subserie')}
+        />
+        <SuggestionInput
+          caja={form.caja}
+          campo="asunto_2"
+          label="Asunto Automático *"
+          value={form.asunto_2}
+          onChange={updateField('asunto_2')}
+          error={(faltantesALaVista && faltaAsuntoAutomatico) || undefined}
+        />
 
-            {/*
-              Sin foco automático. Al abrir el formulario, este campo aparecía
-              resaltado como si fuera el que hay que llenar, y no lo es: quien digita
-              recorre los campos en el orden del documento que tiene delante, no
-              empezando por el código. El diálogo se encarga de recoger el foco sin
-              señalar ningún campo.
-            */}
-            <SuggestionInput
-              caja={form.caja}
-              campo="codigo"
-              label="Codigo"
-              value={form.codigo}
-              onChange={updateField('codigo')}
-            />
-            <SuggestionInput
-              caja={form.caja}
-              campo="serie"
-              label="Serie"
-              value={form.serie}
-              onChange={updateField('serie')}
-            />
-            <SuggestionInput
-              caja={form.caja}
-              campo="subserie"
-              label="Subserie"
-              value={form.subserie}
-              onChange={updateField('subserie')}
-            />
-            <SuggestionInput
-              caja={form.caja}
-              campo="asunto_2"
-              label="Asunto Automático *"
-              value={form.asunto_2}
-              onChange={updateField('asunto_2')}
-              error={(faltantesALaVista && faltaAsuntoAutomatico) || undefined}
-            />
+        {/* Asunto Manual ocupa la fila entera, que es lo único que lo distingue
+            del resto: es donde se escribe de corrido y en una columna estrecha no
+            se alcanza a leer lo que ya se puso. Por lo demás se comporta como
+            cualquier otro campo, sin saltos de línea. Tampoco hereda nada del
+            registro anterior.
 
-            {/* Asunto Manual ocupa la fila entera, que es lo único que lo distingue
-                del resto: es donde se escribe de corrido y en una columna estrecha no
-                se alcanza a leer lo que ya se puso. Por lo demás se comporta como
-                cualquier otro campo, sin saltos de línea. Tampoco hereda nada del
-                registro anterior.
-
-                Es el campo que recibe el foco al abrir el formulario, y el único que
-                lo pide. Es el que de verdad hay que escribir en cada registro: el
-                resto viene de la caja o se repite del anterior, y este describe el
-                documento concreto que se tiene en la mano. */}
-            <div className="sm:col-span-2 lg:col-span-4">
-              <Input
-                label="Asunto Manual *"
-                value={form.asunto_3}
-                onChange={(event) => updateField('asunto_3')(event.target.value)}
-                maxLength={limiteDe('asunto_3')}
-                error={(faltantesALaVista && faltaAsuntoManual) || undefined}
-                autoFocus
-              />
-            </div>
-
-            <SuggestionInput
-              caja={form.caja}
-              campo="numero_doc"
-              label="Nro. Documento Desde"
-              value={form.numero_doc}
-              onChange={updateField('numero_doc')}
-            />
-            <SuggestionInput
-              caja={form.caja}
-              campo="numero_doc_hasta"
-              label="Nro. Documento Hasta"
-              value={form.numero_doc_hasta}
-              onChange={updateField('numero_doc_hasta')}
-            />
-            <Input
-              label="Fecha Inicial"
-              type="date"
-              value={form.fecha_inicial}
-              onChange={setField('fecha_inicial')}
-              min={FECHA_MINIMA_DOCUMENTAL}
-              max={hoy}
-              error={errorFechaInicial ?? undefined}
-            />
-
-            <Input
-              label="Fecha Final"
-              type="date"
-              value={form.fecha_final}
-              onChange={setField('fecha_final')}
-              min={form.fecha_inicial || FECHA_MINIMA_DOCUMENTAL}
-              max={hoy}
-              error={errorFechaFinal ?? undefined}
-            />
-            <UpdInput
-              label="UPD"
-              value={updANumero(form.upd)}
-              onChange={(numero) => updateField('upd')(numero)}
-              onBlur={() => updateField('upd')(numeroAUpd(updANumero(form.upd)))}
-              error={updDuplicado}
-              hint={nextUpdQuery.data?.message}
-              defaultUnlocked
-            />
-            <Input label="Tomo" value={form.tomo} onChange={setField('tomo')} inputMode="numeric" maxLength={limiteDe('tomo')} />
-            <Select
-              label="Otro"
-              options={opcionesCon(OPCIONES_OTRO, form.otro)}
-              value={form.otro.trim().toUpperCase()}
-              onChange={updateField('otro')}
-              placeholder="—"
-            />
-
-            <SuggestionInput
-              caja={form.caja}
-              campo="caja_interna"
-              label="Caja Interna"
-              value={form.caja_interna}
-              onChange={updateField('caja_interna')}
-            />
-            <Input
-              label="Folios"
-              value={form.folios}
-              onChange={setField('folios')}
-              inputMode="numeric"
-              error={onlyDigits(form.folios, 'Los folios') ?? undefined}
-            />
-            <Select
-              label="Soporte"
-              options={opcionesCon(OPCIONES_SOPORTE, form.soporte)}
-              value={form.soporte.trim().toUpperCase()}
-              onChange={updateField('soporte')}
-              placeholder="—"
-            />
-            <Select
-              label="Frecuencia"
-              options={opcionesCon(OPCIONES_FRECUENCIA, form.frecuencia)}
-              value={form.frecuencia.trim().toUpperCase()}
-              onChange={updateField('frecuencia')}
-              placeholder="—"
-            />
-
-            {/* Notas, igual que Asunto Manual: fila entera y sin sugerencias. La
-                lista de sugerencias proponía lo escrito en otros registros de la
-                caja, que es justo lo que aquí no sirve. */}
-            <div className="sm:col-span-2 lg:col-span-4">
-              <Input
-                label="Notas"
-                value={form.notas}
-                onChange={(event) => updateField('notas')(event.target.value)}
-                maxLength={limiteDe('notas')}
-              />
-            </div>
-          </form>
-          )}
+            Es el campo que recibe el foco al abrir el formulario, y el único que
+            lo pide. Es el que de verdad hay que escribir en cada registro: el
+            resto viene de la caja o se repite del anterior, y este describe el
+            documento concreto que se tiene en la mano. */}
+        <div className="sm:col-span-2 lg:col-span-4">
+          <Input
+            label="Asunto Manual *"
+            value={form.asunto_3}
+            onChange={(event) => updateField('asunto_3')(event.target.value)}
+            maxLength={limiteDe('asunto_3')}
+            error={(faltantesALaVista && faltaAsuntoManual) || undefined}
+            autoFocus
+          />
         </div>
 
-        {!editing && (
-          <PanelDigitados
-            registros={registros}
-            deEstaSesion={updsDeLaSesion}
-            ultimoGuardado={confirmacion?.upd}
-            proximoUpd={confirmacion?.siguiente}
-            onVistaPrevia={setDetalle}
-            abierto={detalle?.id ?? editandoDesdePanel?.id ?? null}
+        <SuggestionInput
+          caja={form.caja}
+          campo="numero_doc"
+          label="Nro. Documento Desde"
+          value={form.numero_doc}
+          onChange={updateField('numero_doc')}
+        />
+        <SuggestionInput
+          caja={form.caja}
+          campo="numero_doc_hasta"
+          label="Nro. Documento Hasta"
+          value={form.numero_doc_hasta}
+          onChange={updateField('numero_doc_hasta')}
+        />
+        <Input
+          label="Fecha Inicial"
+          type="date"
+          value={form.fecha_inicial}
+          onChange={setField('fecha_inicial')}
+          min={FECHA_MINIMA_DOCUMENTAL}
+          max={hoy}
+          error={errorFechaInicial ?? undefined}
+        />
+
+        <Input
+          label="Fecha Final"
+          type="date"
+          value={form.fecha_final}
+          onChange={setField('fecha_final')}
+          min={form.fecha_inicial || FECHA_MINIMA_DOCUMENTAL}
+          max={hoy}
+          error={errorFechaFinal ?? undefined}
+        />
+        <UpdInput
+          label="UPD"
+          value={updANumero(form.upd)}
+          onChange={(numero) => updateField('upd')(numero)}
+          onBlur={() => updateField('upd')(numeroAUpd(updANumero(form.upd)))}
+          error={updDuplicado}
+          hint={nextUpdQuery.data?.message}
+          defaultUnlocked
+        />
+        <Input label="Tomo" value={form.tomo} onChange={setField('tomo')} inputMode="numeric" maxLength={limiteDe('tomo')} />
+        <Select
+          label="Otro"
+          options={opcionesCon(OPCIONES_OTRO, form.otro)}
+          value={form.otro.trim().toUpperCase()}
+          onChange={updateField('otro')}
+          placeholder="—"
+        />
+
+        <SuggestionInput
+          caja={form.caja}
+          campo="caja_interna"
+          label="Caja Interna"
+          value={form.caja_interna}
+          onChange={updateField('caja_interna')}
+        />
+        <Input
+          label="Folios"
+          value={form.folios}
+          onChange={setField('folios')}
+          inputMode="numeric"
+          error={onlyDigits(form.folios, 'Los folios') ?? undefined}
+        />
+        <Select
+          label="Soporte"
+          options={opcionesCon(OPCIONES_SOPORTE, form.soporte)}
+          value={form.soporte.trim().toUpperCase()}
+          onChange={updateField('soporte')}
+          placeholder="—"
+        />
+        <Select
+          label="Frecuencia"
+          options={opcionesCon(OPCIONES_FRECUENCIA, form.frecuencia)}
+          value={form.frecuencia.trim().toUpperCase()}
+          onChange={updateField('frecuencia')}
+          placeholder="—"
+        />
+
+        {/*
+          Notas y las acciones comparten la última fila.
+          
+          Notas ocupa tres de las cuatro columnas —sigue siendo el campo largo
+          que pediste— y el botón va en la cuarta. Antes las acciones tenían
+          fila propia, y una fila de este formulario cuesta unos ochenta y cinco
+          píxeles: con veintiún campos compartiendo pantalla con la lista de
+          registros, esa fila era la diferencia entre ver lo que acabas de
+          guardar y tener que desplazarte a buscarlo.
+
+          La lista de sugerencias no aplica en Notas: proponía lo escrito en
+          otros registros de la caja, que es justo lo que aquí no sirve.
+        */}
+        <div className="sm:col-span-2 lg:col-span-3">
+          <Input
+            label="Notas"
+            value={form.notas}
+            onChange={(event) => updateField('notas')(event.target.value)}
+            maxLength={limiteDe('notas')}
           />
-        )}
-      </div>
-    </Modal>
+        </div>
+        <div className="flex flex-col justify-end gap-1.5 sm:col-span-2 lg:col-span-1">
+          <p role="status" aria-live="polite" className="min-h-4 text-xs font-medium text-green-700">
+            {confirmacion &&
+              `${confirmacion.upd} guardado${confirmacion.siguiente ? ` · sigue ${confirmacion.siguiente}` : ''}`}
+          </p>
+          <div className="flex justify-end gap-2">
+            {editing && (
+              <Button variant="ghost" onClick={onTerminar} disabled={isSaving}>
+                Cancelar
+              </Button>
+            )}
+            <Button type="submit" loading={isSaving} disabled={isSaving || hayErrorDeFormulario}>
+              {editing ? 'Guardar cambios' : 'Guardar registro'}
+            </Button>
+          </div>
+        </div>
+      </form>
+    </div>
   );
 }
 
@@ -1016,10 +917,10 @@ export default function DatosPage() {
   // saber de qué acta cuelga para poder subir un nivel sin depender del
   // historial de navegación.
 
-  const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<FuidDato | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<FuidDato | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const [filtro, setFiltro] = useState('');
   const duplicatesNotifiedRef = useRef<string | null>(null);
 
   const cajaQuery = useQuery({
@@ -1070,6 +971,72 @@ export default function DatosPage() {
   }, [cajaDuplicatesQuery.data, cajaCode]);
 
   const registros = useMemo(() => fuidQuery.data ?? [], [fuidQuery.data]);
+
+  /*
+   * Para la lista, el último digitado primero.
+   *
+   * El formulario está justo encima, así que el registro que se acaba de
+   * guardar aparece pegado a él y se ve sin desplazarse. Con el orden natural
+   * del documento, en una caja de doscientos registros el recién guardado caía
+   * al fondo y había que ir a buscarlo, que es justo lo contrario de poder
+   * comprobar lo que se va haciendo.
+   */
+  const registrosParaLista = useMemo(
+    () =>
+      [...registros].sort((a, b) => {
+        const creadoA = a.created_at ?? '';
+        const creadoB = b.created_at ?? '';
+        if (creadoA !== creadoB) return creadoB.localeCompare(creadoA);
+        return (b.n_orden ?? b.id) - (a.n_orden ?? a.id);
+      }),
+    [registros],
+  );
+
+  /*
+   * Todo lo del registro es buscable, no solo lo que se ve en la tabla.
+   *
+   * Quien busca se acuerda de cualquier cosa: del número de documento, de una
+   * palabra de las notas, de quién lo digitó. Limitar la búsqueda a las columnas
+   * visibles obligaría a saber de antemano en qué campo está lo que se recuerda,
+   * que es justo lo que no se sabe. Por eso entran también los campos que la
+   * tabla no muestra.
+   */
+  const registrosFiltrados = useMemo(
+    () =>
+      filtrarPorTexto(registrosParaLista, filtro, (r) => [
+        r.n_orden,
+        r.upd,
+        r.caja,
+        r.codigo,
+        r.entidad_remitente,
+        r.entidad_productora,
+        r.unidad_administrativa,
+        r.oficina_productora,
+        r.objeto,
+        r.serie,
+        r.subserie,
+        r.asunto,
+        r.asunto_2,
+        r.asunto_3,
+        r.numero_doc,
+        r.numero_doc_hasta,
+        r.fecha_inicial,
+        r.fecha_final,
+        r.fecha_del_dato,
+        r.tomo,
+        r.otro,
+        r.caja_interna,
+        r.folios,
+        r.soporte,
+        r.frecuencia,
+        r.notas,
+        r.elaborado_por,
+        r.nro_acta_transferible,
+        r.historial_y_cambios === 'OK' ? 'OK REVISADO' : 'SIN REVISAR',
+      ]),
+    [registrosParaLista, filtro],
+  );
+  const filtrando = filtro.trim() !== '';
 
   /*
    * Estado de la caja, con lo que ya está cargado: ninguna petición más. Se
@@ -1138,7 +1105,13 @@ export default function DatosPage() {
     marcarOkMutation.mutate([...selectedIds]);
   };
 
-  const allSelected = registros.length > 0 && registros.every((registro) => selectedIds.has(registro.id));
+  /*
+   * Seleccionar todo abarca lo que está a la vista, no la caja entera. Con un
+   * filtro puesto, marcar como revisado lo que el filtro esconde sería tocar
+   * registros que nadie está mirando.
+   */
+  const allSelected =
+    registrosFiltrados.length > 0 && registrosFiltrados.every((registro) => selectedIds.has(registro.id));
 
   const toggleRow = (id: number) => {
     setSelectedIds((prev) => {
@@ -1151,25 +1124,25 @@ export default function DatosPage() {
 
   const toggleAll = () => {
     if (allSelected) setSelectedIds(new Set());
-    else setSelectedIds(new Set(registros.map((registro) => registro.id)));
+    else setSelectedIds(new Set(registrosFiltrados.map((registro) => registro.id)));
   };
 
-  const openNuevo = () => {
-    setEditing(null);
-    setModalOpen(true);
-  };
+  const openEditar = (registro: FuidDato) => setEditing(registro);
+  const cerrarEdicion = () => setEditing(null);
 
-  const openEditar = (registro: FuidDato) => {
-    setEditing(registro);
-    setModalOpen(true);
-  };
-
+  /*
+   * Solo lo que distingue un registro de otro.
+   *
+   * La entidad remitente, la entidad productora y el número de caja valen lo
+   * mismo en todos los registros de la caja, y esta pantalla es la de una caja:
+   * repetirlos en cada fila ensanchaba la tabla hasta empujar la columna de
+   * acciones fuera de la pantalla, que es justo el botón que hay que alcanzar
+   * para corregir. Lo que no cabe se ve en el propio registro al abrirlo.
+   */
   const columns: Column<FuidDato>[] = [
     { key: 'n_orden', header: 'N°', render: (registro: FuidDato) => registro.n_orden ?? '—' },
     { key: 'upd', header: 'UPD' },
     { key: 'codigo', header: 'Código' },
-    { key: 'entidad_remitente', header: 'Entidad Remitente' },
-    { key: 'entidad_productora', header: 'Entidad Productora' },
     { key: 'serie', header: 'Serie' },
     { key: 'asunto', header: 'Asunto' },
     {
@@ -1182,16 +1155,10 @@ export default function DatosPage() {
         return `${inicial ?? '?'} – ${final ?? '?'}`;
       },
     },
-    { key: 'caja', header: 'Caja' },
     {
       key: 'created_at',
       header: 'Creado',
       render: (registro: FuidDato) => formatearFechaHora(registro.created_at),
-    },
-    {
-      key: 'updated_at',
-      header: 'Actualizado',
-      render: (registro: FuidDato) => formatearFechaHora(registro.updated_at),
     },
     {
       key: 'estado',
@@ -1207,13 +1174,31 @@ export default function DatosPage() {
       key: 'acciones',
       header: 'Acciones',
       render: (registro: FuidDato) => (
-        <div className="flex items-center gap-2">
-          <Button variant="secondary" size="sm" onClick={() => openEditar(registro)}>
-            <Pencil className="size-4" /> Editar
+        /*
+         * Solo iconos: la columna de acciones se repite en cada fila y el texto
+         * la ensanchaba sin decir nada nuevo. El rótulo va en el título y en la
+         * etiqueta accesible, con el UPD, para saber sobre qué registro se actúa.
+         */
+        <div className="flex items-center gap-1">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => openEditar(registro)}
+            title={`Editar ${registro.upd ?? 'este registro'}`}
+            aria-label={`Editar ${registro.upd ?? 'este registro'}`}
+          >
+            <Pencil className="size-4" />
           </Button>
           {canEliminar && (
-            <Button variant="danger" size="sm" onClick={() => setDeleteTarget(registro)}>
-              <Trash2 className="size-4" /> Eliminar
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setDeleteTarget(registro)}
+              title={`Eliminar ${registro.upd ?? 'este registro'}`}
+              aria-label={`Eliminar ${registro.upd ?? 'este registro'}`}
+              className="text-red-600 hover:bg-red-50 hover:text-red-700"
+            >
+              <Trash2 className="size-4" />
             </Button>
           )}
         </div>
@@ -1260,17 +1245,34 @@ export default function DatosPage() {
         description={estadoCaja.detalle ?? 'Clientes / Actas / Cajas / Digitación'}
         backTo={retorno.to}
         backLabel={retorno.label}
-        actions={
-          <>
-            <Badge color={estadoCaja.color}>{estadoCaja.etiqueta}</Badge>
-            {canCrear && (
-              <Button onClick={openNuevo}>
-                <Plus className="size-4" /> Nuevo Registro
-              </Button>
-            )}
-          </>
-        }
+        actions={<Badge color={estadoCaja.color}>{estadoCaja.etiqueta}</Badge>}
       />
+
+      {/*
+        El formulario vive fijo en la pantalla, encima de la lista. Digitar es
+        lo que se hace aquí todo el día: abrir y cerrar un diálogo por cada
+        registro era un paso de más en cada vuelta, y mientras estaba abierto
+        tapaba lo ya digitado. Ahora se escribe arriba y el registro aparece
+        abajo, en la misma pantalla y sin moverse de sitio.
+      */}
+      {canCrear && (
+        /*
+         * Denso a propósito. El formulario comparte pantalla con la lista de
+         * registros, y si se lleva todo el alto hay que desplazarse para ver lo
+         * que se acaba de guardar, que es justo lo que esta disposición busca
+         * evitar. No lleva encabezado propio: la cabecera de la página ya dice
+         * que esto es la digitación de la caja, y el botón dice qué hace.
+         */
+        <Card padding="p-4">
+          <FormularioFuid
+            cajaId={cajaCode}
+            editing={null}
+            defaultNOrden={defaultNOrden}
+            asuntoAutomaticoDeLaCaja={asuntoAutomaticoDeLaCaja}
+            caja={cajaQuery.data}
+          />
+        </Card>
+      )}
 
       {fuidQuery.isPending ? (
         <Card>
@@ -1280,18 +1282,48 @@ export default function DatosPage() {
         </Card>
       ) : registros.length === 0 ? (
         <Card className="flex flex-col items-center gap-4 py-12">
-          <p className="text-sm text-silver-500">No hay registros FUID en esta caja</p>
-          {canCrear && (
-            <Button onClick={openNuevo}>
-              <Plus className="size-4" /> Nuevo Registro
-            </Button>
-          )}
+          <p className="text-sm text-silver-500">
+            Todavía no hay registros en esta caja. El primero que guardes arriba aparecerá aquí.
+          </p>
         </Card>
       ) : (
         <>
-          {canMarcarOk && (
-            <div className="flex justify-end">
+          {/*
+            Un solo campo que busca en todo el registro, incluidos los campos
+            que la tabla no muestra. Al lado, cuántos quedan a la vista: sin eso
+            no se distingue una búsqueda que no encontró nada de una lista que
+            se quedó corta por otro motivo.
+          */}
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="relative min-w-72 flex-1">
+              <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-silver-400" />
+              <Input
+                value={filtro}
+                onChange={(event) => setFiltro(event.target.value)}
+                placeholder="Buscar en los registros…"
+                aria-label="Buscar en los registros"
+                className="pl-9 pr-9"
+              />
+              {filtrando && (
+                <button
+                  type="button"
+                  onClick={() => setFiltro('')}
+                  aria-label="Limpiar la búsqueda"
+                  title="Limpiar la búsqueda"
+                  className="absolute right-2 top-1/2 -translate-y-1/2 rounded-md p-1 text-silver-400 transition-colors hover:bg-silver-100 hover:text-silver-700"
+                >
+                  <X className="size-4" />
+                </button>
+              )}
+            </div>
+            <p className="text-sm text-silver-600">
+              {filtrando
+                ? `${registrosFiltrados.length.toLocaleString('es-CO')} de ${registros.length.toLocaleString('es-CO')}`
+                : `${registros.length.toLocaleString('es-CO')} ${registros.length === 1 ? 'registro' : 'registros'}`}
+            </p>
+            {canMarcarOk && (
               <Button
+                className="ml-auto"
                 onClick={handleMarcarOk}
                 disabled={selectedIds.size === 0}
                 loading={marcarOkMutation.isPending}
@@ -1299,31 +1331,39 @@ export default function DatosPage() {
                 <CheckCircle2 className="size-4" />
                 Marcar como revisado{selectedIds.size > 0 ? ` (${selectedIds.size})` : ''}
               </Button>
-            </div>
-          )}
+            )}
+          </div>
           <div key={`fuids-${cajaCode}`} className="form-fill-anim">
             <Table
               columns={columns}
-              data={registros}
+              data={registrosFiltrados}
               rowKey={(registro) => registro.id}
+              emptyMessage="Ningún registro coincide con la búsqueda"
             />
           </div>
         </>
       )}
 
-      {modalOpen && (
-        <FuidFormModal
-          key={editing ? `edit-${editing.id}` : 'new'}
-          open={modalOpen}
-          cajaId={cajaCode}
-          editing={editing}
-          defaultNOrden={defaultNOrden}
-          asuntoAutomaticoDeLaCaja={asuntoAutomaticoDeLaCaja}
-          caja={cajaQuery.data}
-          registros={registros}
-          onClose={() => setModalOpen(false)}
-        />
-      )}
+      {/* Corregir un registro ya guardado sí es una acción puntual sobre una
+          fila concreta, y para eso el diálogo es lo que corresponde. */}
+      <Modal
+        open={editing !== null}
+        onClose={cerrarEdicion}
+        title={editing ? `Editar registro ${editing.upd ?? ''}` : 'Editar registro'}
+        size="xl"
+      >
+        {editing && (
+          <FormularioFuid
+            key={`edit-${editing.id}`}
+            cajaId={cajaCode}
+            editing={editing}
+            defaultNOrden={defaultNOrden}
+            asuntoAutomaticoDeLaCaja={asuntoAutomaticoDeLaCaja}
+            caja={cajaQuery.data}
+            onTerminar={cerrarEdicion}
+          />
+        )}
+      </Modal>
 
       <ConfirmDialog
         open={deleteTarget !== null}

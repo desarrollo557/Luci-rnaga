@@ -386,21 +386,6 @@ textarea::placeholder {
   font-size: 1.125rem;
 }
 
-/* Campos de párrafo del FUID (Asunto Manual y Notas). No llevan alto fijo como
-   los demás: el componente `Textarea` los hace crecer hacia abajo conforme se
-   escribe, así que aquí solo se fija el mínimo para que arranquen del alto de un
-   campo normal.
-
-   La altura de línea no es decorativa. Con una sola línea el campo mide
-   1,625rem de línea + 1,25rem de relleno + 2px de borde = 3rem exactas, que es
-   lo que mide un `input` de este formulario. Así los dos campos de párrafo
-   arrancan a ras de los demás y solo crecen cuando el texto pasa de una línea. */
-#fuid-form textarea {
-  min-height: 3rem;
-  font-size: 1.125rem;
-  line-height: 1.625rem;
-}
-
 #fuid-form input[type='date'] {
   font-size: 1.0625rem;
 }
