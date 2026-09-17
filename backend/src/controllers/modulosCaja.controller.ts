@@ -6,6 +6,7 @@ import { formatUpd, isUpdValid, nextUpd, normalizeUpd, toNumeric, UPD_MAX } from
 import { asignarUsuariosACajas, validarUsuariosDeRol } from './asignacionesCaja.controller.js';
 import { audit } from '../services/audit.service.js';
 import { fueraDeSuSede, sedeDeActa, sedeDeCaja, tieneCajaAsignada } from '../services/jerarquia.service.js';
+import { cambiarEstadoCaja } from '../services/cicloCaja.service.js';
 
 export async function listModulosCaja(req: Request, res: Response): Promise<void> {
   const user = req.session.user;
@@ -649,7 +650,14 @@ export async function changeEstadoCaja(req: Request, res: Response): Promise<voi
     return;
   }
 
-  await query('UPDATE modulos_caja SET estado_caja = ? WHERE id = ?', [estado_caja, id]);
+  /*
+   * El estado normalmente se deduce de la digitación; esto es la corrección a
+   * mano para los casos que la deducción no cubre. Al finalizar, la jornada y la
+   * persona salen del último registro de la caja, no de quien pulsa ni del día
+   * en que pulsa, para que el seguimiento atribuya la caja al día en que se
+   * trabajó de verdad.
+   */
+  await cambiarEstadoCaja(query, id, estado_caja);
   res.json({ message: `Estado cambiado a ${estado_caja} correctamente` });
 }
 
@@ -689,8 +697,13 @@ export async function getTecnicaStats(req: Request, res: Response): Promise<void
   }
 
   // Cajas asignadas al técnico
-  const cajasAsignadas = await query<{ id: number; caja_modulo: string }>(
-    `SELECT mc.id, mc.caja_modulo
+  const cajasAsignadas = await query<{
+    id: number;
+    caja_modulo: string;
+    estado_caja: string | null;
+    fecha_finalizacion: string | null;
+  }>(
+    `SELECT mc.id, mc.caja_modulo, mc.estado_caja, mc.fecha_finalizacion
      FROM modulos_caja mc
      JOIN asignacion_caja_tecnica act ON act.modulo_id = mc.id
      WHERE act.usuario_id = ?`,
@@ -746,6 +759,10 @@ export async function getTecnicaStats(req: Request, res: Response): Promise<void
     detalle_cajas: cajasAsignadas.map((c) => ({
       id: c.id,
       caja_modulo: c.caja_modulo,
+      // Con el estado y el acta a la que pertenece, el panel puede ofrecer
+      // "continuar" la caja abierta sin pasar por clientes, actas y cajas.
+      estado_caja: c.estado_caja,
+      fecha_finalizacion: c.fecha_finalizacion,
       fuid_creados: updPorCaja[c.caja_modulo]?.count ?? 0,
       ultimo_upd_caja: updPorCaja[c.caja_modulo]?.ultimo_upd ?? null,
       rango_inicio: rangosMap[c.id]?.inicio ?? null,

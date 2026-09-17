@@ -168,6 +168,8 @@ export interface ModuloCajaInput {
   oficina_productora_caja: string;
   objeto_caja: string;
   estado_caja: string;
+  /** Jornada a la que se atribuyó la caja terminada; la pone el servidor. */
+  fecha_finalizacion?: string | null;
 }
 
 export interface SerieCajasInput {
@@ -274,6 +276,8 @@ export const modulosCajaApi = {
     detalle_cajas: Array<{
       id: number;
       caja_modulo: string;
+      estado_caja: string | null;
+      fecha_finalizacion: string | null;
       fuid_creados: number;
       ultimo_upd_caja: string | null;
       rango_inicio: string | null;

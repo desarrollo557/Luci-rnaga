@@ -1,9 +1,10 @@
 import { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { FileText, Package, TrendingUp, Users } from 'lucide-react';
+import { FileText, Package, PackageOpen, TrendingUp, Users } from 'lucide-react';
 import { toast } from 'sonner';
 import { useQuery } from '@tanstack/react-query';
 import {
+  Badge,
   Button,
   Card,
   LoadingState,
@@ -12,6 +13,8 @@ import {
   type Column,
 } from '@/components/ui';
 import { modulosCajaApi } from '@/lib/api';
+import { CAJA_EN_PROCESO, estadoDeCaja } from '@/lib/estadoCaja';
+import { fechaHoyLocal } from '@/lib/fechas';
 import { useAuthStore } from '@/stores/authStore';
 
 interface TecnicaStats {
@@ -24,6 +27,8 @@ interface TecnicaStats {
   detalle_cajas: Array<{
     id: number;
     caja_modulo: string;
+    estado_caja: string | null;
+    fecha_finalizacion: string | null;
     fuid_creados: number;
     ultimo_upd_caja: string | null;
     rango_inicio: string | null;
@@ -82,6 +87,14 @@ export default function TecnicaDashboardPage() {
       render: (row) => <span className="font-mono text-sm">{formatUpd(row.ultimo_upd_caja)}</span>,
     },
     {
+      key: 'estado_caja',
+      header: 'Estado',
+      render: (row) => {
+        const estado = estadoDeCaja({ estado: row.estado_caja, fechaFinalizacion: row.fecha_finalizacion }, fechaHoyLocal());
+        return <Badge color={estado.color}>{estado.etiqueta}</Badge>;
+      },
+    },
+    {
       key: 'acciones',
       header: 'Acciones',
       render: (row) => (
@@ -136,6 +149,7 @@ export default function TecnicaDashboardPage() {
   }
 
   const s = stats!;
+  const cajasSinTerminar = s.detalle_cajas.filter((c) => c.estado_caja === CAJA_EN_PROCESO);
 
   return (
     <div className="space-y-6">
@@ -148,6 +162,44 @@ export default function TecnicaDashboardPage() {
           </Button>
         }
       />
+
+      {/*
+        Lo primero: la caja que quedó a medias. Es el trabajo que hay que
+        retomar, y llegar a ella por clientes, actas y cajas costaba tres o
+        cuatro pasos. Nadie tiene que marcarla: sigue abierta porque es la
+        última en la que se digitó, y se cerrará sola al pasar a la siguiente.
+      */}
+      {cajasSinTerminar.length > 0 && (
+        <Card className="border-amber-200 bg-amber-50 p-4">
+          <div className="flex items-start gap-3">
+            <PackageOpen className="mt-0.5 size-5 shrink-0 text-amber-700" />
+            <div className="min-w-0 flex-1 space-y-3">
+              <div>
+                <p className="font-semibold text-silver-900">
+                  {cajasSinTerminar.length === 1
+                    ? 'Tienes una caja sin terminar'
+                    : `Tienes ${cajasSinTerminar.length} cajas sin terminar`}
+                </p>
+                <p className="text-sm text-silver-600">
+                  Continúa donde la dejaste. Se dará por terminada cuando empieces la siguiente.
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {cajasSinTerminar.map((c) => (
+                  <Button
+                    key={c.id}
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => navigate(`/cajas/${c.id}/datos`, { state: { from: '/mi-panel' } })}
+                  >
+                    <Package className="size-4" /> Continuar caja {c.caja_modulo}
+                  </Button>
+                ))}
+              </div>
+            </div>
+          </div>
+        </Card>
+      )}
 
       {/* Tarjetas de resumen */}
       <div className="grid gap-4 md:grid-cols-3">

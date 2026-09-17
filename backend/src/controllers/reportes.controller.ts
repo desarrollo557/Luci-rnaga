@@ -605,9 +605,24 @@ export async function produccionDetallada(req: Request, res: Response): Promise<
  * medias dejaría la columna en blanco en lugar de tumbar la consulta con un error
  * de conversión.
  *
- * El recuento de cajas es `COUNT(DISTINCT)` y no la resta de los extremos: si una
- * jornada saltó cajas, restar el primero del último contaría cajas que nadie
- * tocó.
+ * Las tres columnas de caja responden a tres preguntas distintas:
+ *
+ * - **#CAJA_INI** y **#CAJ_FIN** son la primera y la última caja que se tocaron
+ *   ese día, en orden cronológico de digitación y no por número. Quien lee el
+ *   informe quiere saber por dónde empezó y dónde se quedó, y eso no siempre
+ *   coincide con el menor y el mayor número de caja.
+ * - **TOT_CAJ** son las cajas que **quedaron terminadas** esa jornada, no las
+ *   que se tocaron. Una caja que se trabaja lunes y martes se contaba antes los
+ *   dos días, así que el total del periodo salía inflado; ahora cuenta una vez,
+ *   el día en que se cerró. La suma de la columna es producción real.
+ *
+ * Que una caja quedara a medias se lee sin ninguna columna nueva: la caja que
+ * sigue abierta aparece como caja final de un día y como caja inicial del
+ * siguiente. Cuándo se cierra una caja y por qué está en `cicloCaja.service.ts`.
+ *
+ * El cierre se atribuye a una sola jornada porque se exige que coincidan las dos
+ * cosas: el día de cierre y la persona. Si dos técnicas tocaron la misma caja el
+ * mismo día, la caja cuenta para quien digitó su último registro, no para las dos.
  *
  * **Los JOIN son LEFT a propósito.** Con JOIN interno, un registro cuya caja no
  * tenga fila en `modulos_caja` —cosa corriente entre los registros heredados de
@@ -619,12 +634,25 @@ export async function produccionDetallada(req: Request, res: Response): Promise<
  * El número de acta se toma del propio registro FUID, que es lo que escribió
  * quien digitó, y solo si viene vacío se cae al del acta relacionada.
  */
-const SEGUIMIENTO_QUERY = `
+/** El número de caja que pide el formato: de `051C002406` sale 2406. */
+const NUMERO_DE_CAJA = `NULLIF(substring(f.caja from '^[0-9]{3}C([0-9]{6})$'), '')::int`;
+
+/*
+ * Orden real de digitación. Los registros heredados de la base antigua no traen
+ * `created_at`, así que van primero, que es donde les corresponde por antigüedad,
+ * y el `id` desempata.
+ */
+const CRONOLOGICO = 'f.created_at ASC NULLS FIRST, f.id ASC';
+const CRONOLOGICO_INVERSO = 'f.created_at DESC NULLS LAST, f.id DESC';
+
+export const SEGUIMIENTO_QUERY = `
   SELECT f.fecha_del_dato AS fecha,
          mcl.codigo AS codigo_cliente,
-         MIN(NULLIF(substring(f.caja from '^[0-9]{3}C([0-9]{6})$'), '')::int) AS caja_ini,
-         MAX(NULLIF(substring(f.caja from '^[0-9]{3}C([0-9]{6})$'), '')::int) AS caja_fin,
-         COUNT(DISTINCT f.caja) AS total_cajas,
+         (array_agg(${NUMERO_DE_CAJA} ORDER BY ${CRONOLOGICO}) FILTER (WHERE ${NUMERO_DE_CAJA} IS NOT NULL))[1] AS caja_ini,
+         (array_agg(${NUMERO_DE_CAJA} ORDER BY ${CRONOLOGICO_INVERSO}) FILTER (WHERE ${NUMERO_DE_CAJA} IS NOT NULL))[1] AS caja_fin,
+         COUNT(DISTINCT f.caja) FILTER (
+           WHERE mc.fecha_finalizacion = f.fecha_del_dato AND mc.finalizada_por = f.elaborado_por
+         ) AS total_cajas,
          MIN(NULLIF(substring(f.upd from '^UPD([0-9]{7})$'), '')::int) AS upd_ini,
          MAX(NULLIF(substring(f.upd from '^UPD([0-9]{7})$'), '')::int) AS upd_fin,
          COUNT(*) AS total_registros,
@@ -635,7 +663,7 @@ const SEGUIMIENTO_QUERY = `
   LEFT JOIN moduloscliente mcl ON mcl.id = mc.id_modulo_caja
 `;
 
-const SEGUIMIENTO_AGRUPACION = `
+export const SEGUIMIENTO_AGRUPACION = `
   GROUP BY f.fecha_del_dato, mcl.codigo, f.elaborado_por,
            COALESCE(NULLIF(f.nro_acta_transferible, 'N/A'), mcl.acta_transferencia_modulo)
   ORDER BY f.fecha_del_dato, mcl.codigo, f.elaborado_por

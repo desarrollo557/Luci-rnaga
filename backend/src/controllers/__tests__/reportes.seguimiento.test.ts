@@ -55,8 +55,15 @@ function respuesta() {
   return res as typeof res & Response;
 }
 
-/** La condición WHERE de una consulta, para comparar filtros entre dos. */
-const condicionDe = (sql: string) => /WHERE\s+([\s\S]*?)\s+GROUP BY/.exec(sql)?.[1].replace(/\s+/g, ' ').trim();
+/**
+ * La condición WHERE de los filtros, para comparar dos consultas.
+ *
+ * El prefijo voraz busca el último `WHERE` antes del `GROUP BY`: la consulta
+ * lleva otro dentro de un `FILTER (WHERE …)`, que no es un filtro de la
+ * petición sino parte del recuento de cajas terminadas.
+ */
+const condicionDe = (sql: string) =>
+  /[\s\S]*\sWHERE\s+([\s\S]*?)\s+GROUP BY/.exec(sql)?.[1].replace(/\s+/g, ' ').trim();
 
 const jornada = (n: number) => ({
   fecha: `2026-09-${String(n).padStart(2, '0')}`,
