@@ -15,6 +15,5 @@ export * from './PageHeader';
 export * from './Select';
 export * from './Spinner';
 export * from './Table';
-export * from './Textarea';
 export * from './ThemeToggle';
 export * from './UpdInput';
