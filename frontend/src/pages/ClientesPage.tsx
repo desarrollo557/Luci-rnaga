@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Building2,
@@ -39,6 +39,7 @@ import { toastApiError } from '@/lib/feedback';
 import { invalidateDomain } from '@/lib/queryInvalidation';
 import { sedeOptionsCon } from '@/lib/sedes';
 import { fechaHoyLocal } from '@/lib/fechas';
+import { PARAMETRO_CLIENTE, clienteDeUrl, leerClienteRecordado, recordarCliente } from '@/lib/clienteRecordado';
 import { useAuthStore } from '@/stores/authStore';
 import { cn } from '@/lib/cn';
 import { type ModuloCliente, type Role, type SubModulo, tieneAlgunRol } from '@/types';
@@ -118,7 +119,13 @@ export default function ClientesPage() {
   const user = useAuthStore((state) => state.user);
   const isManager = tieneAlgunRol(user, ['ADMIN', 'LIDER']);
 
-  const [subModuloId, setSubModuloId] = useState<number | null>(null);
+  const [searchParams, setSearchParams] = useSearchParams();
+  // El cliente con el que se estaba trabajando: el que trae la URL si se vuelve
+  // desde un acta, y si no el último elegido en esta cuenta. Sin esto, cada
+  // vuelta a esta pantalla obligaba a buscarlo otra vez en el selector.
+  const [subModuloId, setSubModuloId] = useState<number | null>(
+    () => clienteDeUrl(searchParams) ?? leerClienteRecordado(user?.cc),
+  );
   // Cliente recién creado: se selecciona automáticamente cuando la lista se
   // refresca, para que "Nueva acta" quede habilitado sin pasos intermedios.
   const [clientePendiente, setClientePendiente] = useState<(SubModuloInput & { desde: number }) | null>(
@@ -153,6 +160,29 @@ export default function ClientesPage() {
     [subModulosQuery.data],
   );
   const clienteSeleccionado = clientes.find((sm) => sm.id === subModuloId) ?? null;
+
+  useEffect(() => {
+    // Un cliente recordado que ya no existe se suelta, en vez de dejar el
+    // selector apuntando a nada.
+    if (
+      subModuloId !== null &&
+      subModulosQuery.data &&
+      !subModulosQuery.data.some((sm) => sm.id === subModuloId)
+    ) {
+      setSubModuloId(null);
+      return;
+    }
+    recordarCliente(user?.cc, subModuloId);
+    // La URL lleva el cliente elegido, para que el botón atrás del navegador y
+    // una recarga vuelvan exactamente aquí. Con `replace`, para no llenar el
+    // historial con cada cambio del selector; y solo si difiere, para no
+    // navegar en bucle.
+    if (clienteDeUrl(searchParams) !== subModuloId) {
+      setSearchParams(subModuloId === null ? {} : { [PARAMETRO_CLIENTE]: String(subModuloId) }, {
+        replace: true,
+      });
+    }
+  }, [subModuloId, subModulosQuery.data, user?.cc, searchParams, setSearchParams]);
 
   useEffect(() => {
     // Solo se acepta una lista obtenida después de crear el cliente; así no se

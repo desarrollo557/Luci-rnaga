@@ -28,6 +28,7 @@ import {
   type SerieCajasInput,
 } from '@/lib/api';
 import { OPCIONES_OBJETO_CAJA } from '@/lib/catalogos';
+import { rutaDeClientes } from '@/lib/clienteRecordado';
 import { invalidateDomain } from '@/lib/queryInvalidation';
 import { formatearFechaHora } from '@/lib/fechas';
 import { useAuthStore } from '@/stores/authStore';
@@ -38,6 +39,12 @@ const ESTADOS_CAJA = ['EN PROCESO', 'FINALIZADO'] as const;
 /** ¿El objeto guardado está en el catálogo actual? */
 function objetoEnCatalogo(valor: string | null | undefined): boolean {
   return (OPCIONES_OBJETO_CAJA as readonly string[]).includes((valor ?? '').trim());
+}
+
+/** Un "N/A" guardado no se precarga: el campo se muestra vacío. */
+function sinNA(valor?: string | null): string {
+  const limpio = (valor ?? '').trim();
+  return limpio.toUpperCase() === 'N/A' ? '' : limpio;
 }
 
 interface CajaForm {
@@ -63,7 +70,7 @@ const EMPTY_CAJA_FORM: CajaForm = {
   objeto_caja: '',
   acta_trans_caja: '',
   fecha_trans_caja: '',
-  estado_caja: 'EN PROCESO',
+  estado_caja: '',
 };
 
 interface AsignacionCaja {
@@ -135,6 +142,8 @@ export default function ActasPage() {
   const [deleteTarget, setDeleteTarget] = useState<ModuloCaja | null>(null);
   const [cajaForm, setCajaForm] = useState<CajaForm>(() => ({ ...EMPTY_CAJA_FORM }));
   const [cajaErrors, setCajaErrors] = useState<Partial<Record<keyof CajaForm, string>>>({});
+  /** Siguiente número de caja libre del cliente; se enseña bajo el campo, sin escribirlo en él. */
+  const [numeroSugerido, setNumeroSugerido] = useState('');
   // Usuarios asignados a la caja (o a toda la serie al crear). En edición se
   // conserva el estado original para aplicar solo las diferencias al guardar.
   const [asignacion, setAsignacion] = useState<AsignacionCaja>(sinAsignacion);
@@ -188,6 +197,8 @@ export default function ActasPage() {
   });
 
   const actaModulo = moduloQuery.data?.acta_transferencia_modulo ?? '';
+  // Entidad remitente del acta, que hereda cada caja nueva. Un N/A no se precarga.
+  const entidadDelActa = sinNA(moduloQuery.data?.entidad_remitente);
   // Prefijo de las cajas (código del cliente + "C"). Solo se muestra: el backend
   // lo calcula al crear la serie y al editar se conserva el de la caja.
   const prefijoCaja = moduloQuery.data ? `${moduloQuery.data.codigo.padStart(3, '0')}C` : '';
@@ -329,7 +340,10 @@ export default function ActasPage() {
       objeto_caja: cajaForm.objeto_caja.trim(),
       acta_trans_caja: cajaForm.acta_trans_caja.trim(),
       fecha_trans_caja: cajaForm.fecha_trans_caja || null,
-      estado_caja: cajaForm.estado_caja,
+      // Sin estado elegido, la caja nace EN PROCESO: es el único que tiene
+      // sentido para una caja recién creada, y desde ahí lo lleva el servidor
+      // con cada registro que se digita.
+      estado_caja: cajaForm.estado_caja || 'EN PROCESO',
       usuarios_tecnica: [...asignacion.tecnica],
     };
 
@@ -389,19 +403,14 @@ export default function ActasPage() {
 
   const openNuevaCaja = async () => {
     setEditingCaja(null);
-    const actaModulo = moduloQuery.data?.acta_transferencia_modulo ?? '';
-    // Entidades de referencia: se toman de una caja existente del módulo, así la
-    // nueva caja hereda los mismos valores que muestra la tabla de actas.
-    const todasLasCajas: ModuloCaja[] = cajasData;
-    const cajaReferencia =
-      todasLasCajas.find((c) => c.entidad_remitente_caja?.trim() || c.entidad_productora_caja?.trim());
     // Siguiente número libre del prefijo en TODA la base, no solo en esta acta:
-    // el número de caja no puede repetirse entre actas del mismo cliente.
-    let sugeridoInicial = '000001';
+    // el número de caja no puede repetirse entre actas del mismo cliente. Se
+    // enseña como pista bajo el campo, no como valor ya escrito.
+    let sugerido = '';
     try {
       if (prefijoCaja) {
         const { data } = await modulosCajaApi.siguienteNumero(prefijoCaja);
-        sugeridoInicial = data.siguiente.slice(-6);
+        sugerido = data.siguiente.slice(-6);
       }
     } catch {
       // Sin respuesta del servidor: se parte de la última caja de esta acta.
@@ -411,23 +420,23 @@ export default function ActasPage() {
         return nb - na;
       })[0];
       if (ultimaCaja) {
-        sugeridoInicial = String(parseInt(ultimaCaja.caja_modulo.slice(-6), 10) + 1).padStart(6, '0');
+        sugerido = String(parseInt(ultimaCaja.caja_modulo.slice(-6), 10) + 1).padStart(6, '0');
       }
     }
+    setNumeroSugerido(sugerido);
+    /*
+     * Ningún campo viene elegido. Antes la caja nueva heredaba de otra caja del
+     * acta la entidad productora, la unidad, la oficina y el objeto, traía el
+     * número sugerido ya escrito y el estado puesto: había que revisar campo por
+     * campo qué aplicaba y qué no, y lo que nadie revisaba se guardaba tal cual,
+     * como pasaba con el código del FUID antes de dejarlo en blanco. Lo único
+     * precargado es lo que la caja toma del acta en la que se crea (entidad
+     * remitente, número de acta y fecha), y va bloqueado como dato derivado.
+     */
     setCajaForm({
       ...EMPTY_CAJA_FORM,
-      numero_inicial: sugeridoInicial,
-      numero_final: sugeridoInicial,
+      entidad_remitente_caja: entidadDelActa,
       acta_trans_caja: actaModulo,
-      entidad_remitente_caja:
-        cajaReferencia?.entidad_remitente_caja ?? moduloQuery.data?.entidad_remitente ?? '',
-      entidad_productora_caja: cajaReferencia?.entidad_productora_caja ?? '',
-      unidad_administrativa_caja: cajaReferencia?.unidad_administrativa_caja ?? '',
-      oficina_productora_caja: cajaReferencia?.oficina_productora_caja ?? '',
-      // El objeto solo se hereda si sigue siendo uno de los del catálogo: las
-      // cajas antiguas guardan textos libres que el servidor ya no acepta al
-      // crear, y precargarlos dejaría el formulario sin poder enviarse.
-      objeto_caja: objetoEnCatalogo(cajaReferencia?.objeto_caja) ? cajaReferencia!.objeto_caja : '',
       fecha_trans_caja: moduloQuery.data?.fecha_trans_modulo?.slice(0, 10) ?? '',
     });
     setCajaErrors({});
@@ -533,7 +542,7 @@ export default function ActasPage() {
       <PageHeader
         title={actaModulo ? `Acta ${actaModulo}` : 'Acta'}
         description="Clientes / Actas — Cajas registradas en el acta"
-        backTo="/clientes"
+        backTo={rutaDeClientes(moduloQuery.data?.id_submodulo)}
         backLabel="Clientes"
         actions={
           isManager ? (
@@ -623,7 +632,8 @@ export default function ActasPage() {
                 value={cajaForm.numero_inicial}
                 onChange={(event) => setCajaForm({ ...cajaForm, numero_inicial: event.target.value })}
                 error={cajaErrors.numero_inicial}
-                placeholder="000001"
+                placeholder={numeroSugerido || '000001'}
+                hint={numeroSugerido ? `Siguiente número libre del cliente: ${numeroSugerido}` : undefined}
                 maxLength={6}
               />
               <Input
@@ -631,16 +641,20 @@ export default function ActasPage() {
                 value={cajaForm.numero_final}
                 onChange={(event) => setCajaForm({ ...cajaForm, numero_final: event.target.value })}
                 error={cajaErrors.numero_final}
-                placeholder="000001"
+                placeholder={numeroSugerido || '000001'}
                 maxLength={6}
               />
             </>
           )}
-          <Input
+          {/* Al crear viene del acta y va bloqueada, como el número de acta y la
+              fecha; arranca abierta si el acta no la tiene o al editar la caja. */}
+          <EditableInput
             label="Entidad Remitente"
             value={cajaForm.entidad_remitente_caja}
-            onChange={(event) => setCajaForm({ ...cajaForm, entidad_remitente_caja: event.target.value })}
+            onChange={(value) => setCajaForm({ ...cajaForm, entidad_remitente_caja: value })}
             error={cajaErrors.entidad_remitente_caja}
+            placeholder={entidadDelActa || 'Ingrese la entidad remitente'}
+            defaultUnlocked={editingCaja !== null || !entidadDelActa}
           />
           <EditableInput
             label="Acta de Transferencia"
@@ -685,9 +699,11 @@ export default function ActasPage() {
           />
           <Select
             label="Estado"
+            placeholder="Sin especificar"
             options={ESTADOS_CAJA.map((estado) => ({ value: estado, label: estado }))}
             value={cajaForm.estado_caja}
             onChange={(value) => setCajaForm({ ...cajaForm, estado_caja: value })}
+            hint={editingCaja ? undefined : 'Si se deja en blanco, la caja se crea EN PROCESO'}
           />
 
           <div className="space-y-2 border-t border-silver-100 pt-4 md:col-span-2">
