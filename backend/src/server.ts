@@ -1,6 +1,7 @@
 import 'dotenv/config';
 import { app } from './app.js';
 import { DEFAULT_HOST, DEFAULT_PORT } from './config/constants.js';
+import { faltaConfiguracionDeBase } from './config/db.js';
 import { asegurarEsquema } from './config/esquema.js';
 import { iniciarActualizacionDiaria } from './services/actualizacionDiaria.service.js';
 
@@ -13,6 +14,22 @@ import { iniciarActualizacionDiaria } from './services/actualizacionDiaria.servi
  * quedarse sin servicio entero por no haber podido añadir una columna sería peor
  * que el problema que se está evitando.
  */
+/*
+ * Sin base no hay nada que servir, así que se comprueba antes de escuchar y con
+ * un mensaje que diga qué falta. El software usa PostgreSQL (Supabase) y ya no
+ * MySQL: un `.env` de aquella época, con `DB_HOST` y sin `PG_*`, arrancaba
+ * igual y respondía 500 a todo.
+ */
+const falta = faltaConfiguracionDeBase();
+if (falta) {
+  console.error(
+    `[Base de datos] No se puede arrancar: ${falta}. ` +
+      'El backend usa PostgreSQL (Supabase); las variables DB_HOST, DB_USER, DB_PASSWORD y DB_NAME eran de MySQL y ya no se leen. ' +
+      'Copie backend/.env.example a backend/.env y rellene PG_HOST, PG_USER y PG_PASSWORD (ver docs/ENTORNOS.md).',
+  );
+  process.exit(1);
+}
+
 await asegurarEsquema();
 
 app.listen(DEFAULT_PORT, DEFAULT_HOST, () => {
