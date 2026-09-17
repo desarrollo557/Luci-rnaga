@@ -27,13 +27,26 @@ const sizeClasses: Record<Size, string> = {
   md: 'h-10 px-4 text-sm',
 };
 
+/**
+ * `type="button"` por defecto, y no el `submit` que pone el navegador.
+ *
+ * Un botón sin tipo declarado envía el formulario que lo contenga. En un
+ * formulario largo eso convierte cualquier botón auxiliar —abrir un detalle,
+ * cambiar de vista, cancelar— en un envío accidental, con sus avisos de campos
+ * obligatorios y su petición al servidor. Pasó exactamente eso con el botón que
+ * abre un registro para corregirlo desde el panel de digitación.
+ *
+ * Quien quiera enviar lo pide a propósito con `type="submit"`, como hace el
+ * botón Enviar del formulario FUID.
+ */
 export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button(
-  { variant = 'primary', size = 'md', loading = false, className, disabled, children, ...rest },
+  { variant = 'primary', size = 'md', loading = false, className, disabled, children, type = 'button', ...rest },
   ref,
 ) {
   return (
     <button
       ref={ref}
+      type={type}
       className={cn(
         'inline-flex shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-lg font-medium transition-all duration-200 ease-in-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60 disabled:active:scale-100',
         variantClasses[variant],

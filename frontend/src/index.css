@@ -386,21 +386,6 @@ textarea::placeholder {
   font-size: 1.125rem;
 }
 
-/* Campos de párrafo del FUID (Asunto Manual y Notas). No llevan alto fijo como
-   los demás: el componente `Textarea` los hace crecer hacia abajo conforme se
-   escribe, así que aquí solo se fija el mínimo para que arranquen del alto de un
-   campo normal.
-
-   La altura de línea no es decorativa. Con una sola línea el campo mide
-   1,625rem de línea + 1,25rem de relleno + 2px de borde = 3rem exactas, que es
-   lo que mide un `input` de este formulario. Así los dos campos de párrafo
-   arrancan a ras de los demás y solo crecen cuando el texto pasa de una línea. */
-#fuid-form textarea {
-  min-height: 3rem;
-  font-size: 1.125rem;
-  line-height: 1.625rem;
-}
-
 #fuid-form input[type='date'] {
   font-size: 1.0625rem;
 }
@@ -410,35 +395,13 @@ textarea::placeholder {
   font-size: 1rem;
 }
 
-/* Confirmación animada al enviar un registro FUID (~2,4 s, no bloquea el teclado). */
-@keyframes fuid-confirmacion {
-  0% { opacity: 0; transform: translateY(-14px) scale(0.94); }
-  12% { opacity: 1; transform: translateY(0) scale(1); }
-  82% { opacity: 1; transform: translateY(0) scale(1); }
-  100% { opacity: 0; transform: translateY(-10px) scale(0.98); }
-}
-
-@keyframes fuid-check-circulo {
-  to { stroke-dashoffset: 0; }
-}
-
-@keyframes fuid-check-marca {
-  to { stroke-dashoffset: 0; }
-}
-
+/*
+ * Destello verde al guardar un registro FUID: confirma al instante y no tapa
+ * nada. Sustituyó a un cartel superpuesto que cubría los campos durante dos
+ * segundos y medio, justo cuando hay que empezar a escribir el siguiente; el
+ * rastro de lo guardado lo lleva ahora el panel lateral del formulario.
+ */
 @keyframes fuid-flash {
   0% { box-shadow: 0 0 0 0 rgba(22, 163, 74, 0.45); }
   100% { box-shadow: 0 0 0 22px rgba(22, 163, 74, 0); }
-}
-
-.fuid-check-circulo {
-  stroke-dasharray: 166;
-  stroke-dashoffset: 166;
-  animation: fuid-check-circulo 0.6s ease-out forwards;
-}
-
-.fuid-check-marca {
-  stroke-dasharray: 48;
-  stroke-dashoffset: 48;
-  animation: fuid-check-marca 0.35s 0.5s ease-out forwards;
 }

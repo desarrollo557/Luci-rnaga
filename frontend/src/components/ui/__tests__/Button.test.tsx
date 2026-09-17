@@ -82,4 +82,26 @@ describe('los tipos de botón se distinguen', () => {
     render(<Button type="button">Cancelar</Button>);
     expect(screen.getByRole('button', { name: 'Cancelar' })).toHaveAttribute('type', 'button');
   });
+
+  it('sin decir nada, no envía: el tipo por defecto es button', () => {
+    // El navegador trata un botón sin tipo como de envío. Dentro de un
+    // formulario largo, cualquier botón auxiliar se convertía en un envío
+    // accidental, con sus avisos de campos obligatorios y su petición.
+    render(<Button>Ver detalle</Button>);
+    expect(screen.getByRole('button', { name: 'Ver detalle' })).toHaveAttribute('type', 'button');
+  });
+
+  it('el que sí debe enviar lo pide a propósito', async () => {
+    const alEnviar = vi.fn((evento: { preventDefault: () => void }) => evento.preventDefault());
+    render(
+      <form onSubmit={alEnviar}>
+        <Button type="submit">Enviar</Button>
+        <Button onClick={() => undefined}>Ver detalle</Button>
+      </form>,
+    );
+    await userEvent.click(screen.getByRole('button', { name: 'Ver detalle' }));
+    expect(alEnviar, 'el botón auxiliar no envía').not.toHaveBeenCalled();
+    await userEvent.click(screen.getByRole('button', { name: 'Enviar' }));
+    expect(alEnviar, 'el de enviar sí').toHaveBeenCalledTimes(1);
+  });
 });
