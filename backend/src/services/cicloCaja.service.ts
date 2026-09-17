@@ -31,14 +31,30 @@
  * cierra. El cierre lo provoca quien la tenía en las manos.
  *
  * La deducción se corrige sola: si alguien vuelve a digitar en una caja cerrada,
- * esta se reabre y volverá a cerrarse con la fecha nueva. El único momento en
- * que el estado va por detrás de la realidad es la última caja del día, que
- * figura abierta hasta que su dueña empieza la siguiente. Es un desfase
- * conocido y preferible a cobrarle un clic diario a todo el mundo.
+ * esta se reabre y volverá a cerrarse con la fecha nueva.
+ *
+ * **Para qué sirve este estado y para qué no.** Sirve para la pantalla: saber en
+ * qué caja va cada quien, avisar de que una viene de días anteriores y ofrecer
+ * retomarla. **No** sirve para contar producción, y el seguimiento de inventario
+ * no lo usa: ese deduce a qué jornada pertenece cada caja del último registro de
+ * la caja, porque así también cuenta bien todo lo que se digitó antes de que
+ * este estado existiera. Fiarlo al estado guardado dejaba el histórico en cero.
+ *
+ * **Coste en el camino de digitación.** Guardar un registro es la operación más
+ * repetida del software, así que aquí se hace lo mínimo: una actualización por
+ * número de caja, que está indexado. La pasada de cierre, que es la cara, solo
+ * corre cuando la caja acaba de abrirse, es decir cuando la persona cambió de
+ * caja. Mientras sigue en la misma —el caso normal, decenas de veces seguidas—
+ * no se ejecuta.
  */
 
-/** Cómo se lanza cada consulta: con el pool o dentro de una transacción. */
-export type EjecutarSql = (sql: string, params: unknown[]) => Promise<unknown>;
+/**
+ * Cómo se lanza cada consulta: con el pool o dentro de una transacción.
+ *
+ * Devuelve cuántas filas cambió, que es lo que permite saltarse la pasada de
+ * cierre cuando la persona sigue en la misma caja.
+ */
+export type EjecutarSql = (sql: string, params: unknown[]) => Promise<number>;
 
 export const CAJA_EN_PROCESO = 'EN PROCESO';
 export const CAJA_FINALIZADA = 'FINALIZADO';
@@ -124,8 +140,17 @@ export async function registrarDigitacion(
   autor: string | null | undefined,
 ): Promise<void> {
   if (!caja || !autor) return;
-  await ejecutar(SQL_ABRIR_CAJA, [caja]);
-  await ejecutar(SQL_CERRAR_OTRAS_CAJAS, [caja, autor]);
+  const seAbrio = await ejecutar(SQL_ABRIR_CAJA, [caja]);
+  /*
+   * Si la caja ya estaba abierta, la persona sigue donde estaba y no hay nada
+   * que cerrar. Saltarse la pasada aquí es lo que mantiene ligero el guardado.
+   *
+   * Queda un caso raro sin cubrir: cambiar a una caja que otra persona ya tenía
+   * abierta deja la anterior marcada como abierta. Solo afecta a lo que se ve en
+   * pantalla, no a lo que cuenta el informe, y se corrige en cuanto esa caja se
+   * cierre o se retome.
+   */
+  if (seAbrio > 0) await ejecutar(SQL_CERRAR_OTRAS_CAJAS, [caja, autor]);
 }
 
 /** Cambio de estado a mano desde la pantalla de la caja. */
