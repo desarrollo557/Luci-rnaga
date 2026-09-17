@@ -1,10 +1,9 @@
 -- Cuándo se terminó una caja y a quién se le atribuye.
 --
--- El seguimiento de inventario tiene que decir cuántas cajas terminó cada
--- persona cada día, y cuál quedó a medias para continuarla al día siguiente.
--- La columna `estado_caja` ya decía si una caja estaba terminada, pero no
--- cuándo ni por quién, y sin la fecha no hay forma de atribuir la caja a una
--- jornada: el informe no podría contar nada.
+-- La pantalla necesita saber en qué caja va cada técnica, avisar de que una
+-- viene de días anteriores y ofrecer retomarla. La columna `estado_caja` ya
+-- decía si una caja estaba terminada, pero no cuándo, y sin la fecha no se puede
+-- decir "terminada el 15" ni distinguir la que se está continuando.
 --
 -- Por qué la fecha no es la del cierre sino la del último registro de la caja:
 -- una caja que se termina el viernes y se cierra el lunes, cuando su dueña
@@ -13,8 +12,11 @@
 -- torcido.
 --
 -- `finalizada_por` guarda a quién se le atribuye la caja, en el mismo formato
--- "NOMBRE (CC)" que usa `fuiddatosreal.elaborado_por`, porque el informe cruza
--- las dos: si no coincidieran, la caja no contaría en ninguna jornada.
+-- "NOMBRE (CC)" que usa `fuiddatosreal.elaborado_por`. Es información de
+-- auditoría: el seguimiento de inventario **no** la usa. Ese deduce a qué
+-- jornada pertenece cada caja del último registro de la propia caja, y no de
+-- estas columnas, porque así cuenta bien también todo lo que se digitó antes de
+-- que existieran. Fiarlo al estado guardado dejaba el histórico en cero.
 --
 -- El estado lo mantiene el servidor solo, al guardar cada registro; la lógica
 -- está en `backend/src/services/cicloCaja.service.ts`. Nadie tiene que marcar
