@@ -58,12 +58,13 @@ function respuesta() {
 /**
  * La condición WHERE de los filtros, para comparar dos consultas.
  *
- * El prefijo voraz busca el último `WHERE` antes del `GROUP BY`: la consulta
- * lleva otro dentro de un `FILTER (WHERE …)`, que no es un filtro de la
- * petición sino parte del recuento de cajas terminadas.
+ * El filtro de la petición vive dentro del primer bloque de la consulta, que
+ * termina en `),`. Buscarlo así lo distingue de los otros `WHERE` que lleva el
+ * SQL —los de `FILTER (WHERE …)`— que no son filtros de la petición sino parte
+ * del recuento de cajas terminadas.
  */
 const condicionDe = (sql: string) =>
-  /[\s\S]*\sWHERE\s+([\s\S]*?)\s+GROUP BY/.exec(sql)?.[1].replace(/\s+/g, ' ').trim();
+  /\sWHERE\s+([\s\S]*?)\n\s*\),/.exec(sql)?.[1].replace(/\s+/g, ' ').trim();
 
 const jornada = (n: number) => ({
   fecha: `2026-09-${String(n).padStart(2, '0')}`,
@@ -95,7 +96,7 @@ describe('resumen del seguimiento', () => {
     const { sql, params } = consultas[0];
     expect(sql).toMatch(/SELECT COUNT\(\*\) AS jornadas/);
     expect(sql).toMatch(/SUM\(t\.total_registros\)/);
-    expect(sql).toMatch(/FROM \(\s*SELECT/);
+    expect(sql).toMatch(/FROM \(\s*WITH base AS/);
     expect(sql).toMatch(/GROUP BY/);
     expect(params).toEqual(['2026-09-01', '2026-09-15']);
   });

@@ -25,11 +25,13 @@ import { toastApiError } from '@/lib/feedback';
 import { invalidateDomain } from '@/lib/queryInvalidation';
 import { intervaloRefresco } from '@/lib/refresco';
 import { filtrarPorTexto } from '@/lib/busqueda';
+import { useLatidoDeEscritura } from '@/lib/latidoDeEscritura';
 import { retornoDeCaja } from '@/lib/navegacion';
 import { OPCIONES_FRECUENCIA, OPCIONES_OTRO, OPCIONES_SOPORTE } from '@/lib/catalogos';
 import { limiteDe } from '@/lib/limites';
 import { fechaHoyLocal, formatearFechaHora } from '@/lib/fechas';
 import { estadoDeCaja } from '@/lib/estadoCaja';
+import { CierreDeJornada } from './cajas/CierreDeJornada';
 import { FECHA_MINIMA_DOCUMENTAL, dateInRange, dateOrderValid, onlyDigits } from '@/lib/validation';
 import { useAuthStore } from '@/stores/authStore';
 import { SUGGESTION_FIELDS, type DataRow, type FuidDato, type ModuloCaja, type SessionUser, tieneAlgunRol, tieneRol } from '@/types';
@@ -178,25 +180,6 @@ function formFromRecord(record: FuidDato): FuidFormValues {
   };
 }
 
-/** Última caja interna digitada; se recuerda entre registros como hacía la versión anterior. */
-const CLAVE_CAJA_INTERNA = 'luciernaga.fuid.caja_interna';
-
-function leerCajaInternaRecordada(): string {
-  try {
-    return localStorage.getItem(CLAVE_CAJA_INTERNA) ?? '';
-  } catch {
-    return '';
-  }
-}
-
-function recordarCajaInterna(valor: string): void {
-  try {
-    if (valor.trim()) localStorage.setItem(CLAVE_CAJA_INTERNA, valor.trim());
-  } catch {
-    // Sin almacenamiento local solo se pierde la comodidad de recordarla.
-  }
-}
-
 /** UPD siguiente al guardado (7 dígitos); vacío si no es válido o ya era UPD9999999. */
 function siguienteUpdLocal(upd: string): string {
   const numero = parseInt(updANumero(upd), 10);
@@ -234,7 +217,12 @@ function emptyFormFor(
     // El tomo queda en blanco a propósito. Antes se sugería el siguiente de la
     // caja y se iba sumando en cada registro, así que el campo llegaba con un
     // número que casi nunca era el del documento y había que borrarlo a mano.
-    caja_interna: leerCajaInternaRecordada(),
+    //
+    // La caja interna arranca vacía por lo mismo. Se recordaba la última
+    // digitada y se precargaba en cada registro nuevo, así que llegaba con un
+    // valor que había que comprobar o borrar cada vez. Un campo que se rellena
+    // solo con un dato que puede no ser el correcto cuesta más de lo que ahorra.
+    caja_interna: '',
     // La fecha del dato es el día en que se digita, en hora de Colombia.
     fecha_del_dato: fechaHoyLocal(),
     elaborado_por: user ? `${user.nombre} (${user.cc})` : '',
@@ -421,6 +409,11 @@ function FormularioFuid({
 }: FormularioFuidProps) {
   const queryClient = useQueryClient();
   const user = useAuthStore((state) => state.user);
+  /*
+   * Avisa de que se está escribiendo, para que el panel del líder distinga a
+   * quien está llenando el formulario de quien lo dejó abierto y se fue.
+   */
+  const avisarQueEscribe = useLatidoDeEscritura(cajaId);
 
   const [form, setForm] = useState<FuidFormValues>(() =>
     editing
@@ -472,7 +465,6 @@ function FormularioFuid({
   const createMutation = useMutation({
     mutationFn: (data: DataRow) => fuidApi.create(data),
     onSuccess: () => {
-      recordarCajaInterna(form.caja_interna);
       void invalidateDomain(queryClient, 'fuiddatosreal');
 
       // Producción: no se cierra el formulario. Queda listo el siguiente registro
@@ -595,6 +587,13 @@ function FormularioFuid({
         key={racha}
         id="fuid-form"
         onSubmit={handleSubmit}
+        /*
+         * Cada pulsación en cualquier campo avisa de que se está escribiendo.
+         * `onInput` sube desde los campos, así que basta ponerlo aquí y no hay
+         * que acordarse de engancharlo en cada uno de los veintiún campos. El
+         * aviso se manda como mucho cada medio minuto.
+         */
+        onInput={avisarQueEscribe}
         autoComplete="off"
         /*
          * Cuatro columnas y el mismo orden de siempre; lo que se ajusta es el
@@ -1139,22 +1138,106 @@ export default function DatosPage() {
    * acciones fuera de la pantalla, que es justo el botón que hay que alcanzar
    * para corregir. Lo que no cabe se ve en el propio registro al abrirlo.
    */
+  /*
+   * Todas las columnas del FUID, en el mismo orden en que se digitan.
+   *
+   * Antes la tabla mostraba ocho campos de los veintiuno que se llenan arriba,
+   * así que para comprobar lo que acababa de escribir había que abrir el
+   * registro uno por uno. Un FUID es un inventario: la forma natural de
+   * revisarlo es verlo entero, columna por columna, como la hoja de la que
+   * sale. La tabla desborda a lo ancho y se desplaza, con la columna del
+   * número de orden fija para no perder de vista de qué fila se trata.
+   *
+   * Lo que se guardó como `N/A` —el marcador de "no venía en el documento"—
+   * se muestra como un guion: con veintitantas columnas, repetir "N/A" en
+   * media tabla taparía lo que sí tiene contenido.
+   */
+  const campo = (
+    key: keyof FuidDato,
+    header: string,
+    opciones: { ancho?: string; mono?: boolean } = {},
+  ): Column<FuidDato> => ({
+    key,
+    header,
+    render: (registro: FuidDato) => {
+      const valor = sinNA(registro[key] as string | null | undefined);
+      if (!valor) return <span className="text-silver-300">—</span>;
+      return (
+        <span
+          className={cn('block truncate', opciones.ancho ?? 'max-w-[16rem]', opciones.mono && 'font-mono')}
+          title={valor}
+        >
+          {valor}
+        </span>
+      );
+    },
+  });
+
   const columns: Column<FuidDato>[] = [
-    { key: 'n_orden', header: 'N°', render: (registro: FuidDato) => registro.n_orden ?? '—' },
-    { key: 'upd', header: 'UPD' },
-    { key: 'codigo', header: 'Código' },
-    { key: 'serie', header: 'Serie' },
-    { key: 'asunto', header: 'Asunto' },
+    {
+      /*
+       * Identidad de la fila y selección en la misma celda: es la única
+       * columna que queda fija al desplazarse en horizontal, y separarlas
+       * dejaría la casilla sin decir a qué registro pertenece.
+       */
+      key: 'n_orden',
+      header: canMarcarOk ? (
+        <span className="flex items-center gap-2">
+          <input
+            type="checkbox"
+            checked={allSelected}
+            onChange={toggleAll}
+            aria-label="Seleccionar todos los registros"
+          />
+          N°
+        </span>
+      ) : (
+        'N°'
+      ),
+      render: (registro: FuidDato) => (
+        <span className="flex items-center gap-2 font-medium text-silver-800">
+          {canMarcarOk && (
+            <input
+              type="checkbox"
+              checked={selectedIds.has(registro.id)}
+              onChange={() => toggleRow(registro.id)}
+              aria-label={`Seleccionar registro ${registro.n_orden ?? registro.id}`}
+            />
+          )}
+          {registro.n_orden ?? '—'}
+        </span>
+      ),
+    },
+    campo('upd', 'UPD', { ancho: 'max-w-[9rem]', mono: true }),
+    campo('entidad_productora', 'Entidad Productora'),
+    campo('unidad_administrativa', 'Unidad Administrativa'),
+    campo('oficina_productora', 'Oficina Productora'),
+    campo('objeto', 'Objeto'),
+    campo('codigo', 'Código', { ancho: 'max-w-[7rem]' }),
+    campo('serie', 'Serie', { ancho: 'max-w-[9rem]' }),
+    campo('subserie', 'Subserie', { ancho: 'max-w-[9rem]' }),
+    campo('asunto_2', 'Asunto Automático', { ancho: 'max-w-[20rem]' }),
+    campo('asunto_3', 'Asunto Manual', { ancho: 'max-w-[20rem]' }),
+    campo('numero_doc', 'Doc. Desde', { ancho: 'max-w-[8rem]' }),
+    campo('numero_doc_hasta', 'Doc. Hasta', { ancho: 'max-w-[8rem]' }),
     {
       key: 'fechas',
-      header: 'Fechas',
+      header: 'Fechas del documento',
       render: (registro: FuidDato) => {
         const inicial = registro.fecha_inicial?.slice(0, 10);
         const final = registro.fecha_final?.slice(0, 10);
-        if (!inicial && !final) return '—';
+        if (!inicial && !final) return <span className="text-silver-300">—</span>;
         return `${inicial ?? '?'} – ${final ?? '?'}`;
       },
     },
+    campo('tomo', 'Tomo', { ancho: 'max-w-[6rem]' }),
+    campo('otro', 'Otro', { ancho: 'max-w-[8rem]' }),
+    campo('caja_interna', 'Caja Interna', { ancho: 'max-w-[8rem]' }),
+    campo('folios', 'Folios', { ancho: 'max-w-[6rem]' }),
+    campo('soporte', 'Soporte', { ancho: 'max-w-[8rem]' }),
+    campo('frecuencia', 'Frecuencia', { ancho: 'max-w-[8rem]' }),
+    campo('notas', 'Notas', { ancho: 'max-w-[18rem]' }),
+    campo('elaborado_por', 'Digitado por', { ancho: 'max-w-[14rem]' }),
     {
       key: 'created_at',
       header: 'Creado',
@@ -1206,28 +1289,6 @@ export default function DatosPage() {
     },
   ];
 
-  if (canMarcarOk) {
-    columns.unshift({
-      key: 'select',
-      header: (
-        <input
-          type="checkbox"
-          checked={allSelected}
-          onChange={toggleAll}
-          aria-label="Seleccionar todos los registros"
-        />
-      ),
-      render: (registro: FuidDato) => (
-        <input
-          type="checkbox"
-          checked={selectedIds.has(registro.id)}
-          onChange={() => toggleRow(registro.id)}
-          aria-label={`Seleccionar registro ${registro.n_orden ?? registro.id}`}
-        />
-      ),
-    });
-  }
-
   return (
     <div className="space-y-6">
       {requiereUpdInicio && (
@@ -1245,7 +1306,17 @@ export default function DatosPage() {
         description={estadoCaja.detalle ?? 'Clientes / Actas / Cajas / Digitación'}
         backTo={retorno.to}
         backLabel={retorno.label}
-        actions={<Badge color={estadoCaja.color}>{estadoCaja.etiqueta}</Badge>}
+        actions={
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge color={estadoCaja.color}>{estadoCaja.etiqueta}</Badge>
+            {/*
+              Cerrar el día se decide aquí, sin salir de la digitación: es donde
+              está la persona cuando deja la caja, y al lado del estado, que es
+              lo que la declaración cambia.
+            */}
+            {cajaQuery.data?.id && <CierreDeJornada cajaId={cajaQuery.data.id} />}
+          </div>
+        }
       />
 
       {/*
@@ -1339,6 +1410,15 @@ export default function DatosPage() {
               data={registrosFiltrados}
               rowKey={(registro) => registro.id}
               emptyMessage="Ningún registro coincide con la búsqueda"
+              /*
+               * `nowrap` es lo que hace que la tabla tome su ancho natural y
+               * aparezca la barra horizontal; sin él, veintitantas columnas se
+               * aprietan hasta quedar ilegibles. El alto máximo deja a la vista
+               * el formulario mientras se revisa lo ya digitado.
+               */
+              nowrap
+              stickyFirstColumn
+              maxHeight="60vh"
             />
           </div>
         </>

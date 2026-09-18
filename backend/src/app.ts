@@ -11,6 +11,7 @@ import apiRoutes from './routes/index.js';
 import { pool } from './config/db.js';
 import { notFoundHandler, errorHandler } from './middlewares/errorHandler.js';
 import { cuerpoEnMayusculas } from './middlewares/mayusculas.js';
+import { marcarActividad } from './middlewares/actividad.js';
 import {
   DEFAULT_CORS_ORIGIN,
   DEFAULT_FRONTEND_DIST,
@@ -100,6 +101,13 @@ app.use(
 app.get('/api/health', (_req, res) => {
   res.json({ status: 'ok', service: SERVICE_NAME });
 });
+
+/*
+ * Deja constancia de que quien tiene sesión sigue usando el software. Va
+ * después de la sesión y antes de las rutas, para que cuente cualquier
+ * petición, no solo las de una pantalla concreta.
+ */
+app.use(marcarActividad);
 
 app.use(generalLimiter);
 app.use('/api/login', loginLimiter);

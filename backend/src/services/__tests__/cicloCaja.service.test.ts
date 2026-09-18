@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { PGlite } from '@electric-sql/pglite';
 import { AJUSTES } from '../../config/esquema.js';
-import { SEGUIMIENTO_AGRUPACION, SEGUIMIENTO_QUERY } from '../../controllers/reportes.controller.js';
+import { consultaSeguimiento } from '../../controllers/reportes.controller.js';
 import {
   CAJA_EN_PROCESO,
   CAJA_FINALIZADA,
@@ -59,12 +59,12 @@ const ejecutar = async (sql: string, params: unknown[] = []) => {
 };
 
 /** Una persona guarda un registro en una caja: es lo único que hace en el software. */
-async function digitar(fecha: string, numeroDeCaja: number, autor: string) {
+async function digitar(fecha: string, numeroDeCaja: number, autor: string, upd?: number) {
   reloj += 1;
   await db.query(
     `INSERT INTO fuiddatosreal (fecha_del_dato, caja, upd, elaborado_por, created_at)
      VALUES ($1, $2, $3, $4, $1::date + ($5 || ' minutes')::interval)`,
-    [fecha, caja(numeroDeCaja), `UPD${1000 + reloj}`, autor, String(reloj)],
+    [fecha, caja(numeroDeCaja), `UPD${String(upd ?? 1000 + reloj).padStart(7, '0')}`, autor, String(reloj)],
   );
   await registrarDigitacion(ejecutar, caja(numeroDeCaja), autor);
 }
@@ -201,13 +201,17 @@ describe('columnas del seguimiento de inventario', () => {
       colaborador: string;
       caja_ini: number | null;
       caja_fin: number | null;
+      upd_ini: number | null;
+      upd_fin: number | null;
       total_cajas: string | number;
       total_registros: string | number;
-    }>(`${SEGUIMIENTO_QUERY} WHERE TRUE ${SEGUIMIENTO_AGRUPACION}`);
+    }>(consultaSeguimiento('TRUE'));
     return rows.map((f) => ({
       quien: f.colaborador,
       ini: f.caja_ini,
       fin: f.caja_fin,
+      updIni: f.upd_ini,
+      updFin: f.upd_fin,
       cerradas: Number(f.total_cajas),
       registros: Number(f.total_registros),
     }));
@@ -221,7 +225,9 @@ describe('columnas del seguimiento de inventario', () => {
     await digitar(LUNES, 2408, ANA);
 
     // Las tres cuentan el lunes: el último registro de cada una es de ese día.
-    expect(await informe()).toEqual([{ quien: ANA, ini: 2406, fin: 2408, cerradas: 3, registros: 4 }]);
+    expect(await informe()).toEqual([
+      { quien: ANA, ini: 2406, fin: 2408, updIni: 1001, updFin: 1004, cerradas: 3, registros: 4 },
+    ]);
 
     // Martes: retoma la 2408, la termina, y sigue con dos más.
     await digitar(MARTES, 2408, ANA);
@@ -233,8 +239,8 @@ describe('columnas del seguimiento de inventario', () => {
     // del martes. Y deja de contar el lunes para contar el martes, que es cuando
     // se terminó: el lunes baja de tres a dos.
     expect(filas).toEqual([
-      { quien: ANA, ini: 2406, fin: 2408, cerradas: 2, registros: 4 },
-      { quien: ANA, ini: 2408, fin: 2410, cerradas: 3, registros: 3 },
+      { quien: ANA, ini: 2406, fin: 2408, updIni: 1001, updFin: 1004, cerradas: 2, registros: 4 },
+      { quien: ANA, ini: 2408, fin: 2410, updIni: 1005, updFin: 1007, cerradas: 3, registros: 3 },
     ]);
     // Cinco cajas trabajadas, cinco contadas, ninguna dos veces.
     expect(filas.reduce((suma, f) => suma + f.cerradas, 0)).toBe(5);
@@ -254,6 +260,45 @@ describe('columnas del seguimiento de inventario', () => {
     // En pantalla sigue abierta, porque Beto no se ha movido de ella. Eso es
     // información para él, no un número del informe.
     expect((await estadoDe(2411)).estado_caja).toBe(CAJA_EN_PROCESO);
+  });
+
+  it('el cambio de lista de UPD parte la jornada en dos filas, con su rango cada una', async () => {
+    // La técnica digita en la misma caja, se le acaba la lista y le dan otra que
+    // arranca en otra serie. Antes esto salía en una sola fila que iba del
+    // primer UPD al último, dando a entender que se habían usado millones.
+    for (const upd of [2950001, 2950002, 2950003]) await digitar(LUNES, 2406, ANA, upd);
+    for (const upd of [3100001, 3100002]) await digitar(LUNES, 2406, ANA, upd);
+
+    const filas = await informe();
+    expect(filas).toEqual([
+      { quien: ANA, ini: 2406, fin: 2406, updIni: 2950001, updFin: 2950003, cerradas: 0, registros: 3 },
+      { quien: ANA, ini: 2406, fin: 2406, updIni: 3100001, updFin: 3100002, cerradas: 1, registros: 2 },
+    ]);
+    // La caja cuenta una sola vez, en el tramo donde está su último registro.
+    expect(filas.reduce((suma, f) => suma + f.cerradas, 0)).toBe(1);
+  });
+
+  it('un número salteado no parte la fila: eso pasa a diario y no es otra lista', async () => {
+    // Entre el 2950002 y el 2950004 falta uno, como cuando un UPD se repetía o
+    // se borró después. Sigue siendo la misma lista.
+    for (const upd of [2950001, 2950002, 2950004, 2950005]) await digitar(LUNES, 2406, ANA, upd);
+
+    const filas = await informe();
+    expect(filas).toHaveLength(1);
+    expect(filas[0]).toMatchObject({ updIni: 2950001, updFin: 2950005, registros: 4 });
+  });
+
+  it('el salto se ve aunque la técnica cambie de caja dentro del mismo tramo', async () => {
+    for (const upd of [2950001, 2950002]) await digitar(LUNES, 2406, ANA, upd);
+    await digitar(LUNES, 2407, ANA, 2950003);
+    // Lista nueva, y sigue en la misma caja 2407.
+    await digitar(LUNES, 2407, ANA, 4500001);
+
+    const filas = await informe();
+    expect(filas).toEqual([
+      { quien: ANA, ini: 2406, fin: 2407, updIni: 2950001, updFin: 2950003, cerradas: 1, registros: 3 },
+      { quien: ANA, ini: 2407, fin: 2407, updIni: 4500001, updFin: 4500001, cerradas: 1, registros: 1 },
+    ]);
   });
 
   it('el primero y el último no son el menor y el mayor, sino el orden en que se trabajó', async () => {

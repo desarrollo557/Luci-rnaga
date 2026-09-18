@@ -12,6 +12,7 @@ export * from './LoadingState';
 export * from './MenuDeAcciones';
 export * from './Modal';
 export * from './PageHeader';
+export * from './SeccionDesplegable';
 export * from './Select';
 export * from './Spinner';
 export * from './Table';
