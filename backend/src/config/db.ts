@@ -50,6 +50,26 @@ export function faltaConfiguracionDeBase(): string | null {
   return null;
 }
 
+/**
+ * Cuánto puede quedarse una conexión sin usar antes de devolverla al pooler.
+ *
+ * Importa más de lo que parece porque las sesiones no son nuestras: son un
+ * cupo compartido (ver `DB_CONNECTION_LIMIT`). Una conexión ociosa aquí es una
+ * conexión que le falta al servicio desplegado, así que se sueltan pronto. El
+ * coste de volver a abrirla es un saludo TLS al pooler, que está en la misma
+ * región que la base.
+ */
+const MILISEGUNDOS_OCIOSA = 10_000;
+
+/**
+ * Cuánto espera una consulta por una conexión libre antes de rendirse.
+ *
+ * Sin límite, una saturación no se ve: las peticiones se apilan y la pantalla
+ * se queda girando sin decir nada. Con él, la espera acaba en un error que el
+ * manejador traduce a un mensaje concreto.
+ */
+const MILISEGUNDOS_ESPERANDO_CONEXION = 15_000;
+
 export const pool = new Pool({
   host: process.env.PG_HOST,
   port: Number(process.env.PG_PORT || 5432),
@@ -57,30 +77,49 @@ export const pool = new Pool({
   user: process.env.PG_USER,
   password: process.env.PG_PASSWORD,
   max: DB_CONNECTION_LIMIT,
+  idleTimeoutMillis: MILISEGUNDOS_OCIOSA,
+  connectionTimeoutMillis: MILISEGUNDOS_ESPERANDO_CONEXION,
+  /**
+   * Toda conexión trabaja en la hora de Colombia.
+   *
+   * Supabase corre en UTC, y `now()` —el valor por defecto de `created_at`, el
+   * que ponen los triggers en `updated_at` y `fecha_cambio`, el `NOW()` de las
+   * consultas del inventario— se convierte a la zona de la sesión al guardarse
+   * en una columna `timestamp`. Sin esto, un usuario creado a las 8 de la
+   * mañana quedaba creado a la 1 de la tarde y el historial agrupaba por días
+   * de UTC.
+   *
+   * Va en `verify` y no en el evento `connect` porque el pool **espera** a que
+   * este callback responda antes de entregar la conexión, mientras que al
+   * evento no lo espera nadie: allí el ajuste y la primera consulta de verdad
+   * salían a la vez sobre el mismo cliente, y solo funcionaba porque `pg` las
+   * encolaba por dentro. Esa cola desaparece en `pg@9` —ya avisa de ello en
+   * cada arranque— y con ella se habría ido la hora de Colombia sin que nada
+   * fallara de forma visible.
+   *
+   * El pooler en modo sesión (puerto 5432) conserva el ajuste mientras dura la
+   * conexión; en modo transacción (6543) se perdería, así que no cambiar de
+   * puerto sin revisar esto.
+   */
+  verify: (client, listo) => {
+    client.query(`SET TIME ZONE '${ZONA_HORARIA}'`).then(
+      () => listo(),
+      (error: Error) => listo(error),
+    );
+  },
   // Supabase exige TLS; su certificado lo firma una CA propia que no está en el
   // almacén del sistema, de ahí que no se verifique la cadena.
   ssl: { rejectUnauthorized: false },
 });
 
-/**
- * Toda conexión trabaja en la hora de Colombia.
- *
- * Supabase corre en UTC, y `now()` —el valor por defecto de `created_at`, el
- * que ponen los triggers en `updated_at` y `fecha_cambio`, el `NOW()` de las
- * consultas del inventario— se convierte a la zona de la sesión al guardarse
- * en una columna `timestamp`. Sin esto, un usuario creado a las 8 de la mañana
- * quedaba creado a la 1 de la tarde y el historial agrupaba por días de UTC.
- *
- * El evento `connect` se emite antes de entregar la conexión, y el cliente
- * ejecuta sus consultas en orden, así que el ajuste llega antes que cualquier
- * consulta. El pooler en modo sesión (puerto 5432) lo conserva mientras dura
- * la conexión; en modo transacción (6543) se perdería, así que no cambiar de
- * puerto sin revisar esto.
+/*
+ * Una conexión ociosa puede morirse sola —el pooler la corta, la red se va— y
+ * ese error no llega a ninguna consulta porque no hay ninguna en curso. Sin
+ * este oyente, Node lo trata como excepción no capturada y tumba el proceso
+ * entero. Con él, el pool descarta esa conexión y abre otra cuando haga falta.
  */
-pool.on('connect', (client) => {
-  client.query(`SET TIME ZONE '${ZONA_HORARIA}'`).catch((error: unknown) => {
-    console.error('[db] No se pudo fijar la zona horaria de la conexión:', error);
-  });
+pool.on('error', (error) => {
+  console.error('[db] Se perdió una conexión que estaba en reposo:', error.message);
 });
 
 /** SQL con marcadores `?` traducido a la numeración de PostgreSQL. */

@@ -50,6 +50,13 @@ services:
         value: postgres
       - key: PG_USER
         value: postgres.atvkrqhpoaopqtcxwlzz
+      # El pooler en modo sesión reparte 15 conexiones entre todo el proyecto, y
+      # ese cupo lo comparte este servicio con cada equipo de desarrollo que
+      # tenga el backend levantado. Declararlo aquí es lo que evita que los dos
+      # pidan 10 cada uno y la base conteste `EMAXCONNSESSION`; ver el comentario
+      # de DB_CONNECTION_LIMIT en backend/src/config/constants.ts.
+      - key: DB_CONNECTION_LIMIT
+        value: 8
       # Los secretos se cargan a mano en el panel de Render; nunca en el repositorio.
       - key: PG_PASSWORD
         sync: false

@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { cn } from '@/lib/cn';
 import { useQuery } from '@tanstack/react-query';
 import { formatearHora } from '@/lib/fechas';
 import {
@@ -41,6 +42,7 @@ import {
   SerieTemporal,
   StatTile,
   conSeparador,
+  etiquetaDia,
   etiquetaMes,
 } from '@/components/charts';
 import {
@@ -49,6 +51,8 @@ import {
   type Digitador,
 } from '@/lib/api';
 import { intervaloRefresco } from '@/lib/refresco';
+import { ActividadDelEquipo } from './produccion/ActividadDelEquipo';
+import { AnalisisEnTiempoReal } from './produccion/AnalisisEnTiempoReal';
 import { useDescargaSeguimiento } from '@/lib/useDescargaSeguimiento';
 
 /** El estado de la caja es una escala reservada, no una serie más. */
@@ -61,6 +65,50 @@ const COLOR_ESTADO_CAJA: Record<string, string> = {
 /** "SALLY PINEDA (1046812542)" → "SALLY PINEDA". */
 function nombreSinCedula(nombre: string): string {
   return nombre.replace(/\s*\([^)]*\)\s*$/, '').trim() || nombre;
+}
+
+/**
+ * Conmutador de la curva: por día o por mes.
+ *
+ * Dos botones y no un desplegable porque son solo dos opciones y las dos caben
+ * a la vista: elegir cuesta un clic en lugar de dos, y se ve cuál está activa
+ * sin abrir nada.
+ */
+function SelectorDeGranularidad({
+  valor,
+  onChange,
+}: {
+  valor: 'dia' | 'mes';
+  onChange: (valor: 'dia' | 'mes') => void;
+}) {
+  const opciones = [
+    { clave: 'dia' as const, texto: 'Por día' },
+    { clave: 'mes' as const, texto: 'Por mes' },
+  ];
+  return (
+    <div
+      role="group"
+      aria-label="Agrupar la curva"
+      className="inline-flex rounded-lg border border-silver-200 bg-surface-2 p-0.5"
+    >
+      {opciones.map((opcion) => (
+        <button
+          key={opcion.clave}
+          type="button"
+          aria-pressed={valor === opcion.clave}
+          onClick={() => onChange(opcion.clave)}
+          className={cn(
+            'rounded-md px-3 py-1 text-xs font-medium transition-colors',
+            valor === opcion.clave
+              ? 'bg-surface text-silver-900 shadow-sm'
+              : 'text-silver-500 hover:text-silver-700',
+          )}
+        >
+          {opcion.texto}
+        </button>
+      ))}
+    </div>
+  );
 }
 
 export default function ProduccionPage() {
@@ -93,14 +141,28 @@ export default function ProduccionPage() {
     if (await seguimiento.descargar({ desde: segDesde, hasta: segHasta })) setEligiendoPeriodo(false);
   };
 
-  const serieMensual = useMemo(
+  /*
+   * Por mes se ve si el trabajo crece a lo largo del año; por día se ve la
+   * semana concreta, qué jornadas rindieron y cuáles se cayeron. Un mes es el
+   * promedio de veinte jornadas y esconde justo eso, así que la curva se mira
+   * de las dos maneras y el botón decide cuál.
+   */
+  const [granularidad, setGranularidad] = useState<'dia' | 'mes'>('mes');
+
+  const serieDigitacion = useMemo(
     () =>
-      (stats?.fuids_por_mes ?? []).map((m) => ({
-        etiqueta: etiquetaMes(m.mes),
-        digitados: m.total,
-        aprobados: m.aprobados,
-      })),
-    [stats],
+      granularidad === 'mes'
+        ? (stats?.fuids_por_mes ?? []).map((m) => ({
+            etiqueta: etiquetaMes(m.mes),
+            digitados: m.total,
+            aprobados: m.aprobados,
+          }))
+        : (stats?.fuids_por_dia ?? []).map((d) => ({
+            etiqueta: etiquetaDia(d.dia),
+            digitados: d.total,
+            aprobados: d.aprobados,
+          })),
+    [stats, granularidad],
   );
 
   const serieActividad = useMemo(
@@ -213,6 +275,16 @@ export default function ProduccionPage() {
       />
 
       {/*
+        Las dos secciones de la jornada en curso, plegadas.
+        
+        Viven aquí y no en una pantalla aparte porque responden a lo mismo que
+        esta: cómo va la producción. Y van plegadas porque no se miran todo el
+        rato: el resumen de la fila cerrada basta para decidir si hay que abrir.
+      */}
+      <ActividadDelEquipo />
+      <AnalisisEnTiempoReal />
+
+      {/*
         Periodo del seguimiento. Se pregunta antes de generar porque este
         documento se entrega por semana o por mes: bajarlo siempre completo
         obligaría a recortarlo a mano después.
@@ -321,12 +393,19 @@ export default function ProduccionPage() {
       </div>
 
       <ChartCard
-        title="Digitación y revisión por mes"
-        subtitle="Últimos 12 meses con registros. Pasa el cursor por un mes para ver ambas cifras."
+        title={granularidad === 'mes' ? 'Digitación y revisión por mes' : 'Digitación y revisión por día'}
+        subtitle={
+          granularidad === 'mes'
+            ? 'Últimos 12 meses con registros. Pasa el cursor por un mes para ver ambas cifras.'
+            : 'Últimos 30 días con registros. Pasa el cursor por un día para ver ambas cifras.'
+        }
         icon={<TrendingUp className="size-4 text-primary-600" />}
+        actions={
+          <SelectorDeGranularidad valor={granularidad} onChange={setGranularidad} />
+        }
       >
         <SerieTemporal
-          datos={serieMensual}
+          datos={serieDigitacion}
           alto={280}
           series={[
             { clave: 'digitados', nombre: 'Digitados', color: SERIES.uno, area: true },

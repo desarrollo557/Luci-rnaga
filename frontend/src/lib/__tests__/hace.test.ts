@@ -62,10 +62,20 @@ describe('casos que no deben romper la pantalla', () => {
     expect(hace('N/A', AHORA)).toBe('—');
   });
 
-  it('una marca en el futuro no dice "hace"', () => {
-    // Puede pasar con el reloj del equipo desajustado respecto del servidor.
+  it('una marca muy en el futuro no dice "hace"', () => {
+    // Un reloj mal puesto conviene verlo, no disimularlo.
     const texto = hace(new Date(AHORA.getTime() + 2 * 3600_000), AHORA);
     expect(texto).not.toContain('hace');
+  });
+
+  it('unos minutos en el futuro son desfase de relojes, no el futuro', () => {
+    /*
+     * La marca la pone la base y el "ahora" lo pone la aplicación. Con dos
+     * minutos de diferencia, el panel de actividad anunciaba un registro recién
+     * guardado como "dentro de 2 minutos", justo al lado de su hora.
+     */
+    expect(hace(new Date(AHORA.getTime() + 2 * 60_000), AHORA)).toBe('hace un momento');
+    expect(hace(new Date(AHORA.getTime() + 4 * 60_000), AHORA)).toBe('hace un momento');
   });
 
   it('acepta el texto que devuelve la base, no solo objetos Date', () => {

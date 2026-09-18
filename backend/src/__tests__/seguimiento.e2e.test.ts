@@ -183,7 +183,8 @@ describe('de crear un cliente a descargar el seguimiento', () => {
     expect(entradaTecnica.success, entradaTecnica.message).toBe(true);
 
     let upd = 2950000;
-    const digitar = async (numeroDeCaja: number, cuantos: number, fecha: string) => {
+    const digitar = async (numeroDeCaja: number, cuantos: number, fecha: string, desdeUpd?: number) => {
+      if (desdeUpd !== undefined) upd = desdeUpd - 1;
       for (let i = 0; i < cuantos; i += 1) {
         upd += 1;
         await json(tec, 'POST', '/fuiddatosreal', {
@@ -206,6 +207,9 @@ describe('de crear un cliente a descargar el seguimiento', () => {
     };
     await digitar(4431, 10, DIA);
     await digitar(4432, 8, DIA);
+    // Se le acaba la lista de UPD y le asignan otra que arranca en otra serie.
+    // Sigue en la misma caja 4432: el salto tiene que verse en el Excel.
+    await digitar(4432, 4, DIA, 3100001);
 
     // 6. El líder descarga el seguimiento del día.
     const respuesta = await lider('GET', '/seguimiento-inventario/excel?desde=' + DIA + '&hasta=' + DIA);
@@ -217,13 +221,23 @@ describe('de crear un cliente a descargar el seguimiento', () => {
     // 7. Y se abre el archivo para leer lo que trae.
     const zip = await JSZip.loadAsync(libro);
     const hoja = await zip.file('xl/worksheets/sheet1.xml')!.async('string');
-    const fila9 = /<row r="9"[\s\S]*?<\/row>/.exec(hoja)?.[0] ?? '';
-    const celda = (columna: string) => {
-      const contenido = new RegExp('<c r="' + columna + '9"[^>]*>([\\s\\S]*?)</c>').exec(fila9)?.[1] ?? '';
+    /**
+     * El valor de una celda, leído del XML de la hoja.
+     *
+     * Un solo lector para todas las filas: escrito dos veces, el segundo se
+     * quedó sin las contrabarras del `[\s\S]` dentro de la cadena y buscaba
+     * literalmente eses, así que devolvía vacío y la prueba culpaba al informe
+     * de un fallo que estaba en ella.
+     */
+    const celdaDe = (numeroDeFila: number, columna: string) => {
+      const fila = new RegExp('<row r="' + numeroDeFila + '"[\\s\\S]*?</row>').exec(hoja)?.[0] ?? '';
+      const contenido =
+        new RegExp('<c r="' + columna + numeroDeFila + '"[^>]*>([\\s\\S]*?)</c>').exec(fila)?.[1] ?? '';
       const texto = /<t[^>]*>([\s\S]*?)<\/t>/.exec(contenido)?.[1];
       const numero = /<v>([\s\S]*?)<\/v>/.exec(contenido)?.[1];
       return (texto ?? numero ?? '').trim();
     };
+    const celda = (columna: string) => celdaDe(9, columna);
 
     // La fecha va como número de serie de Excel. Se comprueba porque una fecha
     // que llega como objeto en vez de texto se desplaza un día sin avisar.
@@ -231,10 +245,28 @@ describe('de crear un cliente a descargar el seguimiento', () => {
     expect(celda('C'), 'código del cliente nuevo').toBe(CLIENTE.codigo);
     expect(celda('D'), 'caja inicial').toBe('4431');
     expect(celda('E'), 'caja final').toBe('4432');
-    expect(celda('I'), 'registros digitados').toBe('18');
+    expect(celda('I'), 'registros digitados con la primera lista').toBe('18');
     expect(celda('J'), 'colaborador, sin la cédula').toBe(TECNICA.nombre);
     expect(celda('L'), 'acta de transferencia').toBe(ACTA);
-    // Lo que se está probando: terminó dos cajas, el formato dice dos.
-    expect(celda('F'), 'cajas terminadas ese día').toBe('2');
+    // La caja se cuenta una sola vez, en el tramo donde está su último registro.
+    expect(celda('F'), 'cajas terminadas en el primer tramo').toBe('1');
+
+    /*
+     * La segunda fila: el cambio de lista de UPD. Antes esto no existía, todo
+     * caía en una sola fila que iba del primer UPD al último y daba a entender
+     * que se habían usado ciento cincuenta mil.
+     */
+    const celda10 = (columna: string) => celdaDe(10, columna);
+
+    expect(celda('G'), 'UPD inicial de la primera lista').toBe('2950001');
+    expect(celda('H'), 'UPD final de la primera lista').toBe('2950018');
+    expect(celda10('G'), 'UPD inicial de la lista nueva').toBe('3100001');
+    expect(celda10('H'), 'UPD final de la lista nueva').toBe('3100004');
+    expect(celda10('D'), 'sigue siendo la misma caja').toBe('4432');
+    expect(celda10('E'), 'sigue siendo la misma caja').toBe('4432');
+    expect(celda10('I'), 'registros de la lista nueva').toBe('4');
+    expect(celda10('F'), 'la caja se termina en este tramo').toBe('1');
+    // Y no hay una tercera fila: son dos listas, dos renglones.
+    expect(hoja).not.toContain('<row r="11"');
   }, 180_000);
 });

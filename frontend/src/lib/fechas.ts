@@ -144,11 +144,26 @@ export function formatearFechaHora(valor: Entrada): string {
  */
 const RELATIVO = new Intl.RelativeTimeFormat('es-CO', { numeric: 'auto' });
 
+/** Desfase tolerado entre el reloj de la base y el de la aplicación. */
+const MARGEN_DE_RELOJ_SEGUNDOS = 5 * 60;
+
 export function hace(valor: Entrada, ahora: Date = new Date()): string {
   const instante = aInstante(valor);
   if (!instante) return SIN_FECHA;
 
   const segundos = Math.round((instante.getTime() - ahora.getTime()) / 1000);
+  /*
+   * Un futuro de pocos minutos es desfase de relojes, no el futuro.
+   *
+   * La marca de tiempo la pone PostgreSQL y el "ahora" lo pone el servidor de
+   * la aplicación; con que vayan un par de minutos desacompasados, un registro
+   * recién guardado se anunciaba como "dentro de 2 minutos" al lado de la hora
+   * a la que se había guardado. Por debajo de este margen se trata como recién
+   * ocurrido; por encima se sigue diciendo "dentro de", porque entonces ya no
+   * es ruido sino un reloj mal puesto que conviene ver.
+   */
+  if (segundos > 0 && segundos <= MARGEN_DE_RELOJ_SEGUNDOS) return 'hace un momento';
+
   const absoluto = Math.abs(segundos);
 
   if (absoluto < 60) return 'hace un momento';

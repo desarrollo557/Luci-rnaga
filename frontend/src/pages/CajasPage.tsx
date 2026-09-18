@@ -14,6 +14,7 @@ import {
 import { invalidateDomain } from '@/lib/queryInvalidation';
 import { formatearFechaHora } from '@/lib/fechas';
 import { useAuthStore } from '@/stores/authStore';
+import { HistorialDeDigitacion } from './cajas/HistorialDeDigitacion';
 import { tieneAlgunRol, tieneRol } from '@/types';
 
 interface SeccionAsignacionCajaProps {
@@ -325,6 +326,13 @@ export default function CajasPage() {
           </Card>
         )
       )}
+
+      {/*
+        Va antes que la asignación y lo ve todo el mundo, no solo quien manda:
+        es la respuesta a "¿qué llevo hecho aquí?", y quien la hace es quien
+        digita.
+      */}
+      {cajaId !== null && <HistorialDeDigitacion cajaId={cajaId} />}
 
       {isManager && cajaId !== null && (
         <SeccionAsignacionCaja cajaId={cajaId} label="Técnicos" />
