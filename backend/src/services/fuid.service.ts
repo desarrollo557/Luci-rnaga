@@ -124,8 +124,11 @@ export function fuidValues(dto: FuidCreateDto): unknown[] {
     nullable(dto.historial_y_cambios),
     nullable(dto.cambio_calidad),
     nullable(dto.sede_calidad),
+    // El asunto automático es obligatorio y llega siempre con contenido; el
+    // manual dejó de serlo, así que vacío se guarda con el marcador como el
+    // resto de los campos descriptivos.
     dto.asunto_2 ?? null,
-    dto.asunto_3 ?? null,
+    texto('asunto_3', dto.asunto_3),
   ];
 }
 

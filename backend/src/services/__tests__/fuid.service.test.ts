@@ -13,11 +13,16 @@ function porColumna(dto: Partial<FuidCreateDto>): Record<string, unknown> {
   return Object.fromEntries(FUID_COLUMNS.map((columna, i) => [columna, valores[i]]));
 }
 
+/*
+ * Lo mínimo que identifica un registro: la caja, el UPD y el asunto
+ * automático. El asunto manual no está a propósito —dejó de ser obligatorio y
+ * ahora es uno más de los que se guardan como `N/A` cuando no vienen—, así que
+ * el recorrido de `CAMPOS_NO_DILIGENCIADOS` lo comprueba como a los demás.
+ */
 const registro: Partial<FuidCreateDto> = {
   caja: '051C000456',
   upd: 'UPD2950163',
   asunto_2: 'TUTELA',
-  asunto_3: 'RESPUESTA A LA ACCION DE TUTELA',
 };
 
 describe('campos no diligenciados', () => {
@@ -33,6 +38,14 @@ describe('campos no diligenciados', () => {
     for (const campo of CAMPOS_NO_DILIGENCIADOS) {
       expect(fila[campo], `${campo} debería guardarse como N/A`).toBe(VALOR_NO_DILIGENCIADO);
     }
+  });
+
+  it('el asunto manual se guarda si se escribió, y como N/A si no', () => {
+    expect(porColumna({ ...registro, asunto_3: 'RESPUESTA A LA ACCION DE TUTELA' }).asunto_3).toBe(
+      'RESPUESTA A LA ACCION DE TUTELA',
+    );
+    expect(porColumna({ ...registro, asunto_3: '' }).asunto_3).toBe(VALOR_NO_DILIGENCIADO);
+    expect(porColumna(registro).asunto_3).toBe(VALOR_NO_DILIGENCIADO);
   });
 
   it('respeta el valor cuando el digitador sí escribió algo', () => {

@@ -128,19 +128,52 @@ export async function createFuid(req: Request, res: Response): Promise<void> {
     return;
   }
 
-  // El técnico solo puede digitar en las cajas que le fueron asignadas.
-  if (user.rol === 'TECNICA') {
-    const caja = body.caja;
-    const [cajaAsignada] = await query<{ id: number }>(
-      `SELECT mc.id FROM modulos_caja mc
-       JOIN asignacion_caja_tecnica act ON act.modulo_id = mc.id
-       WHERE act.usuario_id = ? AND mc.caja_modulo = ? LIMIT 1`,
-      [user.id, caja],
-    );
-    if (!cajaAsignada) {
-      res.status(403).json({ error: 'No tiene asignada la caja especificada' });
-      return;
-    }
+  /*
+   * La caja tiene que existir, y si quien digita es técnica, ser suya.
+   *
+   * Las dos cosas en una sola consulta porque esto corre en cada guardado,
+   * que es la operación más repetida del software.
+   *
+   * **Que exista se comprueba para todos los perfiles**, y no es una
+   * precaución teórica: un fallo en la pantalla de digitación mandaba el
+   * identificador de la ruta —"114"— en lugar del número de caja mientras la
+   * caja terminaba de cargar. A las técnicas eso les salía como "la caja no
+   * está asignada", que es un mensaje que apunta al sitio equivocado; a un
+   * líder o administrador, que no pasan por la comprobación de asignación, el
+   * registro **se les guardaba** con un número de caja inexistente. Quedaron
+   * cinco registros así, que no cruzan con ninguna caja y ensucian el
+   * seguimiento. La pantalla ya está arreglada; esto es para que un error de
+   * ese tipo no vuelva a poder escribirse nunca.
+   */
+  const cajaDelRegistro = body.caja;
+  const cajaDestino = await queryOne<{ id: number; asignada: boolean }>(
+    `SELECT mc.id,
+            EXISTS (
+              SELECT 1 FROM asignacion_caja_tecnica act
+               WHERE act.modulo_id = mc.id AND act.usuario_id = ?
+            ) AS asignada
+       FROM modulos_caja mc
+      WHERE mc.caja_modulo = ?
+      LIMIT 1`,
+    [user.id, cajaDelRegistro],
+  );
+
+  if (!cajaDestino) {
+    res.status(400).json({
+      error: `La caja ${cajaDelRegistro ?? '(vacía)'} no está registrada. Vuelve a abrir la caja desde el acta e inténtalo de nuevo.`,
+    });
+    return;
+  }
+
+  // El técnico solo puede digitar en las cajas que le fueron asignadas. El
+  // mensaje dice qué hacer, no solo que no se puede: quien digita no tiene
+  // forma de asignarse una caja, la asignación la hace el líder desde la vista
+  // de la caja.
+  if (user.rol === 'TECNICA' && !cajaDestino.asignada) {
+    res.status(403).json({
+      error: `La caja ${cajaDelRegistro} no está asignada a usted. Pídale a su líder que se la asigne para poder digitar en ella.`,
+    });
+    return;
   }
 
   const conn = await getConnection();

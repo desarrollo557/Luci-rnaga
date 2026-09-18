@@ -270,3 +270,70 @@ describe('de crear un cliente a descargar el seguimiento', () => {
     expect(hoja).not.toContain('<row r="11"');
   }, 180_000);
 });
+
+/**
+ * Un registro solo se guarda en una caja que existe.
+ *
+ * Esto nace de un caso real. La pantalla de digitación, mientras la caja
+ * terminaba de cargar, mandaba el identificador de la ruta —un número como
+ * "114"— en lugar del número de caja. A las técnicas el servidor les
+ * respondía "la caja no está asignada a usted", un mensaje que apunta al
+ * sitio equivocado y que se leyó como un problema de permisos; a los líderes
+ * y administradores, que no pasan por esa comprobación, **el registro se les
+ * guardaba** con un número de caja inexistente, y esos registros no cruzan
+ * con ninguna caja en el seguimiento.
+ *
+ * La pantalla ya no lo manda. Esto comprueba la otra mitad: que aunque
+ * llegara, el servidor no lo escribe, y que lo dice de forma distinta según
+ * el motivo real.
+ */
+describe('la caja de un registro tiene que existir', () => {
+  it('rechaza el registro cuando la caja no está registrada, también al líder', async () => {
+    const lider = sesion();
+    await json(lider, 'POST', '/login', { cc: LIDER.cc, contrasena: LIDER.contrasena });
+
+    const respuesta = await lider('POST', '/fuiddatosreal', {
+      // "114" es un identificador de fila, no un número de caja.
+      caja: '114',
+      upd: 'UPD9000001',
+      asunto_2: 'PRUEBA',
+      fecha_del_dato: '2026-09-18',
+      n_orden: 1,
+    });
+    const cuerpo = (await respuesta.json()) as { error?: string };
+
+    expect(respuesta.status, 'no puede ser 200: se guardaría una caja que no existe').toBe(400);
+    expect(cuerpo.error).toContain('no está registrada');
+
+    const { rows } = await baseViva().query(
+      "SELECT COUNT(*)::int AS n FROM fuiddatosreal WHERE caja = '114'",
+    );
+    expect(rows[0].n, 'no debe quedar ningún registro con esa caja').toBe(0);
+  }, 120_000);
+
+  it('a la técnica no asignada le dice que le falta la asignación, no que la caja no exista', async () => {
+    const tec = sesion();
+    await json(tec, 'POST', '/login', { cc: TECNICA.cc, contrasena: TECNICA.contrasena });
+
+    // Una caja que sí existe, creada en la prueba anterior, pero que se le
+    // quita a la técnica para separar los dos motivos de rechazo.
+    await baseViva().query(
+      `DELETE FROM asignacion_caja_tecnica act
+        USING modulos_caja mc
+        WHERE mc.id = act.modulo_id AND mc.caja_modulo = $1`,
+      [caja(4433)],
+    );
+
+    const respuesta = await tec('POST', '/fuiddatosreal', {
+      caja: caja(4433),
+      upd: 'UPD9000002',
+      asunto_2: 'PRUEBA',
+      fecha_del_dato: '2026-09-18',
+      n_orden: 999,
+    });
+    const cuerpo = (await respuesta.json()) as { error?: string };
+
+    expect(respuesta.status).toBe(403);
+    expect(cuerpo.error).toContain('no está asignada a usted');
+  }, 120_000);
+});

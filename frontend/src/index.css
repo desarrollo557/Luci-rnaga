@@ -405,3 +405,45 @@ textarea::placeholder {
   0% { box-shadow: 0 0 0 0 rgba(22, 163, 74, 0.45); }
   100% { box-shadow: 0 0 0 22px rgba(22, 163, 74, 0); }
 }
+
+/*
+ * La fila que acaba de entrar en la lista.
+ *
+ * Guardar un registro lo manda al final de una tabla de veinticinco columnas,
+ * y hasta ahora el único aviso era el pulso verde del formulario: se sabía que
+ * algo se había guardado, no dónde había caído. Esto lo enseña —entra con un
+ * fondo verde que se apaga solo— y se quita en un segundo y medio, antes de
+ * que el siguiente registro reclame la atención.
+ *
+ * El color se desvanece hasta transparente en vez de a blanco para que la fila
+ * acabe con el fondo que le toque, incluida la franja del tema oscuro.
+ */
+@keyframes fuid-fila-nueva {
+  0% {
+    background-color: rgba(22, 163, 74, 0.24);
+    transform: translateX(-4px);
+  }
+  25% {
+    transform: translateX(0);
+  }
+  /* El verde se sostiene medio segundo antes de irse: si empieza a apagarse de
+     inmediato, quien estaba mirando el formulario no llega a verlo. */
+  45% {
+    background-color: rgba(22, 163, 74, 0.2);
+  }
+  100% {
+    background-color: rgba(22, 163, 74, 0);
+    transform: translateX(0);
+  }
+}
+
+.fuid-fila-nueva {
+  animation: fuid-fila-nueva 1.6s ease-out;
+}
+
+/* Sin animaciones para quien las ha desactivado en su sistema. */
+@media (prefers-reduced-motion: reduce) {
+  .fuid-fila-nueva {
+    animation: none;
+  }
+}

@@ -686,6 +686,25 @@ export async function createCajasSerie(req: Request, res: Response): Promise<voi
   const resumenAsignacion =
     tecnica.ids.length > 0 ? ` y se asignaron ${tecnica.ids.length} técnico(s)` : '';
 
+  /*
+   * Queda constancia de cuántas cajas se crearon y con qué rango.
+   *
+   * No estaba, y se notó: al aparecer cajas de dos en dos no había forma de
+   * saber desde el registro si alguien había pedido dos o si el sistema había
+   * creado una de más. Solo se auditaba el borrado, que es la mitad de la
+   * historia.
+   */
+  void audit({
+    entidad: 'modulos_caja',
+    entidadId: id_modulo_caja,
+    accion: 'CREAR',
+    detalle:
+      values.length === 1
+        ? `Caja ${prefijo}${String(ini).padStart(6, '0')}`
+        : `Serie de ${values.length} cajas, de ${prefijo}${String(ini).padStart(6, '0')} a ${prefijo}${String(fin).padStart(6, '0')}`,
+    usuario: req.session.user,
+  });
+
   res.status(201).json({
     message: `Se crearon ${values.length} cajas correctamente (${prefijo}${String(ini).padStart(6, '0')} a ${prefijo}${String(fin).padStart(6, '0')})${resumenAsignacion}`,
     cantidad: values.length,

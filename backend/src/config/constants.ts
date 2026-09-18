@@ -235,8 +235,10 @@ export const VALOR_NO_DILIGENCIADO = 'N/A';
  * - `fecha_del_dato`, `fecha_inicial`, `fecha_final`, `fecha_transferencia`,
  *   `n_orden` y `tiempo`: las columnas son `date`, `int` y `time`, y no admiten
  *   el literal. Siguen viajando como NULL.
- * - `caja`, `upd`, `asunto_2` y `asunto_3`: son obligatorios, nunca pueden
- *   quedar vacíos.
+ * - `caja`, `upd` y `asunto_2`: son obligatorios, nunca pueden quedar vacíos.
+ *   `asunto_3` lo fue y dejó de serlo: describe el documento concreto y hay
+ *   documentos de los que no hay nada particular que decir, así que entra en
+ *   la lista y vacío se guarda con el marcador.
  * - `elaborado_por` y `sede`: los pone el sistema con los datos de quien digita.
  *   `elaborado_por` guarda "NOMBRE (CC)" y los reportes lo cruzan con `users`
  *   por la cédula: un `N/A` ahí rompería ese cruce.
@@ -257,6 +259,7 @@ export const CAMPOS_NO_DILIGENCIADOS = [
   'accionado_denunciante',
   'identificacion',
   'asunto',
+  'asunto_3',
   'radicado',
   'numero_doc',
   'numero_doc_hasta',

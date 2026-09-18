@@ -37,6 +37,14 @@ export interface TableProps<T> {
   renderExpansion?: (row: T) => ReactNode;
   /** Si la fila está desplegada. Solo se consulta cuando hay `renderExpansion`. */
   isExpanded?: (row: T) => boolean;
+  /**
+   * Clases extra para una fila concreta, según sus datos.
+   *
+   * Existe para poder señalar una fila sin que la tabla sepa por qué: en
+   * digitación, la que se acaba de guardar. Devolver `undefined` la deja como
+   * las demás.
+   */
+  rowClassName?: (row: T) => string | undefined;
 }
 
 export function Table<T>({
@@ -51,6 +59,7 @@ export function Table<T>({
   maxHeight,
   renderExpansion,
   isExpanded,
+  rowClassName,
 }: TableProps<T>) {
   const celdaFija = 'sticky left-0 z-20 border-r border-silver-200 bg-surface group-hover:bg-silver-50';
   const cabeceraFija = 'sticky left-0 z-30 border-r border-silver-200 bg-silver-50';
@@ -88,6 +97,7 @@ export function Table<T>({
                       // Sin borde inferior cuando lleva algo debajo: la fila y su
                       // desplegable se leen como un solo bloque.
                       desplegada ? 'border-b-0' : 'last:border-0',
+                      rowClassName?.(row),
                     )}
                   >
                     {columns.map((col, i) => (
