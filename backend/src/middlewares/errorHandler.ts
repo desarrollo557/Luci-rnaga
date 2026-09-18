@@ -30,7 +30,35 @@ const SQLSTATE = {
   TEXTO_LARGO: '22001',
   /** foreign_key_violation: cubre los dos casos de MySQL, 1452 y 1451. */
   LLAVE_FORANEA: '23503',
+  /**
+   * internal_error. Es el código con el que el pooler de Supabase rechaza una
+   * conexión cuando ya no le quedan sesiones libres; el mensaje lo concreta.
+   */
+  INTERNO: 'XX000',
 } as const;
+
+/**
+ * Si el error es que no hubo conexión con la base, no que la consulta falló.
+ *
+ * Son dos situaciones distintas con la misma cara. La primera: el pooler no
+ * tiene sesiones libres y rechaza la conexión —`EMAXCONNSESSION`—, que es lo
+ * que pasa cuando entre todas las instancias se pide más de lo que reparte el
+ * plan. La segunda: la conexión sí se pidió, pero ninguna quedó libre dentro
+ * del plazo y el pool se rindió.
+ *
+ * Ninguna de las dos es culpa de quien está usando el software ni se arregla
+ * corrigiendo lo que escribió, así que merecen un 503 y un mensaje que invite
+ * a reintentar, en vez del "Error interno del servidor" que no dice nada.
+ */
+function esSaturacionDeConexiones(err: unknown): boolean {
+  const mensaje = detalleDe(err);
+  if (codigoDe(err) === SQLSTATE.INTERNO && /EMAXCONNSESSION|max clients reached/i.test(mensaje)) {
+    return true;
+  }
+  return /Connection terminated due to connection timeout|timeout exceeded when trying to connect/i.test(
+    mensaje,
+  );
+}
 
 function codigoDe(err: unknown): string | undefined {
   return typeof err === 'object' && err !== null ? (err as { code?: string }).code : undefined;
@@ -115,6 +143,16 @@ export function errorHandler(err: unknown, _req: Request, res: Response, next: N
     res.status(409).json({
       error:
         'La referencia no existe. Verifica que el módulo cliente o el usuario seleccionado sea válido.',
+    });
+    return;
+  }
+
+  if (esSaturacionDeConexiones(err)) {
+    console.error('[db] Sin conexiones libres contra la base:', detalleDe(err).trim());
+    res.status(503).json({
+      error:
+        'La base de datos está atendiendo todas las conexiones que puede en este momento. ' +
+        'Vuelve a intentarlo en unos segundos.',
     });
     return;
   }

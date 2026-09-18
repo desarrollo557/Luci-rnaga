@@ -25,6 +25,8 @@ import {
   changeEstadoCaja,
   countFuidByCaja,
   listTecnicaUsersOfCaja,
+  listJornadasDeCaja,
+  declararJornadaDeCaja,
   getTecnicaStats,
 } from '../controllers/modulosCaja.controller.js';
 import {
@@ -75,6 +77,10 @@ router.put(
 router.get('/modulos_caja/tecnica-stats', isAuthenticated, asyncHandler(getTecnicaStats));
 router.get('/modulos_caja/:id', isAuthenticated, asyncHandler(getModuloCajaById));
 router.get('/modulos_caja/:modulo_id/usuarios', isAuthenticated, asyncHandler(listTecnicaUsersOfCaja));
+// Historial de digitación de la caja: qué se trabajó en ella cada día.
+router.get('/modulos_caja/:id/jornadas', isAuthenticated, asyncHandler(listJornadasDeCaja));
+// Cierre de jornada: la termino o la continúo otro día. Lo declara quien digita.
+router.post('/modulos_caja/:id/jornada', isAuthenticated, asyncHandler(declararJornadaDeCaja));
 
 // Asignaciones de caja
 router.post(

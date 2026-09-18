@@ -236,6 +236,23 @@ export const subModulosApi = {
   remove: (id: string | number) => api.delete(`/sub_modulos/${id}`),
 };
 
+/** Lo que quien digita declara al dejar una caja. */
+export type ResultadoDeJornada = 'TERMINADA' | 'CONTINUA';
+
+/** Un día de trabajo sobre una caja, tal como lo devuelve el historial. */
+export interface JornadaDeCaja {
+  fecha: string | null;
+  colaborador: string | null;
+  registros: number;
+  upd_desde: string | null;
+  upd_hasta: string | null;
+  primera: string | null;
+  ultima: string | null;
+  /** Lo declarado ese día, o `null` si nadie declaró nada. */
+  resultado: ResultadoDeJornada | null;
+  registros_declarados: number | null;
+}
+
 export const modulosCajaApi = {
   list: (
     idModuloCaja: string | number,
@@ -254,6 +271,14 @@ export const modulosCajaApi = {
     api.patch(`/modulos_caja/${id}/cambiarEstado`, { estado_caja }),
   usuariosTecnica: (moduloId: string | number) =>
     api.get<UsuarioAsignado[]>(`/modulos_caja/${moduloId}/usuarios`),
+  /** Qué se digitó en la caja cada día y quién lo hizo. */
+  jornadas: (id: string | number) => api.get<JornadaDeCaja[]>(`/modulos_caja/${id}/jornadas`),
+  /** Cierra la jornada de hoy en esta caja: terminada, o para continuar otro día. */
+  declararJornada: (id: string | number, resultado: ResultadoDeJornada) =>
+    api.post<{ message: string; fecha: string; resultado: ResultadoDeJornada }>(
+      `/modulos_caja/${id}/jornada`,
+      { resultado },
+    ),
   countFuidDatosReal: (cajaModulo: string) =>
     api.get<{ total: number }>('/modulos_caja/count_fuiddatosreal', {
       params: { caja_modulo: cajaModulo },
@@ -452,7 +477,10 @@ export interface EstadisticasProduccion {
   total_actas: number;
   total_clientes: number;
   por_estado_caja: Array<{ estado: string; total: number }>;
+  /** Los últimos 12 meses con registros, del más antiguo al más reciente. */
   fuids_por_mes: Array<{ mes: string; total: number; aprobados: number }>;
+  /** Los últimos 30 días con registros, del más antiguo al más reciente. */
+  fuids_por_dia: Array<{ dia: string; total: number; aprobados: number }>;
   fuids_por_sede: Array<{ sede: string; total: number }>;
   digitadores: Digitador[];
   usuarios_por_rol: Array<{ rol: string; total: number }>;
@@ -571,6 +599,39 @@ function sinVacios(filtros: Record<string, string | undefined>): Record<string, 
   return params;
 }
 
+
+/** Una persona en la pantalla de actividad del equipo. */
+export interface PersonaEnActividad {
+  cc: string | null;
+  nombre: string;
+  rol: string | null;
+  sede: string | null;
+  /** Instante de su última petición al servidor. */
+  ultima_actividad: string | null;
+  /** Instante en que pulsó una tecla en el formulario por última vez. */
+  ultima_escritura: string | null;
+  /** Caja en la que estaba escribiendo. */
+  caja_escribiendo: string | null;
+  /** La señal más reciente de presencia: su última petición o su último registro. */
+  ultimo_visto: string | null;
+  /** Caja del último registro del periodo: en la que va ahora mismo. */
+  caja_actual: string | null;
+  primer_registro: string | null;
+  ultimo_registro: string | null;
+  registros: number;
+  cajas: number;
+  /** `false` cuando digitó en el periodo pero su cuenta ya no existe. */
+  es_usuario: boolean;
+}
+
+export interface ActividadDelEquipo {
+  desde: string;
+  hasta: string;
+  /** Reloj del servidor: la presencia se mide contra él, no contra el del navegador. */
+  ahora: string;
+  personas: PersonaEnActividad[];
+}
+
 export const reportesApi = {
   fuidConEstadoCaja: () => api.get<FuidConEstado[]>('/fuid-con-estado-caja'),
   /** Quién digitó, en qué caja y qué día, dentro de cada cliente. */
@@ -588,6 +649,11 @@ export const reportesApi = {
    * Cuántas jornadas y registros llevará el seguimiento con esos filtros. Se pide
    * antes de generar, para que la pantalla diga qué está armando.
    */
+  /** Aviso de que se está escribiendo en el formulario; lo manda quien digita. */
+  escribiendo: (caja: string) => api.post('/actividad/escribiendo', { caja }),
+  /** Quién está dentro del software y cómo va su jornada. */
+  actividad: (filtros: { desde?: string; hasta?: string } = {}) =>
+    api.get<ActividadDelEquipo>('/actividad', { params: sinVacios(filtros) }),
   resumenSeguimiento: (filtros: { desde?: string; hasta?: string; persona?: string } = {}) =>
     api.get<{ jornadas: number; registros: number }>('/seguimiento-inventario/resumen', {
       params: sinVacios(filtros),

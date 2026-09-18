@@ -1,19 +1,6 @@
 import { useEffect, useState } from 'react';
 import { NavLink, Outlet } from 'react-router-dom';
-import {
-  Building2,
-  Factory,
-  History,
-  LayoutDashboard,
-  LogOut,
-  Menu,
-  Package,
-  PanelLeftClose,
-  PanelLeftOpen,
-  Users,
-  X,
-  type LucideIcon,
-} from 'lucide-react';
+import { Building2, Factory, History, LayoutDashboard, LogOut, Menu, Package, PanelLeftClose, PanelLeftOpen, Users, X, type LucideIcon } from 'lucide-react';
 import { Badge, ThemeToggle } from '@/components/ui';
 import { cn } from '@/lib/cn';
 import { useAuthStore } from '@/stores/authStore';
