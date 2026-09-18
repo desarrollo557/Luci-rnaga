@@ -1,12 +1,13 @@
 import type { Request, Response } from 'express';
 import mysql from 'mysql2/promise';
-import { getConnection, query, queryOne, queryResult } from '../config/db.js';
+import { getConnection, query, queryOne, queryResult, withTransaction } from '../config/db.js';
 import type { ModuloCaja } from '../types/db.js';
 import { formatUpd, isUpdValid, nextUpd, normalizeUpd, toNumeric, UPD_MAX } from '../utils/updFormat.js';
 import { asignarUsuariosACajas, validarUsuariosDeRol } from './asignacionesCaja.controller.js';
 import { audit } from '../services/audit.service.js';
 import { fueraDeSuSede, sedeDeActa, sedeDeCaja, tieneCajaAsignada } from '../services/jerarquia.service.js';
 import { cambiarEstadoCaja } from '../services/cicloCaja.service.js';
+import { fechaHoyLocal } from '../utils/format.js';
 
 export async function listModulosCaja(req: Request, res: Response): Promise<void> {
   const user = req.session.user;
@@ -58,6 +59,205 @@ export async function getModuloCajaById(req: Request, res: Response): Promise<vo
   }
 
   res.json(results[0]);
+}
+
+/** Un día de trabajo sobre una caja, por persona. */
+export interface JornadaDeCaja {
+  /** Día al que la persona atribuyó el trabajo, que es como lo cuenta el seguimiento. */
+  fecha: string | null;
+  colaborador: string | null;
+  registros: number;
+  upd_desde: string | null;
+  upd_hasta: string | null;
+  /** Primer y último guardado de ese día, por reloj. */
+  primera: string | null;
+  ultima: string | null;
+  /** Lo que la persona declaró al dejar la caja, o `null` si no declaró nada. */
+  resultado: 'TERMINADA' | 'CONTINUA' | null;
+  /** Cuántos registros llevaba en el momento de declarar. */
+  registros_declarados: number | null;
+}
+
+/**
+ * El historial de digitación de una caja, día por día y persona por persona.
+ *
+ * Nace de algo que contó un auxiliar: dejó una caja a medias una tarde, la
+ * retomó al día siguiente, y en la pantalla de la caja solo quedaba una fecha
+ * —"Actualizada"— que se había movido al día nuevo. El trabajo de la víspera
+ * seguía guardado, registro por registro, pero no había dónde verlo, y desde
+ * fuera parecía que la caja se había empezado hoy.
+ *
+ * **Se calcula a partir de los registros, no se guarda aparte.** Podría
+ * llevarse un contador por caja y día que se fuera sumando al digitar, pero
+ * entonces habría dos versiones de la verdad que pueden separarse —un registro
+ * borrado, uno corregido de fecha— y, sobre todo, el histórico anterior a esa
+ * cuenta nacería en cero. Los registros ya tienen quién, cuándo y con qué UPD;
+ * el historial es una lectura de eso, y por eso vale igual para lo digitado
+ * hace un año que para lo de esta mañana.
+ *
+ * Se agrupa por `fecha_del_dato` y no por `created_at` porque esa es la fecha
+ * con la que el seguimiento de inventario cuenta la producción: si aquí se
+ * agrupara por el reloj, las dos pantallas dirían cosas distintas del mismo
+ * día. Las horas sí salen del reloj, que es lo que no se puede escribir a mano.
+ *
+ * Los registros sin fecha —los que vienen de la base antigua— salen agrupados
+ * al final en lugar de quedarse fuera: que no se sepa de qué día son no es
+ * motivo para que desaparezcan de la cuenta.
+ *
+ * Lo único que no se calcula es `resultado`: si la persona dio la caja por
+ * terminada ese día o la dejó para continuarla. Eso no está en los registros
+ * porque no se puede deducir de ellos, así que se trae de `jornada_caja`, que
+ * es donde queda lo que se declaró.
+ */
+export async function listJornadasDeCaja(req: Request, res: Response): Promise<void> {
+  const { id } = req.params;
+  const jornadas = await query<JornadaDeCaja>(
+    `WITH caja AS (SELECT caja_modulo FROM modulos_caja WHERE id = ?)
+     SELECT f.fecha_del_dato AS fecha,
+            f.elaborado_por  AS colaborador,
+            COUNT(*)         AS registros,
+            -- Los UPD tienen todos el mismo ancho ("UPD" + 7 cifras), así que el
+            -- menor y el mayor por texto son también el menor y el mayor por
+            -- número. Se descartan los que no siguen el formato para que un
+            -- valor suelto no ensanche el rango de toda la jornada.
+            MIN(f.upd) FILTER (WHERE f.upd ~ '^UPD[0-9]{7}$') AS upd_desde,
+            MAX(f.upd) FILTER (WHERE f.upd ~ '^UPD[0-9]{7}$') AS upd_hasta,
+            MIN(f.created_at) AS primera,
+            MAX(f.created_at) AS ultima,
+            MAX(j.resultado)  AS resultado,
+            MAX(j.registros)  AS registros_declarados
+       FROM fuiddatosreal f
+       JOIN caja c ON f.caja = c.caja_modulo
+       LEFT JOIN jornada_caja j
+              ON j.caja_modulo = f.caja
+             AND j.fecha = f.fecha_del_dato
+             AND j.colaborador = f.elaborado_por
+      GROUP BY f.fecha_del_dato, f.elaborado_por
+      ORDER BY f.fecha_del_dato ASC NULLS LAST, MIN(f.created_at) ASC NULLS FIRST`,
+    [id],
+  );
+  res.json(jornadas);
+}
+
+/** Lo que quien digita puede declarar al dejar una caja. */
+export const JORNADA_TERMINADA = 'TERMINADA';
+export const JORNADA_CONTINUA = 'CONTINUA';
+
+/**
+ * Cierre de jornada: "esta caja la terminé" o "la sigo mañana".
+ *
+ * El estado de las cajas se deduce de la digitación y eso no cambia: quien no
+ * declare nada no pierde nada, su caja se sigue abriendo y cerrando sola. Lo
+ * que la deducción no puede saber es la **intención** de quien está dentro. Un
+ * día sin más registros puede ser una caja terminada, una jornada que se acabó
+ * a las cinco, o alguien que se fue a otra sede; desde fuera se ven iguales.
+ *
+ * Por eso esta declaración se guarda aparte y no se calcula: es el único dato
+ * de la jornada que solo tiene la persona. Con ella, el trabajo de un día queda
+ * cerrado y contado **aunque la caja siga abierta mañana**, que era justo lo
+ * que se perdía: el auxiliar dejaba la caja a medias, la retomaba al día
+ * siguiente y su jornada anterior no quedaba registrada en ninguna parte.
+ *
+ * Se guarda también cuántos registros llevaba ese día en el momento de
+ * declarar. Es redundante con los registros —se puede volver a contar— y aun
+ * así se guarda: es la cifra que la persona vio y dio por buena al cerrar, y
+ * si más tarde alguien corrige o borra un registro, la cuenta viva cambia pero
+ * lo que se declaró aquel día no.
+ *
+ * Declarar dos veces el mismo día corrige lo dicho en lugar de duplicarlo: uno
+ * puede decir "la sigo mañana" y darse cuenta de que en realidad la terminó.
+ */
+export async function declararJornadaDeCaja(req: Request, res: Response): Promise<void> {
+  const { id } = req.params;
+  const { resultado } = req.body as { resultado?: string };
+
+  if (resultado !== JORNADA_TERMINADA && resultado !== JORNADA_CONTINUA) {
+    res.status(400).json({
+      message: `El campo resultado debe ser ${JORNADA_TERMINADA} o ${JORNADA_CONTINUA}`,
+    });
+    return;
+  }
+
+  const user = req.session.user;
+  if (!user) {
+    res.status(403).json({ message: 'Acceso denegado' });
+    return;
+  }
+  // El líder cierra cualquier caja; la técnica, solo las suyas.
+  if (user.rol === 'TECNICA' && !(await tieneCajaAsignada(user, id))) {
+    res.status(403).json({ message: 'Solo puede cerrar la jornada de las cajas que tiene asignadas' });
+    return;
+  }
+
+  const caja = await queryOne<{ caja_modulo: string }>(
+    'SELECT caja_modulo FROM modulos_caja WHERE id = ?',
+    [id],
+  );
+  if (!caja) {
+    res.status(404).json({ message: 'Módulo de caja no encontrado' });
+    return;
+  }
+
+  /*
+   * El mismo texto con el que se firma cada registro (`elaborado_por`). Tiene
+   * que coincidir carácter a carácter: es la única forma de cruzar la jornada
+   * declarada con los registros que la componen, y con lo que agrupa el
+   * seguimiento de inventario.
+   */
+  const colaborador = `${user.nombre.toUpperCase()} (${user.cc})`;
+  const hoy = fechaHoyLocal();
+
+  await withTransaction(async (conn) => {
+    const [conteo] = await conn.query<{ n: number }>(
+      `SELECT COUNT(*) AS n FROM fuiddatosreal
+        WHERE caja = ? AND elaborado_por = ? AND fecha_del_dato = ?`,
+      [caja.caja_modulo, colaborador, hoy],
+    );
+
+    await conn.queryResult(
+      `INSERT INTO jornada_caja (caja_modulo, fecha, colaborador, resultado, usuario_id, registros)
+       VALUES (?, ?, ?, ?, ?, ?)
+       ON CONFLICT (caja_modulo, fecha, colaborador)
+       DO UPDATE SET resultado = EXCLUDED.resultado,
+                     registros = EXCLUDED.registros,
+                     declarada_en = now()`,
+      [caja.caja_modulo, hoy, colaborador, resultado, user.id, Number(conteo?.n ?? 0)],
+    );
+
+    /*
+     * Y se mueve el estado de la caja en consecuencia. Terminarla la cierra con
+     * la jornada de su último registro, igual que el cierre automático; seguir
+     * mañana la deja abierta, que es lo que ya estaba, salvo que la deducción
+     * la hubiera cerrado por haber pasado a otra caja y se vuelva sobre ella.
+     */
+    await cambiarEstadoCaja(
+      async (sql, params) => (await conn.queryResult(sql, params)).affectedRows,
+      id,
+      resultado === JORNADA_TERMINADA ? 'FINALIZADO' : 'EN PROCESO',
+    );
+  });
+
+  void audit({
+    entidad: 'modulos_caja',
+    entidadId: id,
+    // El mismo tipo de evento para los dos: lo que cambia es lo que se declaró,
+    // y eso va en el detalle, que es lo que se lee en el historial.
+    accion: 'CAMBIAR_ESTADO',
+    detalle:
+      resultado === JORNADA_TERMINADA
+        ? `Caja ${caja.caja_modulo} dada por terminada por quien la digitó`
+        : `Caja ${caja.caja_modulo}: jornada cerrada, queda para continuarla otro día`,
+    usuario: user,
+  });
+
+  res.json({
+    message:
+      resultado === JORNADA_TERMINADA
+        ? 'Caja dada por terminada'
+        : 'Jornada cerrada; la caja queda abierta para continuarla',
+    fecha: hoy,
+    resultado,
+  });
 }
 
 export async function getNextCajaNumero(req: Request, res: Response): Promise<void> {

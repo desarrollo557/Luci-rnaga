@@ -1,5 +1,5 @@
 import type { Request, Response } from 'express';
-import { query } from '../config/db.js';
+import { query, queryOne } from '../config/db.js';
 import { audit } from '../services/audit.service.js';
 import { fechaHoyLocal } from '../utils/format.js';
 import {
@@ -109,7 +109,10 @@ export interface EstadisticasProduccion {
   /** Clientes registrados (filas de sub_modulos). */
   total_clientes: number;
   por_estado_caja: Array<{ estado: string; total: number }>;
+  /** Los últimos 12 meses con registros, del más antiguo al más reciente. */
   fuids_por_mes: Array<{ mes: string; total: number; aprobados: number }>;
+  /** Los últimos 30 días con registros, del más antiguo al más reciente. */
+  fuids_por_dia: Array<{ dia: string; total: number; aprobados: number }>;
   fuids_por_sede: Array<{ sede: string; total: number }>;
   /** Todos los digitadores con registros, sin límite; rol y sede solo si existen como usuario. */
   digitadores: Array<{
@@ -130,41 +133,136 @@ export interface EstadisticasProduccion {
   generado_en: string;
 }
 
+/** Un punto de la curva de digitación, con la granularidad a la que pertenece. */
+interface PuntoDeSerie {
+  granularidad: 'mes' | 'dia';
+  /** `AAAA-MM` para el mes, `AAAA-MM-DD` para el día. */
+  etiqueta: string;
+  total: number;
+  aprobados: number;
+}
+
+/** Cuántos meses y cuántos días de historia se dibujan en la curva. */
+const MESES_EN_LA_CURVA = 12;
+const DIAS_EN_LA_CURVA = 30;
+
+/**
+ * La curva de digitación, por mes y por día, en una sola consulta.
+ *
+ * Son dos preguntas distintas sobre lo mismo. Por mes se ve si el trabajo
+ * crece o se estanca a lo largo del año; por día se ve la semana concreta:
+ * qué días rindieron, cuáles se cayeron y si lo de hoy va como lo de ayer. Un
+ * mes es un promedio de veinte jornadas y esconde las dos cosas.
+ *
+ * Van juntas y no en dos consultas porque el recorrido de `fuiddatosreal` es
+ * el mismo y esta pantalla se refresca sola: lo caro no es agrupar dos veces,
+ * es leer la tabla dos veces y ocupar dos conexiones del pooler para ello.
+ *
+ * Se cuentan los últimos ${MESES_EN_LA_CURVA} meses y los últimos
+ * ${DIAS_EN_LA_CURVA} días **con registros**, no naturales: un fin de semana
+ * sin digitar no gasta un hueco de la curva.
+ */
+const SQL_SERIE_DIGITACION = `
+  WITH digitado AS (
+    SELECT f.fecha_del_dato AS fecha,
+           (f.historial_y_cambios = 'OK') AS aprobado
+      FROM fuiddatosreal f
+     WHERE f.fecha_del_dato IS NOT NULL
+  ),
+  por_mes AS (
+    SELECT to_char(fecha, 'YYYY-MM') AS etiqueta,
+           COUNT(*) AS total,
+           COUNT(*) FILTER (WHERE aprobado) AS aprobados
+      FROM digitado
+     GROUP BY 1
+     ORDER BY 1 DESC
+     LIMIT ${MESES_EN_LA_CURVA}
+  ),
+  por_dia AS (
+    SELECT to_char(fecha, 'YYYY-MM-DD') AS etiqueta,
+           COUNT(*) AS total,
+           COUNT(*) FILTER (WHERE aprobado) AS aprobados
+      FROM digitado
+     GROUP BY 1
+     ORDER BY 1 DESC
+     LIMIT ${DIAS_EN_LA_CURVA}
+  )
+  SELECT 'mes' AS granularidad, etiqueta, total, aprobados FROM por_mes
+  UNION ALL
+  SELECT 'dia' AS granularidad, etiqueta, total, aprobados FROM por_dia
+  ORDER BY granularidad, etiqueta ASC`;
+
+/** Las cifras sueltas de la cabecera, todas en una sola ida a la base. */
+interface Conteos {
+  total_fuids: number;
+  fuids_aprobados: number;
+  total_cajas: number;
+  cajas_en_proceso: number;
+  cajas_finalizadas: number;
+  cajas_con_fuids: number;
+  total_actas: number;
+  total_clientes: number;
+  total_usuarios: number;
+}
+
+/**
+ * Los nueve conteos de la cabecera en una consulta.
+ *
+ * Antes eran diez consultas sueltas dentro del mismo `Promise.all` —dos de
+ * ellas idénticas, contando `moduloscliente` dos veces—, y esta pantalla se
+ * refresca sola cada quince segundos. Cada consulta ocupa una conexión del
+ * pooler mientras dura, y ese cupo se comparte con el servicio desplegado: el
+ * pico de esta sola pantalla era lo que dejaba a la base sin sesiones libres.
+ *
+ * Agrupadas por tabla, además, se recorre `fuiddatosreal` una vez en lugar de
+ * dos y `modulos_caja` una en lugar de cuatro. `COUNT(*) FILTER (WHERE …)` es
+ * lo que permite sacar varios conteos de un mismo recorrido.
+ */
+const SQL_CONTEOS = `
+  WITH fuids AS (
+    SELECT COUNT(*) AS total,
+           COUNT(*) FILTER (WHERE historial_y_cambios = 'OK') AS aprobados
+    FROM fuiddatosreal
+  ),
+  cajas AS (
+    SELECT COUNT(*) AS total,
+           COUNT(*) FILTER (WHERE estado_caja = 'EN PROCESO') AS en_proceso,
+           COUNT(*) FILTER (WHERE estado_caja = 'FINALIZADO') AS finalizadas,
+           -- Cajas registradas con al menos un FUID. Se cuenta sobre
+           -- modulos_caja, y no sobre los códigos distintos de fuiddatosreal,
+           -- para que cuadre con total_cajas.
+           COUNT(*) FILTER (
+             WHERE EXISTS (SELECT 1 FROM fuiddatosreal f WHERE f.caja = mc.caja_modulo)
+           ) AS con_fuids
+    FROM modulos_caja mc
+  )
+  SELECT f.total AS total_fuids,
+         f.aprobados AS fuids_aprobados,
+         c.total AS total_cajas,
+         c.en_proceso AS cajas_en_proceso,
+         c.finalizadas AS cajas_finalizadas,
+         c.con_fuids AS cajas_con_fuids,
+         -- Actas y clientes registrados de verdad: antes se contaban números de
+         -- acta escritos a mano en los FUID, que no coinciden con los creados.
+         (SELECT COUNT(*) FROM moduloscliente) AS total_actas,
+         (SELECT COUNT(*) FROM sub_modulos) AS total_clientes,
+         (SELECT COUNT(*) FROM users) AS total_usuarios
+  FROM fuids f, cajas c`;
+
 /** Resumen agregado del negocio: todos los conteos se calculan con SQL real. */
 export async function estadisticasProduccion(_req: Request, res: Response): Promise<void> {
   const [
-    totalFuids,
-    totalCajas,
-    cajasEnProceso,
-    cajasFinalizadas,
-    fuidsAprobados,
-    cajasConFuids,
-    totalModulos,
-    totalUsuarios,
+    conteos,
     porEstadoCaja,
-    fuidsPorMes,
+    serieDigitacion,
     fuidsPorSede,
     digitadores,
     usuariosPorRol,
     cajasPorEstado,
     avancePorSubmodulo,
     actividadReciente,
-    totalActas,
-    totalClientes,
   ] = await Promise.all([
-    query<{ n: number }>('SELECT COUNT(*) AS n FROM fuiddatosreal'),
-    query<{ n: number }>('SELECT COUNT(*) AS n FROM modulos_caja'),
-    query<{ n: number }>("SELECT COUNT(*) AS n FROM modulos_caja WHERE estado_caja = 'EN PROCESO'"),
-    query<{ n: number }>("SELECT COUNT(*) AS n FROM modulos_caja WHERE estado_caja = 'FINALIZADO'"),
-    query<{ n: number }>("SELECT COUNT(*) AS n FROM fuiddatosreal WHERE historial_y_cambios = 'OK'"),
-    // Cajas registradas que tienen al menos un FUID (se cuenta sobre modulos_caja,
-    // no sobre los códigos distintos de fuiddatosreal, para que cuadre con total_cajas).
-    query<{ n: number }>(
-      `SELECT COUNT(*) AS n FROM modulos_caja mc
-       WHERE EXISTS (SELECT 1 FROM fuiddatosreal f WHERE f.caja = mc.caja_modulo)`,
-    ),
-    query<{ n: number }>('SELECT COUNT(*) AS n FROM moduloscliente'),
-    query<{ n: number }>('SELECT COUNT(*) AS n FROM users'),
+    queryOne<Conteos>(SQL_CONTEOS),
     query<{ estado: string; total: number }>(
       `SELECT COALESCE(mc.estado_caja, 'SIN ESTADO') AS estado, COUNT(*) AS total
        FROM fuiddatosreal f
@@ -172,20 +270,7 @@ export async function estadisticasProduccion(_req: Request, res: Response): Prom
        GROUP BY mc.estado_caja
        ORDER BY total DESC`,
     ),
-    query<{ mes: string; total: number; aprobados: number }>(
-      `SELECT mes, total, aprobados FROM (
-         SELECT to_char(f.fecha_del_dato, 'YYYY-MM') AS mes,
-                COUNT(*) AS total,
-                SUM(CASE WHEN f.historial_y_cambios = 'OK' THEN 1 ELSE 0 END) AS aprobados
-         FROM fuiddatosreal f
-         WHERE f.fecha_del_dato IS NOT NULL
-           AND CAST(f.fecha_del_dato AS CHAR) <> ''
-         GROUP BY mes
-         ORDER BY mes DESC
-         LIMIT 12
-       ) AS ultimos
-       ORDER BY mes ASC`,
-    ),
+    query<PuntoDeSerie>(SQL_SERIE_DIGITACION),
     query<{ sede: string; total: number }>(
       `SELECT sede, COUNT(*) AS total
        FROM fuiddatosreal
@@ -252,36 +337,34 @@ export async function estadisticasProduccion(_req: Request, res: Response): Prom
        ) AS ultimos
        ORDER BY dia ASC`,
     ),
-    // Actas y clientes registrados de verdad (antes se contaban números de acta
-    // escritos a mano en los FUID, que no coinciden con las actas creadas).
-    query<{ n: number }>('SELECT COUNT(*) AS n FROM moduloscliente'),
-    query<{ n: number }>('SELECT COUNT(*) AS n FROM sub_modulos'),
   ]);
 
   const num = (v: unknown): number => Number(v ?? 0);
 
-  const totalFuidsN = totalFuids[0]?.n ?? 0;
-  const totalCajasN = totalCajas[0]?.n ?? 0;
-  const cajasConFuidsN = cajasConFuids[0]?.n ?? 0;
+  const totalFuidsN = num(conteos?.total_fuids);
+  const totalCajasN = num(conteos?.total_cajas);
+  const cajasConFuidsN = num(conteos?.cajas_con_fuids);
+  const totalActasN = num(conteos?.total_actas);
 
   res.json({
     total_fuids: totalFuidsN,
     total_cajas: totalCajasN,
-    cajas_en_proceso: cajasEnProceso[0]?.n ?? 0,
-    cajas_finalizadas: cajasFinalizadas[0]?.n ?? 0,
-    fuids_aprobados: fuidsAprobados[0]?.n ?? 0,
-    fuids_pendientes: totalFuidsN - (fuidsAprobados[0]?.n ?? 0),
+    cajas_en_proceso: num(conteos?.cajas_en_proceso),
+    cajas_finalizadas: num(conteos?.cajas_finalizadas),
+    fuids_aprobados: num(conteos?.fuids_aprobados),
+    fuids_pendientes: totalFuidsN - num(conteos?.fuids_aprobados),
     cajas_con_fuids: cajasConFuidsN,
     cajas_sin_fuids: totalCajasN - cajasConFuidsN,
     promedio_fuids_por_caja: cajasConFuidsN > 0 ? Math.round((totalFuidsN / cajasConFuidsN) * 10) / 10 : 0,
-    total_modulos_cliente: totalModulos[0]?.n ?? 0,
-    total_usuarios: totalUsuarios[0]?.n ?? 0,
+    total_modulos_cliente: totalActasN,
+    total_usuarios: num(conteos?.total_usuarios),
     por_estado_caja: porEstadoCaja.map((r) => ({ estado: r.estado, total: num(r.total) })),
-    fuids_por_mes: fuidsPorMes.map((r) => ({
-      mes: r.mes,
-      total: num(r.total),
-      aprobados: num(r.aprobados),
-    })),
+    fuids_por_mes: serieDigitacion
+      .filter((r) => r.granularidad === 'mes')
+      .map((r) => ({ mes: r.etiqueta, total: num(r.total), aprobados: num(r.aprobados) })),
+    fuids_por_dia: serieDigitacion
+      .filter((r) => r.granularidad === 'dia')
+      .map((r) => ({ dia: r.etiqueta, total: num(r.total), aprobados: num(r.aprobados) })),
     fuids_por_sede: fuidsPorSede.map((r) => ({ sede: r.sede, total: num(r.total) })),
     digitadores: digitadores.map((r) => ({
       nombre: r.nombre,
@@ -294,8 +377,8 @@ export async function estadisticasProduccion(_req: Request, res: Response): Prom
       ultimo_registro: r.ultimo_registro ?? null,
     })),
     usuarios_por_rol: usuariosPorRol.map((r) => ({ rol: r.rol, total: num(r.total) })),
-    total_actas: Number(totalActas[0]?.n ?? 0),
-    total_clientes: Number(totalClientes[0]?.n ?? 0),
+    total_actas: totalActasN,
+    total_clientes: num(conteos?.total_clientes),
     cajas_por_estado: cajasPorEstado.map((r) => ({ estado: r.estado, total: num(r.total) })),
     avance_por_submodulo: avancePorSubmodulo.map((r) => ({
       submodulo: r.submodulo,
@@ -650,44 +733,116 @@ export async function produccionDetallada(req: Request, res: Response): Promise<
 /** El número de caja que pide el formato: de `051C002406` sale 2406. */
 const NUMERO_DE_CAJA = `NULLIF(substring(f.caja from '^[0-9]{3}C([0-9]{6})$'), '')::int`;
 
-/*
- * Orden real de digitación. Los registros heredados de la base antigua no traen
- * `created_at`, así que van primero, que es donde les corresponde por antigüedad,
- * y el `id` desempata.
+/**
+ * A partir de qué salto se considera que la técnica cambió de lista de UPD.
+ *
+ * Por debajo es un número salteado dentro de la misma lista, que pasa a diario y
+ * no dice nada; por encima son números de otra serie. Si en la operación las
+ * listas nuevas llegaran a arrancar más cerca, este es el valor que hay que
+ * bajar.
  */
-const CRONOLOGICO = 'f.created_at ASC NULLS FIRST, f.id ASC';
-const CRONOLOGICO_INVERSO = 'f.created_at DESC NULLS LAST, f.id DESC';
+const SALTO_DE_LISTA = 50;
 
-export const SEGUIMIENTO_QUERY = `
-  SELECT f.fecha_del_dato AS fecha,
-         mcl.codigo AS codigo_cliente,
-         (array_agg(${NUMERO_DE_CAJA} ORDER BY ${CRONOLOGICO}) FILTER (WHERE ${NUMERO_DE_CAJA} IS NOT NULL))[1] AS caja_ini,
-         (array_agg(${NUMERO_DE_CAJA} ORDER BY ${CRONOLOGICO_INVERSO}) FILTER (WHERE ${NUMERO_DE_CAJA} IS NOT NULL))[1] AS caja_fin,
-         COUNT(DISTINCT f.caja) FILTER (
-           WHERE cierre.fecha_cierre = f.fecha_del_dato AND cierre.autor_cierre = f.elaborado_por
-         ) AS total_cajas,
-         MIN(NULLIF(substring(f.upd from '^UPD([0-9]{7})$'), '')::int) AS upd_ini,
-         MAX(NULLIF(substring(f.upd from '^UPD([0-9]{7})$'), '')::int) AS upd_fin,
-         COUNT(*) AS total_registros,
-         f.elaborado_por AS colaborador,
-         COALESCE(NULLIF(f.nro_acta_transferible, 'N/A'), mcl.acta_transferencia_modulo) AS acta
-  FROM fuiddatosreal f
-  LEFT JOIN modulos_caja mc ON mc.caja_modulo = f.caja
-  LEFT JOIN moduloscliente mcl ON mcl.id = mc.id_modulo_caja
-  LEFT JOIN (
-    SELECT DISTINCT ON (caja) caja,
-           fecha_del_dato AS fecha_cierre,
-           elaborado_por  AS autor_cierre
-      FROM fuiddatosreal
-     ORDER BY caja, created_at DESC NULLS LAST, id DESC
-  ) cierre ON cierre.caja = f.caja
-`;
+/** El número del UPD que pide el formato: de `UPD2950001` sale 2950001. */
+const NUMERO_DE_UPD = `NULLIF(substring(f.upd from '^UPD([0-9]{7})$'), '')::int`;
 
-export const SEGUIMIENTO_AGRUPACION = `
-  GROUP BY f.fecha_del_dato, mcl.codigo, f.elaborado_por,
-           COALESCE(NULLIF(f.nro_acta_transferible, 'N/A'), mcl.acta_transferencia_modulo)
-  ORDER BY f.fecha_del_dato, mcl.codigo, f.elaborado_por
-`;
+/**
+ * La consulta del seguimiento, con el filtro de la petición ya dentro.
+ *
+ * Se arma con una función y no como texto suelto porque el filtro va en el
+ * interior: la consulta agrupa en dos pasos y el `WHERE` tiene que aplicarse
+ * antes de agrupar, no después.
+ */
+export function consultaSeguimiento(where: string): string {
+  return `
+  WITH base AS (
+    SELECT f.fecha_del_dato AS fecha,
+           mcl.codigo       AS codigo_cliente,
+           f.elaborado_por  AS colaborador,
+           COALESCE(NULLIF(f.nro_acta_transferible, 'N/A'), mcl.acta_transferencia_modulo) AS acta,
+           f.caja,
+           f.created_at,
+           f.id,
+           ${NUMERO_DE_CAJA} AS num_caja,
+           ${NUMERO_DE_UPD}  AS num_upd,
+           /*
+            * Este registro es el último de su caja, es decir, el que la da por
+            * terminada. Se marca por identificador y no por fecha y autor: así
+            * queda marcado exactamente uno por caja, y la caja cuenta en una
+            * sola fila del informe aunque la jornada se parta en varios tramos.
+            */
+           (f.id = cierre.id_cierre) AS cierra_la_caja
+    FROM fuiddatosreal f
+    LEFT JOIN modulos_caja mc ON mc.caja_modulo = f.caja
+    LEFT JOIN moduloscliente mcl ON mcl.id = mc.id_modulo_caja
+    LEFT JOIN (
+      SELECT DISTINCT ON (caja) caja, id AS id_cierre
+        FROM fuiddatosreal
+       ORDER BY caja, created_at DESC NULLS LAST, id DESC
+    ) cierre ON cierre.caja = f.caja
+    WHERE ${where}
+  ),
+  /*
+   * Tramos de UPD dentro de una misma jornada.
+   *
+   * Cuando a una técnica se le acaba la lista de UPD y le asignan otra, sigue
+   * digitando en la misma caja pero con números que empiezan en otro sitio. Con
+   * una sola fila por jornada eso desaparecía del informe: se publicaba el menor
+   * y el mayor, y un salto de cien mil quedaba dentro de un rango que daba a
+   * entender que se habían usado cien mil UPD. Ahora cada lista sale en su
+   * propia fila, con su propio rango, y el cambio se ve.
+   *
+   * Un hueco pequeño NO abre un tramo. Saltarse un número pasa a diario —un UPD
+   * que se repetía, uno que se borró después— y partir la fila por eso llenaría
+   * el informe de renglones que no cuentan nada. Lo que se quiere ver es el
+   * cambio de lista, y eso se reconoce porque el número da un salto grande:
+   * de ahí el umbral de ${SALTO_DE_LISTA}.
+   *
+   * Los registros cuyo UPD no tiene la forma esperada van al final y se quedan
+   * con el último tramo: no hay número con el que situarlos, y darles fila
+   * propia sería inventarse una lista que nadie usó.
+   */
+  marcas AS (
+    SELECT b.*,
+           CASE
+             WHEN b.num_upd - LAG(b.num_upd) OVER (
+                    PARTITION BY b.fecha, b.codigo_cliente, b.colaborador, b.acta
+                    ORDER BY b.num_upd
+                  ) > ${SALTO_DE_LISTA} THEN 1
+             ELSE 0
+           END AS abre_tramo
+      FROM base b
+  ),
+  tramos AS (
+    SELECT m.*,
+           SUM(m.abre_tramo) OVER (
+             PARTITION BY m.fecha, m.codigo_cliente, m.colaborador, m.acta
+             ORDER BY m.num_upd
+             ROWS UNBOUNDED PRECEDING
+           ) AS tramo
+      FROM marcas m
+  )
+  SELECT fecha,
+         codigo_cliente,
+         /*
+          * Primera y última caja en orden real de digitación. Los registros
+          * heredados de la base antigua no traen "created_at", así que van
+          * primero, que es donde les corresponde por antigüedad, y el
+          * identificador desempata.
+          */
+         (array_agg(num_caja ORDER BY created_at ASC NULLS FIRST, id ASC) FILTER (WHERE num_caja IS NOT NULL))[1] AS caja_ini,
+         (array_agg(num_caja ORDER BY created_at DESC NULLS LAST, id DESC) FILTER (WHERE num_caja IS NOT NULL))[1] AS caja_fin,
+         COUNT(*) FILTER (WHERE cierra_la_caja) AS total_cajas,
+         MIN(num_upd)  AS upd_ini,
+         MAX(num_upd)  AS upd_fin,
+         COUNT(*)      AS total_registros,
+         colaborador,
+         acta
+    FROM tramos
+   GROUP BY fecha, codigo_cliente, colaborador, acta, tramo
+   ORDER BY fecha, codigo_cliente, colaborador, MIN(num_upd) NULLS LAST`;
+}
+
 
 /**
  * Filtros del seguimiento, compartidos por el resumen y la descarga para que los
@@ -737,7 +892,7 @@ export async function resumenSeguimientoInventario(req: Request, res: Response):
   const { where, params } = filtrosSeguimiento(req);
   const [fila] = await query<{ jornadas: number | string; registros: number | string }>(
     `SELECT COUNT(*) AS jornadas, COALESCE(SUM(t.total_registros), 0) AS registros
-     FROM (${SEGUIMIENTO_QUERY} WHERE ${where} ${SEGUIMIENTO_AGRUPACION}) t`,
+     FROM (${consultaSeguimiento(where)}) t`,
     params,
   );
   res.json({ jornadas: Number(fila?.jornadas ?? 0), registros: Number(fila?.registros ?? 0) });
@@ -747,7 +902,7 @@ export async function resumenSeguimientoInventario(req: Request, res: Response):
 export async function descargarSeguimientoInventario(req: Request, res: Response): Promise<void> {
   const { where, params, desde, hasta } = filtrosSeguimiento(req);
 
-  const filas = await query<FilaSeguimiento>(`${SEGUIMIENTO_QUERY} WHERE ${where} ${SEGUIMIENTO_AGRUPACION}`, params);
+  const filas = await query<FilaSeguimiento>(consultaSeguimiento(where), params);
 
   if (filas.length === 0) {
     /*

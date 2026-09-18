@@ -30,7 +30,27 @@ export const SESSION_MAX_AGE_MS = 1000 * 60 * 60 * 8;
 export const DEFAULT_FRONTEND_DIST = '../frontend/dist';
 
 // ── Base de datos ─────────────────────────────────────────────────────────
-export const DB_CONNECTION_LIMIT = envInt('DB_CONNECTION_LIMIT', 10);
+/**
+ * Conexiones simultáneas que abre **esta** instancia contra el pooler.
+ *
+ * El número no se elige por lo que aguanta la máquina, sino por un cupo que no
+ * es nuestro: el pooler de Supabase en modo sesión reparte 15 sesiones entre
+ * todo el proyecto, y cada conexión abierta ocupa una mientras viva. Ese cupo
+ * lo comparten el servicio desplegado en Render, cada equipo de desarrollo que
+ * tenga el backend levantado, el editor SQL de Supabase y cualquier script que
+ * se ejecute a mano.
+ *
+ * Con el valor anterior —10, y sin declararlo en Render— las dos instancias
+ * pedían 20 y la base respondía `EMAXCONNSESSION: max clients reached in
+ * session mode`. No era un pico raro: bastaba con tener Producción abierta en
+ * los dos sitios, porque su pantalla se refresca sola cada quince segundos.
+ *
+ * El reparto actual deja margen: 8 para producción (declarado en
+ * `render.yaml`), 4 para cada equipo de desarrollo, y las tres restantes
+ * libres para el editor SQL y las migraciones. Si algún día hacen falta más,
+ * lo que hay que subir es el cupo del plan de Supabase, no este número.
+ */
+export const DB_CONNECTION_LIMIT = envInt('DB_CONNECTION_LIMIT', 4);
 export const DB_QUEUE_LIMIT = 0;
 
 // ── Hora ─────────────────────────────────────────────────────────────────

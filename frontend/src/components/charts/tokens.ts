@@ -65,6 +65,19 @@ export function conSeparador(n: number): string {
 }
 
 /** '2025-06' → 'jun 25'. Etiqueta corta para el eje temporal. */
+/**
+ * `2026-09-18` → `18 sep`. Sin el año a propósito: la curva por día cubre unas
+ * pocas semanas y repetir el año en treinta etiquetas solo estrecha el hueco
+ * de cada una.
+ */
+export function etiquetaDia(iso: string): string {
+  const [, mes, dia] = iso.split('-');
+  const nombres = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
+  const idx = Number(mes) - 1;
+  if (!dia || idx < 0 || idx > 11) return iso;
+  return `${Number(dia)} ${nombres[idx]}`;
+}
+
 export function etiquetaMes(iso: string): string {
   const [anio, mes] = iso.split('-');
   const nombres = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
