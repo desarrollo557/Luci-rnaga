@@ -140,6 +140,10 @@ export default function ActasPage() {
   const [modalOpen, setModalOpen] = useState(false);
   const [editingCaja, setEditingCaja] = useState<ModuloCaja | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<ModuloCaja | null>(null);
+  /** Cajas marcadas con la casilla, para borrarlas de una vez. */
+  const [cajasMarcadas, setCajasMarcadas] = useState<Set<number>>(new Set());
+  /** Cajas que se van a borrar en lote; null cuando no hay diálogo abierto. */
+  const [borradoMultiple, setBorradoMultiple] = useState<ModuloCaja[] | null>(null);
   const [cajaForm, setCajaForm] = useState<CajaForm>(() => ({ ...EMPTY_CAJA_FORM }));
   const [cajaErrors, setCajaErrors] = useState<Partial<Record<keyof CajaForm, string>>>({});
   /** Siguiente número de caja libre del cliente; se enseña bajo el campo, sin escribirlo en él. */
@@ -308,6 +312,79 @@ export default function ActasPage() {
     const hasta = parseInt(cajaForm.numero_final, 10);
     return hasta >= desde ? hasta - desde + 1 : 0;
   })();
+
+  /*
+   * Borrar las cajas marcadas, una por una contra el mismo endpoint.
+   *
+   * Cada borrado de caja arrastra sus registros FUID y sus asignaciones dentro
+   * de una transacción, comprueba que la caja sea de la sede de quien borra y
+   * deja su línea en la auditoría. Mandar la lista entera en una sola llamada
+   * obligaría a repetir todo eso, y repetirlo es como se acaba relajando.
+   *
+   * En serie y no en paralelo: las conexiones contra la base son un cupo
+   * compartido, y borrar cajas no es algo que se haga a cada rato.
+   */
+  const borrarVariasMutation = useMutation({
+    mutationFn: async (cajas: ModuloCaja[]) => {
+      let eliminadas = 0;
+      let fuids = 0;
+      const fallos: string[] = [];
+      for (const caja of cajas) {
+        try {
+          const res = await modulosCajaApi.remove(caja.id);
+          eliminadas += 1;
+          fuids += Number(res.data?.fuids_eliminados ?? 0);
+        } catch (error) {
+          fallos.push(getApiErrorMessage(error));
+        }
+      }
+      return { eliminadas, fuids, fallos };
+    },
+    onSuccess: ({ eliminadas, fuids, fallos }) => {
+      if (eliminadas > 0) {
+        const conRegistros = fuids > 0 ? ` y ${fuids} registro(s) FUID` : '';
+        toast.success(
+          `${eliminadas} ${eliminadas === 1 ? 'caja eliminada' : 'cajas eliminadas'}${conRegistros}`,
+        );
+      }
+      if (fallos.length > 0) {
+        const motivo = [...new Set(fallos)][0];
+        toast.error(
+          `${fallos.length} no se ${fallos.length === 1 ? 'pudo' : 'pudieron'} eliminar: ${motivo}`,
+        );
+      }
+      setCajasMarcadas(new Set());
+      setBorradoMultiple(null);
+      void invalidateDomain(queryClient, 'modulos-caja');
+      void invalidateDomain(queryClient, 'fuiddatosreal');
+    },
+    onError: (error) => {
+      setBorradoMultiple(null);
+      toast.error(getApiErrorMessage(error));
+    },
+  });
+
+  /*
+   * Marcar todo abarca lo que está a la vista, no el acta entera: con un filtro
+   * puesto, borrar lo que el filtro esconde sería tocar cajas que nadie está
+   * mirando.
+   */
+  const todasMarcadas =
+    cajasFiltradas.length > 0 && cajasFiltradas.every((caja) => cajasMarcadas.has(caja.id));
+
+  const marcarCaja = (cajaId: number) => {
+    setCajasMarcadas((prev) => {
+      const next = new Set(prev);
+      if (next.has(cajaId)) next.delete(cajaId);
+      else next.add(cajaId);
+      return next;
+    });
+  };
+
+  const marcarTodas = () => {
+    if (todasMarcadas) setCajasMarcadas(new Set());
+    else setCajasMarcadas(new Set(cajasFiltradas.map((caja) => caja.id)));
+  };
 
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -487,6 +564,29 @@ export default function ActasPage() {
   };
 
   const columns: Column<ModuloCaja>[] = [
+    ...(isManager
+      ? [
+          {
+            key: 'seleccion',
+            header: (
+              <input
+                type="checkbox"
+                checked={todasMarcadas}
+                onChange={marcarTodas}
+                aria-label="Seleccionar todas las cajas"
+              />
+            ),
+            render: (caja: ModuloCaja) => (
+              <input
+                type="checkbox"
+                checked={cajasMarcadas.has(caja.id)}
+                onChange={() => marcarCaja(caja.id)}
+                aria-label={`Seleccionar la caja ${caja.caja_modulo}`}
+              />
+            ),
+          } as Column<ModuloCaja>,
+        ]
+      : []),
     { key: 'caja_modulo', header: 'Caja' },
     { key: 'entidad_remitente_caja', header: 'Entidad Remitente' },
     { key: 'entidad_productora_caja', header: 'Entidad Productora' },
@@ -511,14 +611,26 @@ export default function ActasPage() {
         {
           key: 'asignados',
           header: 'Asignados',
-          render: (caja: ModuloCaja) => (
-            <div className="space-y-0.5 text-xs">
-              <p>
-                <span className="font-medium text-silver-500">Técnica:</span>{' '}
-                <span className="text-silver-700">{caja.tecnicos_asignados || '—'}</span>
-              </p>
-            </div>
-          ),
+          /*
+           * Una caja sin técnico asignado no la puede digitar nadie: el
+           * servidor rechaza el registro con un 403 y la caja ni siquiera
+           * aparece en la lista de quien digita. Antes eso se veía como un
+           * guion, igual que un dato que falta, y una serie creada sin marcar
+           * técnicos quedaba muerta sin que nada lo dijera. Ahora se avisa.
+           */
+          render: (caja: ModuloCaja) =>
+            caja.tecnicos_asignados ? (
+              <div className="space-y-0.5 text-xs">
+                <p>
+                  <span className="font-medium text-silver-500">Técnica:</span>{' '}
+                  <span className="text-silver-700">{caja.tecnicos_asignados}</span>
+                </p>
+              </div>
+            ) : (
+              <span title="Nadie puede digitar en esta caja hasta que se le asigne un técnico">
+                <Badge color="amber">Sin asignar</Badge>
+              </span>
+            ),
         },
       ]
       : []),
@@ -579,15 +691,30 @@ export default function ActasPage() {
       />
 
       <Card className="p-4">
-        <div className="relative">
-          <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-silver-400" />
-          <Input
-            value={filtroCajas}
-            onChange={(event) => setFiltroCajas(event.target.value)}
-            placeholder="Buscar caja por número, entidad, acta, fecha o estado…"
-            className="pl-9"
-            aria-label="Buscar cajas"
-          />
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="relative min-w-0 flex-1">
+            <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-silver-400" />
+            <Input
+              value={filtroCajas}
+              onChange={(event) => setFiltroCajas(event.target.value)}
+              placeholder="Buscar caja por número, entidad, acta, fecha o estado…"
+              className="pl-9"
+              aria-label="Buscar cajas"
+            />
+          </div>
+          {isManager && cajasMarcadas.size > 0 && (
+            <Button
+              variant="secondary"
+              onClick={() =>
+                setBorradoMultiple(cajasFiltradas.filter((caja) => cajasMarcadas.has(caja.id)))
+              }
+              loading={borrarVariasMutation.isPending}
+              className="text-red-600 hover:bg-red-50 hover:text-red-700"
+            >
+              <Trash2 className="size-4" />
+              Eliminar ({cajasMarcadas.size})
+            </Button>
+          )}
         </div>
       </Card>
 
@@ -677,6 +804,13 @@ export default function ActasPage() {
                 />
               ) : (
                 <div />
+              )}
+              {asignacion.tecnica.size === 0 && (
+                <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800 md:col-span-2">
+                  Sin ningún técnico marcado más abajo, nadie podrá digitar en{' '}
+                  {crearVarias && cajasDelRango > 1 ? 'estas cajas' : 'esta caja'} hasta que se le
+                  asigne uno.
+                </p>
               )}
               <label className="flex items-center gap-2 text-sm text-silver-700 md:col-span-2">
                 <input
@@ -796,6 +930,26 @@ export default function ActasPage() {
           </div>
         </form>
       </Modal>
+
+      <ConfirmDialog
+        open={borradoMultiple !== null}
+        title={`Eliminar ${borradoMultiple?.length ?? 0} ${(borradoMultiple?.length ?? 0) === 1 ? 'caja' : 'cajas'}`}
+        description={(() => {
+          const cajas = borradoMultiple ?? [];
+          const registros = cajas.reduce((suma, caja) => suma + Number(caja.total_fuids ?? 0), 0);
+          const cuales = cajas.map((caja) => caja.caja_modulo).join(', ');
+          return registros > 0
+            ? `Se eliminarán ${cajas.length} caja(s) —${cuales}— junto con ${registros} registro(s) FUID. Esta acción no se puede deshacer.`
+            : `Se eliminarán ${cajas.length} caja(s): ${cuales}. Esta acción no se puede deshacer.`;
+        })()}
+        confirmLabel="Eliminar"
+        danger
+        onConfirm={() => {
+          if (borradoMultiple) borrarVariasMutation.mutate(borradoMultiple);
+        }}
+        onCancel={() => setBorradoMultiple(null)}
+        loading={borrarVariasMutation.isPending}
+      />
 
       <ConfirmDialog
         open={deleteTarget !== null}

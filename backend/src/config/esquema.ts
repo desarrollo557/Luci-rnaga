@@ -159,6 +159,29 @@ export const AJUSTES: AjusteDeEsquema[] = [
     nombre: 'índice jornada_caja(caja_modulo) (historial de una caja)',
     sql: 'CREATE INDEX IF NOT EXISTS idx_jornada_caja_caja ON jornada_caja (caja_modulo)',
   },
+  {
+    /*
+     * El código del cliente es único dentro de su sede.
+     *
+     * El código —'051', '054'— es lo que identifica al cliente en el número de
+     * caja y en todos los reportes. Dos clientes con el mismo código en la
+     * misma sede mezclan sus cajas y sus FUID sin forma de separarlos después.
+     * Entre sedes distintas sí puede repetirse: cada una lleva su numeración.
+     *
+     * Esto existía en `database/submodulo_codigo_unico.sql` y nunca se aplicó
+     * a Supabase, así que el controlador llevaba tiempo capturando un error
+     * que la base no podía lanzar: crear dos clientes con el mismo código se
+     * aceptaba sin decir nada. Aquí se aplica solo.
+     *
+     * Si en alguna base hubiera duplicados, el índice no se crea, el arranque
+     * lo registra y el servidor sigue: el archivo de `database/` explica cómo
+     * resolverlos a mano, porque cada cliente puede tener actas colgando y no
+     * se puede elegir por él.
+     */
+    nombre: 'índice único sub_modulos(codigo, sede) (un código por cliente y sede)',
+    sql: `CREATE UNIQUE INDEX IF NOT EXISTS uq_sub_modulos_codigo_sede
+            ON sub_modulos (codigo, sede_submodulos)`,
+  },
 ];
 
 /**
