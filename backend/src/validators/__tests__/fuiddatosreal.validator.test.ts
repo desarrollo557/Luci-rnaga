@@ -283,7 +283,7 @@ describe('punto 10 — la actualización exige la versión del registro', () => 
 });
 
 
-describe('asuntos obligatorios', () => {
+describe('asuntos del FUID', () => {
   it('acepta un registro con los dos asuntos diligenciados', () => {
     expect(erroresDe({})).toBeNull();
   });
@@ -301,27 +301,29 @@ describe('asuntos obligatorios', () => {
     }
   });
 
-  it('rechaza el registro si falta el asunto manual', () => {
+  /*
+   * El asunto manual dejó de ser obligatorio. Describe el documento concreto y
+   * hay documentos de los que no hay nada particular que decir; exigirlo
+   * obligaba a inventar texto o a parar la digitación. Vacío se guarda con el
+   * marcador `N/A`, como el resto de los campos descriptivos.
+   */
+  it('acepta el registro sin asunto manual, de cualquiera de las tres formas', () => {
     for (const valor of [undefined, null, '']) {
-      const datos = { ...base, asunto_3: valor };
-      const resultado = createFuidSchema.safeParse(datos);
-      expect(resultado.success).toBe(false);
-      if (!resultado.success) {
-        expect(resultado.error.issues.map((i) => i.message)).toContain(
-          'El asunto manual es requerido',
-        );
-      }
+      expect(createFuidSchema.safeParse({ ...base, asunto_3: valor }).success).toBe(true);
     }
   });
 
   it('reporta el error sobre el campo que lo provoca', () => {
     expect(camposConError({ asunto_2: '' })).toContain('asunto_2');
-    expect(camposConError({ asunto_3: '' })).toContain('asunto_3');
   });
 
-  it('tampoco deja vaciarlos en una edición', () => {
+  it('el automático tampoco se puede vaciar en una edición', () => {
     expect(updateFuidSchema.safeParse({ version: 1, asunto_2: '' }).success).toBe(false);
-    expect(updateFuidSchema.safeParse({ version: 1, asunto_3: null }).success).toBe(false);
+  });
+
+  it('el manual sí se puede vaciar en una edición', () => {
+    expect(updateFuidSchema.safeParse({ version: 1, asunto_3: null }).success).toBe(true);
+    expect(updateFuidSchema.safeParse({ version: 1, asunto_3: '' }).success).toBe(true);
   });
 
   it('una edición que no toca los asuntos sigue siendo válida', () => {

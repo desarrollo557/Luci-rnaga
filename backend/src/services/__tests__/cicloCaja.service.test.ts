@@ -31,6 +31,11 @@ const TABLAS = `
    * Administración. Aplicarlos aquí contra PostgreSQL de verdad lo habría visto.
    */
   CREATE TABLE users (id serial PRIMARY KEY, nombre text, cc text, rol varchar(255));
+  -- No la usa ninguna prueba de este archivo, pero sí uno de los ajustes de
+  -- esquema, y aquí se aplican todos: sin la tabla, el ajuste falla y con él
+  -- el montaje entero. Es la contrapartida de comprobar los ajustes de verdad.
+  CREATE TABLE sub_modulos (
+    id serial PRIMARY KEY, codigo text, entidad_remitente text, sede_submodulos text);
   CREATE TABLE moduloscliente (id serial PRIMARY KEY, codigo text, acta_transferencia_modulo text);
   CREATE TABLE modulos_caja (
     id serial PRIMARY KEY, caja_modulo text, id_modulo_caja int, estado_caja varchar(255));

@@ -19,7 +19,7 @@ import {
   updANumero,
   type Column,
 } from '@/components/ui';
-import { fuidApi, getApiErrorCode, modulosCajaApi } from '@/lib/api';
+import { fuidApi, getApiErrorCode, getApiErrorMessage, modulosCajaApi } from '@/lib/api';
 import { cn } from '@/lib/cn';
 import { toastApiError } from '@/lib/feedback';
 import { invalidateDomain } from '@/lib/queryInvalidation';
@@ -418,6 +418,8 @@ interface FormularioFuidProps {
   asuntoAutomaticoDeLaCaja: string;
   /** Caja interna del primer registro de la caja: es la misma para toda ella. */
   cajaInternaDeLaCaja: string;
+  /** Avisa del UPD recién guardado, para que la lista pueda señalar su fila. */
+  onGuardado?: (upd: string) => void;
   caja?: ModuloCaja | null;
   /** Se llama al terminar de corregir; solo tiene sentido dentro del diálogo. */
   onTerminar?: () => void;
@@ -445,6 +447,7 @@ function FormularioFuid({
   cajaInternaDeLaCaja,
   caja,
   onTerminar,
+  onGuardado,
 }: FormularioFuidProps) {
   const queryClient = useQueryClient();
   const user = useAuthStore((state) => state.user);
@@ -564,6 +567,7 @@ function FormularioFuid({
       setRacha((r) => r + 1);
       setFaltantesALaVista(false);
       setConfirmacion({ id: Date.now(), upd: guardado, siguiente: siguienteUpd });
+      onGuardado?.(guardado);
       // El servidor confirma el consecutivo libre (salta UPD ya usados); solo se
       // reemplaza si la persona todavía no lo cambió.
       void nextUpdQuery.refetch().then((result) => {
@@ -629,11 +633,19 @@ function FormularioFuid({
    * arranca vacío y el botón quedaría apagado desde el principio sin decir por
    * qué. Estos se comprueban al enviar y ahí sí se marcan.
    */
+  /*
+   * El asunto manual ya no entra aquí. Era obligatorio junto con el automático,
+   * y se retiró: describe el documento concreto y hay documentos de los que no
+   * hay nada particular que decir, así que exigirlo obligaba a inventar texto o
+   * a parar la digitación. Vacío se guarda como `N/A`, como el resto de los
+   * campos descriptivos. El automático sigue siendo obligatorio porque es lo
+   * que permite saber qué contiene la caja sin abrirla, y además se hereda del
+   * registro anterior, así que casi siempre viene puesto.
+   */
   const faltaAsuntoAutomatico = form.asunto_2.trim() === '' ? 'El asunto automático es requerido' : null;
-  const faltaAsuntoManual = form.asunto_3.trim() === '' ? 'El asunto manual es requerido' : null;
 
   const errorDeFormato = errorFechaInicial ?? errorFechaFinal ?? errorFolios;
-  const primerError = errorDeFormato ?? faltaAsuntoAutomatico ?? faltaAsuntoManual;
+  const primerError = errorDeFormato ?? faltaAsuntoAutomatico;
   const hayErrorDeFormulario = Boolean(errorDeFormato);
 
   const hoy = fechaHoyLocal();
@@ -760,11 +772,10 @@ function FormularioFuid({
             documento concreto que se tiene en la mano. */}
         <div className="sm:col-span-2 lg:col-span-4">
           <Input
-            label="Asunto Manual *"
+            label="Asunto Manual"
             value={form.asunto_3}
             onChange={(event) => updateField('asunto_3')(event.target.value)}
             maxLength={limiteDe('asunto_3')}
-            error={(faltantesALaVista && faltaAsuntoManual) || undefined}
             autoFocus
           />
         </div>
@@ -871,10 +882,32 @@ function FormularioFuid({
           />
         </div>
         <div className="flex flex-col justify-end gap-1.5 sm:col-span-2 lg:col-span-1">
-          <p role="status" aria-live="polite" className="min-h-4 text-xs font-medium text-green-700">
-            {confirmacion &&
-              `${confirmacion.upd} guardado${confirmacion.siguiente ? ` · sigue ${confirmacion.siguiente}` : ''}`}
-          </p>
+          {/*
+            El acuse de lo guardado. Ocupa siempre el mismo alto —vacío o
+            lleno— para que al aparecer no empuje el botón de guardar medio
+            centímetro hacia abajo justo cuando la mano va hacia él.
+
+            Dice las dos cosas que interesan en ese instante: qué quedó
+            guardado y con qué UPD sigue, que es lo que evita mirar el campo
+            para comprobarlo.
+          */}
+          <div role="status" aria-live="polite" className="flex min-h-7 items-center justify-end">
+            {confirmacion && (
+              <span
+                key={confirmacion.id}
+                className="inline-flex animate-[field-pop-in_260ms_ease-out] items-center gap-1.5 rounded-full border border-green-200 bg-green-50 px-2.5 py-1 text-xs font-medium text-green-800"
+              >
+                <CheckCircle2 className="size-3.5 shrink-0" />
+                <span className="font-mono">{confirmacion.upd}</span>
+                <span className="text-green-700">guardado</span>
+                {confirmacion.siguiente && (
+                  <span className="border-l border-green-200 pl-1.5 text-green-700">
+                    sigue <span className="font-mono">{confirmacion.siguiente}</span>
+                  </span>
+                )}
+              </span>
+            )}
+          </div>
           <div className="flex justify-end gap-2">
             {editing && (
               <Button variant="ghost" onClick={onTerminar} disabled={isSaving}>
@@ -1007,7 +1040,28 @@ export default function DatosPage() {
     enabled: Boolean(cajaId),
   });
 
-  const cajaCode = cajaQuery.data?.caja_modulo ?? cajaId ?? '';
+  /*
+   * El número de caja sale de la caja, y de ningún otro sitio.
+   *
+   * Antes, mientras la consulta viajaba, esto caía al identificador de la
+   * ruta —un número como "114"— y ese valor se usaba para todo: el título, la
+   * lista de registros y, lo grave, el campo `caja` del registro que se
+   * guardaba. Quien digitaba nada más abrir la pantalla mandaba un registro
+   * con la caja "114" en lugar de "054C004453", y entonces pasaba una de dos
+   * según el perfil:
+   *
+   * - A quien digita, el servidor le respondía "la caja no está asignada a
+   *   usted", porque ninguna caja se llama "114". Parecía un problema de
+   *   permisos y era esto.
+   * - A un líder o administrador, que no pasa por esa comprobación, el
+   *   registro **se guardaba** con un número de caja que no existe. Así nació
+   *   el registro huérfano con la caja "67", que no cruza con ninguna caja y
+   *   ensucia el seguimiento.
+   *
+   * Vacío mientras no se sepa. Las consultas ya se apagan solas con
+   * `enabled`, y el formulario no se monta hasta que hay número.
+   */
+  const cajaCode = cajaQuery.data?.caja_modulo ?? '';
 
   // Botón de volver: la vista de la que se vino si consta, y si no el acta de
   // la caja. Nunca salta directamente a la lista de clientes salvo que la caja
@@ -1191,6 +1245,82 @@ export default function DatosPage() {
     },
   });
 
+  /** Registros marcados que se van a borrar de una vez; null cuando no hay diálogo abierto. */
+  const [borradoMultiple, setBorradoMultiple] = useState<number[] | null>(null);
+  /*
+   * UPD del último registro guardado, para señalar su fila en la lista.
+   *
+   * Guardar manda el registro a una tabla de veinticinco columnas y la lista
+   * va de lo más nuevo a lo más viejo, así que aparece arriba; aun así, sin
+   * nada que lo distinga hay que buscarlo. Se recuerda por UPD y no por id
+   * porque el formulario conoce el UPD en el acto, sin esperar a que la
+   * consulta traiga el registro con su identificador.
+   *
+   * Se olvida solo: la marca es para el instante de guardar, no un estado que
+   * haya que mantener.
+   */
+  const [ultimoGuardado, setUltimoGuardado] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!ultimoGuardado) return;
+    const temporizador = setTimeout(() => setUltimoGuardado(null), 1800);
+    return () => clearTimeout(temporizador);
+  }, [ultimoGuardado]);
+
+  /*
+   * Borrar los registros marcados, uno por uno contra el mismo endpoint.
+   *
+   * No se manda la lista entera al servidor en una sola llamada a propósito:
+   * el permiso de borrado se decide **registro a registro** —la técnica solo
+   * borra lo suyo y del mismo día, el líder lo de su sede— y cada borrado deja
+   * su copia en el historial y su línea en la auditoría. Un endpoint en lote
+   * tendría que repetir esas reglas, y repetirlas es como se acaban relajando.
+   *
+   * En serie y no en paralelo porque las conexiones contra la base son un cupo
+   * compartido (ver `DB_CONNECTION_LIMIT`), y borrar no es una operación que se
+   * haga a cada rato: que tarde un segundo más no le cuesta nada a nadie.
+   *
+   * Lo que sí importa es contar la verdad al final: si de diez marcados dos
+   * estaban fuera de su alcance, se dice cuántos se fueron y cuántos no, en vez
+   * de un "listo" que esconde la mitad.
+   */
+  const borrarVariosMutation = useMutation({
+    mutationFn: async (ids: number[]) => {
+      let eliminados = 0;
+      const fallos: string[] = [];
+      for (const id of ids) {
+        try {
+          await fuidApi.remove(id);
+          eliminados += 1;
+        } catch (error) {
+          fallos.push(getApiErrorMessage(error));
+        }
+      }
+      return { eliminados, fallos };
+    },
+    onSuccess: ({ eliminados, fallos }) => {
+      if (eliminados > 0) {
+        toast.success(
+          `${eliminados} ${eliminados === 1 ? 'registro eliminado' : 'registros eliminados'}`,
+        );
+      }
+      if (fallos.length > 0) {
+        // El mismo motivo se repite para todos los que fallan por lo mismo.
+        const motivo = [...new Set(fallos)][0];
+        toast.error(
+          `${fallos.length} no se ${fallos.length === 1 ? 'pudo' : 'pudieron'} eliminar: ${motivo}`,
+        );
+      }
+      setSelectedIds(new Set());
+      setBorradoMultiple(null);
+      void invalidateDomain(queryClient, 'fuiddatosreal');
+    },
+    onError: (error) => {
+      setBorradoMultiple(null);
+      toastApiError(error, { context: 'No se pudieron eliminar los registros:' });
+    },
+  });
+
   const marcarOkMutation = useMutation({
     mutationFn: (ids: number[]) => fuidApi.marcarOk(ids),
     onSuccess: () => {
@@ -1212,6 +1342,13 @@ export default function DatosPage() {
    */
   const allSelected =
     registrosFiltrados.length > 0 && registrosFiltrados.every((registro) => selectedIds.has(registro.id));
+
+  /*
+   * Hay casillas si con lo marcado se puede hacer algo: revisar en lote o
+   * eliminar en lote. Antes solo aparecían para revisar, así que quien podía
+   * borrar pero no revisar tenía que ir registro por registro.
+   */
+  const puedeSeleccionar = canMarcarOk || canEliminar;
 
   const toggleRow = (id: number) => {
     setSelectedIds((prev) => {
@@ -1289,7 +1426,7 @@ export default function DatosPage() {
        * dejaría la casilla sin decir a qué registro pertenece.
        */
       key: 'n_orden',
-      header: canMarcarOk ? (
+      header: puedeSeleccionar ? (
         <span className="flex items-center gap-2">
           <input
             type="checkbox"
@@ -1304,7 +1441,7 @@ export default function DatosPage() {
       ),
       render: (registro: FuidDato) => (
         <span className="flex items-center gap-2 font-medium text-silver-800">
-          {canMarcarOk && (
+          {puedeSeleccionar && (
             <input
               type="checkbox"
               checked={selectedIds.has(registro.id)}
@@ -1410,7 +1547,7 @@ export default function DatosPage() {
       )}
 
       <PageHeader
-        title={`Digitación FUID — Caja ${cajaCode}`}
+        title={cajaCode ? `Digitación FUID — Caja ${cajaCode}` : 'Digitación FUID'}
         description={estadoCaja.detalle ?? 'Clientes / Actas / Cajas / Digitación'}
         backTo={retorno.to}
         backLabel={retorno.label}
@@ -1434,7 +1571,30 @@ export default function DatosPage() {
         tapaba lo ya digitado. Ahora se escribe arriba y el registro aparece
         abajo, en la misma pantalla y sin moverse de sitio.
       */}
-      {canCrear && (
+      {/*
+        Sin saber en qué caja se está, no hay formulario.
+
+        Es la otra mitad del arreglo: aunque el número ya no se inventa, dejar
+        el formulario a la vista con la caja vacía permitiría escribir un
+        registro que no se puede guardar. Son décimas de segundo y lo que se ve
+        mientras tanto es que la pantalla está cargando, no un formulario que
+        engaña.
+      */}
+      {canCrear && !cajaCode && (
+        <Card padding="p-4">
+          <div className="flex justify-center py-8">
+            <LoadingState
+              message={
+                cajaQuery.isError
+                  ? 'No se pudo cargar la caja. Recarga la página para volver a intentarlo.'
+                  : 'Estamos abriendo la caja…'
+              }
+            />
+          </div>
+        </Card>
+      )}
+
+      {canCrear && cajaCode && (
         /*
          * Denso a propósito. El formulario comparte pantalla con la lista de
          * registros, y si se lleva todo el alto hay que desplazarse para ver lo
@@ -1450,6 +1610,7 @@ export default function DatosPage() {
             asuntoAutomaticoDeLaCaja={asuntoAutomaticoDeLaCaja}
             cajaInternaDeLaCaja={cajaInternaDeLaCaja}
             caja={cajaQuery.data}
+            onGuardado={setUltimoGuardado}
           />
         </Card>
       )}
@@ -1501,17 +1662,29 @@ export default function DatosPage() {
                 ? `${registrosFiltrados.length.toLocaleString('es-CO')} de ${registros.length.toLocaleString('es-CO')}`
                 : `${registros.length.toLocaleString('es-CO')} ${registros.length === 1 ? 'registro' : 'registros'}`}
             </p>
-            {canMarcarOk && (
-              <Button
-                className="ml-auto"
-                onClick={handleMarcarOk}
-                disabled={selectedIds.size === 0}
-                loading={marcarOkMutation.isPending}
-              >
-                <CheckCircle2 className="size-4" />
-                Marcar como revisado{selectedIds.size > 0 ? ` (${selectedIds.size})` : ''}
-              </Button>
-            )}
+            <div className="ml-auto flex items-center gap-2">
+              {canEliminar && selectedIds.size > 0 && (
+                <Button
+                  variant="secondary"
+                  onClick={() => setBorradoMultiple([...selectedIds])}
+                  loading={borrarVariosMutation.isPending}
+                  className="text-red-600 hover:bg-red-50 hover:text-red-700"
+                >
+                  <Trash2 className="size-4" />
+                  Eliminar ({selectedIds.size})
+                </Button>
+              )}
+              {canMarcarOk && (
+                <Button
+                  onClick={handleMarcarOk}
+                  disabled={selectedIds.size === 0}
+                  loading={marcarOkMutation.isPending}
+                >
+                  <CheckCircle2 className="size-4" />
+                  Marcar como revisado{selectedIds.size > 0 ? ` (${selectedIds.size})` : ''}
+                </Button>
+              )}
+            </div>
           </div>
           <div key={`fuids-${cajaCode}`} className="form-fill-anim">
             <Table
@@ -1528,6 +1701,9 @@ export default function DatosPage() {
               nowrap
               stickyFirstColumn
               maxHeight="60vh"
+              rowClassName={(registro) =>
+                registro.upd && registro.upd === ultimoGuardado ? 'fuid-fila-nueva' : undefined
+              }
             />
           </div>
         </>
@@ -1554,6 +1730,19 @@ export default function DatosPage() {
           />
         )}
       </Modal>
+
+      <ConfirmDialog
+        open={borradoMultiple !== null}
+        title={`Eliminar ${borradoMultiple?.length ?? 0} ${(borradoMultiple?.length ?? 0) === 1 ? 'registro' : 'registros'}`}
+        description={`Se eliminarán ${borradoMultiple?.length ?? 0} ${(borradoMultiple?.length ?? 0) === 1 ? 'registro seleccionado' : 'registros seleccionados'} de la caja ${cajaCode}. Queda copia de cada uno en el historial.`}
+        confirmLabel="Eliminar"
+        danger
+        onConfirm={() => {
+          if (borradoMultiple) borrarVariosMutation.mutate(borradoMultiple);
+        }}
+        onCancel={() => setBorradoMultiple(null)}
+        loading={borrarVariosMutation.isPending}
+      />
 
       <ConfirmDialog
         open={deleteTarget !== null}
