@@ -193,6 +193,64 @@ function sinNA(valor?: string | null): string {
   return limpio.toUpperCase() === 'N/A' ? '' : limpio;
 }
 
+/** Los campos de un registro nuevo que nadie escribe: salen de la caja o de lo ya digitado en ella. */
+type CamposHeredados = Pick<
+  FuidFormValues,
+  | 'entidad_remitente'
+  | 'entidad_productora'
+  | 'unidad_administrativa'
+  | 'oficina_productora'
+  | 'objeto'
+  | 'nro_acta_transferible'
+  | 'fecha_transferencia'
+  | 'asunto_2'
+  | 'caja_interna'
+>;
+
+/**
+ * Lo que un registro nuevo hereda, en un solo sitio.
+ *
+ * Lo usan dos: el formulario en blanco y el efecto que recoge lo que llega
+ * tarde. Tiene que ser la misma lista en los dos, y tenerla escrita dos veces
+ * fue justo lo que falló: se añadieron al efecto el asunto automático y la
+ * caja interna, y los campos que vienen de la caja se quedaron fuera, así que
+ * solo se rellenaban cuando la consulta de la caja ganaba la carrera contra el
+ * montaje del formulario.
+ *
+ * Los que vienen de la caja pasan por `sinNA`: un `N/A` heredado no se
+ * precarga, porque en el formulario ese marcador no se escribe ni se ve.
+ */
+function valoresHeredados(
+  caja: ModuloCaja | null | undefined,
+  asuntoAutomatico = '',
+  cajaInterna = '',
+): CamposHeredados {
+  return {
+    entidad_remitente: caja?.entidad_remitente_caja ?? '',
+    entidad_productora: sinNA(caja?.entidad_productora_caja),
+    unidad_administrativa: sinNA(caja?.unidad_administrativa_caja),
+    oficina_productora: sinNA(caja?.oficina_productora_caja),
+    objeto: sinNA(caja?.objeto_caja),
+    nro_acta_transferible: caja?.acta_trans_caja ?? '',
+    fecha_transferencia: caja?.fecha_trans_caja?.slice(0, 10) ?? '',
+    // El asunto automático del último registro de la caja. Una caja suele
+    // contener documentos del mismo asunto, así que se trae ya escrito y quien
+    // necesite otro lo cambia; volver a teclearlo en cada registro era el
+    // trabajo repetido más caro de la digitación.
+    //
+    // El asunto manual NO se hereda: describe el documento concreto, cambia de
+    // un registro al siguiente y arrastrarlo hacía que se guardara el del
+    // anterior cuando alguien pasaba de largo.
+    asunto_2: asuntoAutomatico,
+    // La caja interna se hereda del **primer** registro de la caja. Es un dato
+    // de la caja, no del documento: una vez fijado en el primero vale para
+    // todos los que vengan detrás. Del primero y no del último —que es como se
+    // hacía antes y se quitó— porque el último va cambiando y obligaba a
+    // comprobar el campo en cada registro.
+    caja_interna: cajaInterna,
+  };
+}
+
 function emptyFormFor(
   cajaId: string,
   user: SessionUser | null,
@@ -203,47 +261,21 @@ function emptyFormFor(
 ): FuidFormValues {
   return {
     ...EMPTY_FORM,
+    ...valoresHeredados(caja, asuntoAutomatico, cajaInterna),
     caja: cajaId,
-    // El asunto automático del último registro de la caja. Una caja suele
-    // contener documentos del mismo asunto, así que se trae ya escrito y quien
-    // necesite otro lo cambia; volver a teclearlo en cada registro era el
-    // trabajo repetido más caro de la digitación.
-    //
-    // El asunto manual NO se hereda: describe el documento concreto, cambia de
-    // un registro al siguiente y arrastrarlo hacía que se guardara el del
-    // anterior cuando alguien pasaba de largo. Arranca vacío, como el resto de
-    // los campos de EMPTY_FORM.
-    asunto_2: asuntoAutomatico ?? '',
     n_orden: String(defaultNOrden),
     // El tomo queda en blanco a propósito. Antes se sugería el siguiente de la
     // caja y se iba sumando en cada registro, así que el campo llegaba con un
     // número que casi nunca era el del documento y había que borrarlo a mano.
     //
-    // La caja interna, en cambio, sí se hereda, y del **primer** registro de la
-    // caja. Es un dato de la caja, no del documento: una vez que se fija en el
-    // primero, vale para todos los que vengan detrás, y volver a teclearlo en
-    // cada uno es trabajo repetido. Se hereda del primero y no del último —que
-    // es como se hacía antes y se quitó— porque el último va cambiando y
-    // obligaba a comprobar el campo en cada registro; el primero no cambia. En
-    // el primer registro de la caja llega vacío, que es cuando se decide.
-    caja_interna: cajaInterna ?? '',
+    // `codigo` también: el id interno del módulo no es el código documental que
+    // va en el FUID, y precargarlo hacía que se guardara un número sin
+    // significado archivístico.
+    codigo: '',
     // La fecha del dato es el día en que se digita, en hora de Colombia.
     fecha_del_dato: fechaHoyLocal(),
     elaborado_por: user ? `${user.nombre} (${user.cc})` : '',
     sede: user?.sede ?? '',
-    // Datos derivados de la caja seleccionada: la persona solo completa UPD y los
-    // campos específicos del documento; el resto ya está lógicamente creado en la caja.
-    // `codigo` queda en blanco a propósito: el id interno del módulo no es el
-    // código documental que va en el FUID, y precargarlo hacía que se guardara
-    // un número sin significado archivístico.
-    codigo: '',
-    entidad_remitente: caja?.entidad_remitente_caja ?? '',
-    entidad_productora: sinNA(caja?.entidad_productora_caja),
-    unidad_administrativa: sinNA(caja?.unidad_administrativa_caja),
-    oficina_productora: sinNA(caja?.oficina_productora_caja),
-    objeto: sinNA(caja?.objeto_caja),
-    nro_acta_transferible: caja?.acta_trans_caja ?? '',
-    fecha_transferencia: caja?.fecha_trans_caja?.slice(0, 10) ?? '',
   };
 }
 
@@ -443,13 +475,18 @@ function FormularioFuid({
   }, [confirmacion]);
 
   /*
-   * Lo que se hereda de la caja llega tarde, y hay que recogerlo cuando llega.
+   * Lo que se hereda llega tarde, y hay que recogerlo cuando llega.
    *
-   * El formulario se monta con la página, y en ese momento la consulta de los
-   * registros todavía no ha respondido: el asunto automático y la caja interna
-   * valen cadena vacía. Como el estado inicial de `useState` solo se calcula
-   * en el primer render, sin esto los dos campos se quedaban en blanco toda la
-   * sesión y la herencia no se veía nunca al abrir la caja.
+   * El formulario se monta con la página, y en ese momento ni la caja ni sus
+   * registros han respondido todavía: entidad productora, objeto, el asunto
+   * automático y los demás valen cadena vacía. Como el estado inicial de
+   * `useState` solo se calcula en el primer render, sin esto esos campos se
+   * quedaban en blanco el resto de la sesión.
+   *
+   * Y fallaba de forma intermitente, que es lo que costaba entender: si la
+   * caja ya estaba en la caché de una visita anterior, la respuesta llegaba
+   * antes de montar el formulario y los campos salían llenos; en una carga
+   * fría, no. Lo mismo, según el día.
    *
    * Solo se rellena lo que sigue vacío, así que nunca pisa lo que la persona
    * haya escrito mientras tanto —que es lo que podía pasar remontando el
@@ -457,13 +494,15 @@ function FormularioFuid({
    */
   useEffect(() => {
     if (editing) return;
+    const heredados = valoresHeredados(caja, asuntoAutomaticoDeLaCaja, cajaInternaDeLaCaja);
     setForm((prev) => {
-      const asunto2 = prev.asunto_2 === '' ? asuntoAutomaticoDeLaCaja : prev.asunto_2;
-      const interna = prev.caja_interna === '' ? cajaInternaDeLaCaja : prev.caja_interna;
-      if (asunto2 === prev.asunto_2 && interna === prev.caja_interna) return prev;
-      return { ...prev, asunto_2: asunto2, caja_interna: interna };
+      const pendientes = Object.entries(heredados).filter(
+        ([campo, valor]) => valor !== '' && prev[campo as keyof FuidFormValues] === '',
+      );
+      if (pendientes.length === 0) return prev;
+      return { ...prev, ...Object.fromEntries(pendientes) };
     });
-  }, [asuntoAutomaticoDeLaCaja, cajaInternaDeLaCaja, editing]);
+  }, [caja, asuntoAutomaticoDeLaCaja, cajaInternaDeLaCaja, editing]);
 
   const debouncedUpd = useDebouncedValue(form.upd.trim(), 500);
   const updExistsQuery = useQuery({
