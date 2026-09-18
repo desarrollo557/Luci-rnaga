@@ -199,6 +199,7 @@ function emptyFormFor(
   defaultNOrden: number,
   caja?: ModuloCaja | null,
   asuntoAutomatico?: string,
+  cajaInterna?: string,
 ): FuidFormValues {
   return {
     ...EMPTY_FORM,
@@ -218,11 +219,14 @@ function emptyFormFor(
     // caja y se iba sumando en cada registro, así que el campo llegaba con un
     // número que casi nunca era el del documento y había que borrarlo a mano.
     //
-    // La caja interna arranca vacía por lo mismo. Se recordaba la última
-    // digitada y se precargaba en cada registro nuevo, así que llegaba con un
-    // valor que había que comprobar o borrar cada vez. Un campo que se rellena
-    // solo con un dato que puede no ser el correcto cuesta más de lo que ahorra.
-    caja_interna: '',
+    // La caja interna, en cambio, sí se hereda, y del **primer** registro de la
+    // caja. Es un dato de la caja, no del documento: una vez que se fija en el
+    // primero, vale para todos los que vengan detrás, y volver a teclearlo en
+    // cada uno es trabajo repetido. Se hereda del primero y no del último —que
+    // es como se hacía antes y se quitó— porque el último va cambiando y
+    // obligaba a comprobar el campo en cada registro; el primero no cambia. En
+    // el primer registro de la caja llega vacío, que es cuando se decide.
+    caja_interna: cajaInterna ?? '',
     // La fecha del dato es el día en que se digita, en hora de Colombia.
     fecha_del_dato: fechaHoyLocal(),
     elaborado_por: user ? `${user.nombre} (${user.cc})` : '',
@@ -380,6 +384,8 @@ interface FormularioFuidProps {
   defaultNOrden: number;
   /** Asunto automático del último registro de la caja, para no reescribirlo. */
   asuntoAutomaticoDeLaCaja: string;
+  /** Caja interna del primer registro de la caja: es la misma para toda ella. */
+  cajaInternaDeLaCaja: string;
   caja?: ModuloCaja | null;
   /** Se llama al terminar de corregir; solo tiene sentido dentro del diálogo. */
   onTerminar?: () => void;
@@ -404,6 +410,7 @@ function FormularioFuid({
   editing,
   defaultNOrden,
   asuntoAutomaticoDeLaCaja,
+  cajaInternaDeLaCaja,
   caja,
   onTerminar,
 }: FormularioFuidProps) {
@@ -418,7 +425,7 @@ function FormularioFuid({
   const [form, setForm] = useState<FuidFormValues>(() =>
     editing
       ? formFromRecord(editing)
-      : emptyFormFor(cajaId, user, defaultNOrden, caja, asuntoAutomaticoDeLaCaja),
+      : emptyFormFor(cajaId, user, defaultNOrden, caja, asuntoAutomaticoDeLaCaja, cajaInternaDeLaCaja),
   );
   /** Registros guardados sin cerrar el formulario; remonta el formulario para volver a enfocar Asunto Manual. */
   const [racha, setRacha] = useState(0);
@@ -434,6 +441,29 @@ function FormularioFuid({
     const temporizador = setTimeout(() => setConfirmacion(null), 2400);
     return () => clearTimeout(temporizador);
   }, [confirmacion]);
+
+  /*
+   * Lo que se hereda de la caja llega tarde, y hay que recogerlo cuando llega.
+   *
+   * El formulario se monta con la página, y en ese momento la consulta de los
+   * registros todavía no ha respondido: el asunto automático y la caja interna
+   * valen cadena vacía. Como el estado inicial de `useState` solo se calcula
+   * en el primer render, sin esto los dos campos se quedaban en blanco toda la
+   * sesión y la herencia no se veía nunca al abrir la caja.
+   *
+   * Solo se rellena lo que sigue vacío, así que nunca pisa lo que la persona
+   * haya escrito mientras tanto —que es lo que podía pasar remontando el
+   * formulario— ni vuelve sobre un campo que ella misma borró a propósito.
+   */
+  useEffect(() => {
+    if (editing) return;
+    setForm((prev) => {
+      const asunto2 = prev.asunto_2 === '' ? asuntoAutomaticoDeLaCaja : prev.asunto_2;
+      const interna = prev.caja_interna === '' ? cajaInternaDeLaCaja : prev.caja_interna;
+      if (asunto2 === prev.asunto_2 && interna === prev.caja_interna) return prev;
+      return { ...prev, asunto_2: asunto2, caja_interna: interna };
+    });
+  }, [asuntoAutomaticoDeLaCaja, cajaInternaDeLaCaja, editing]);
 
   const debouncedUpd = useDebouncedValue(form.upd.trim(), 500);
   const updExistsQuery = useQuery({
@@ -471,15 +501,25 @@ function FormularioFuid({
       // con el UPD consecutivo, el N° de orden y los datos de la caja
       // precargados; el cursor vuelve a Codigo.
       //
-      // Solo el asunto automático se arrastra del registro que se acaba de
-      // guardar: lo habitual es encadenar varios documentos del mismo asunto, y
-      // volver a escribirlo cada vez cuesta más que corregirlo cuando cambia. El
-      // asunto manual y las notas arrancan en blanco, porque describen el
-      // documento concreto y no se repiten de un registro al siguiente.
+      // Del registro que se acaba de guardar se arrastran el asunto automático
+      // y la caja interna: lo habitual es encadenar varios documentos del mismo
+      // asunto dentro de la misma caja interna, y volver a escribirlos cada vez
+      // cuesta más que corregirlos cuando cambian. Se toman de aquí y no de la
+      // lista para que el siguiente registro los tenga ya puestos, sin esperar
+      // a que la consulta se refresque. El asunto manual y las notas arrancan
+      // en blanco, porque describen el documento concreto y no se repiten de un
+      // registro al siguiente.
       const guardado = form.upd.trim().toUpperCase();
       const siguienteUpd = siguienteUpdLocal(guardado);
       setForm({
-        ...emptyFormFor(cajaId, user, defaultNOrden + racha + 1, caja, form.asunto_2),
+        ...emptyFormFor(
+          cajaId,
+          user,
+          defaultNOrden + racha + 1,
+          caja,
+          form.asunto_2,
+          form.caja_interna,
+        ),
         upd: siguienteUpd,
       });
       setRacha((r) => r + 1);
@@ -1062,6 +1102,28 @@ export default function DatosPage() {
   }, [registros]);
 
   /*
+   * Caja interna con la que se abre un registro nuevo: la del **primer**
+   * registro de la caja.
+   *
+   * No es un dato del documento sino de la caja: se decide al empezar y vale
+   * para todo lo que entre después. Por eso se toma del primero por número de
+   * orden y no del último digitado, que es como se hacía antes: aquel iba
+   * cambiando y obligaba a comprobar el campo en cada registro. Con la caja
+   * vacía no hay de dónde tomarla y el campo abre en blanco, que es cuando la
+   * persona la decide.
+   */
+  const cajaInternaDeLaCaja = useMemo<string>(() => {
+    const primero = registros.reduce<FuidDato | null>(
+      (menor, registro) =>
+        (registro.n_orden ?? Number.MAX_SAFE_INTEGER) < (menor?.n_orden ?? Number.MAX_SAFE_INTEGER)
+          ? registro
+          : menor,
+      null,
+    );
+    return sinNA(primero?.caja_interna);
+  }, [registros]);
+
+  /*
    * Asunto automático con el que se abre un registro nuevo: el del último que se
    * digitó en la caja. Se toma el de mayor número de orden, no el último que
    * devuelva la consulta, porque el orden de las filas no está garantizado.
@@ -1148,9 +1210,9 @@ export default function DatosPage() {
    * sale. La tabla desborda a lo ancho y se desplaza, con la columna del
    * número de orden fija para no perder de vista de qué fila se trata.
    *
-   * Lo que se guardó como `N/A` —el marcador de "no venía en el documento"—
-   * se muestra como un guion: con veintitantas columnas, repetir "N/A" en
-   * media tabla taparía lo que sí tiene contenido.
+   * Cada celda muestra lo que hay guardado, sin traducir nada: esta tabla es
+   * para comprobar contra el documento en la mano, y ahí un valor cambiado
+   * por otro más bonito es un error que no se ve.
    */
   const campo = (
     key: keyof FuidDato,
@@ -1160,7 +1222,14 @@ export default function DatosPage() {
     key,
     header,
     render: (registro: FuidDato) => {
-      const valor = sinNA(registro[key] as string | null | undefined);
+      /*
+       * Tal como está guardado, `N/A` incluido. En el formulario ese marcador
+       * se oculta —quien digita no debe escribirlo ni verlo—, pero aquí no:
+       * en una vista de consulta `N/A` es información, dice que alguien miró
+       * el documento y ese dato no estaba. Un hueco en blanco no dice eso. El
+       * guion queda solo para lo realmente nulo, que no debería existir.
+       */
+      const valor = (registro[key] as string | null | undefined)?.toString().trim();
       if (!valor) return <span className="text-silver-300">—</span>;
       return (
         <span
@@ -1340,6 +1409,7 @@ export default function DatosPage() {
             editing={null}
             defaultNOrden={defaultNOrden}
             asuntoAutomaticoDeLaCaja={asuntoAutomaticoDeLaCaja}
+            cajaInternaDeLaCaja={cajaInternaDeLaCaja}
             caja={cajaQuery.data}
           />
         </Card>
@@ -1439,6 +1509,7 @@ export default function DatosPage() {
             editing={editing}
             defaultNOrden={defaultNOrden}
             asuntoAutomaticoDeLaCaja={asuntoAutomaticoDeLaCaja}
+            cajaInternaDeLaCaja={cajaInternaDeLaCaja}
             caja={cajaQuery.data}
             onTerminar={cerrarEdicion}
           />
