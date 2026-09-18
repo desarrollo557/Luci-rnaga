@@ -198,7 +198,13 @@ const fuidBaseSchema = z.object({
   cambio_calidad: textoOpcional('cambio_calidad'),
   sede_calidad: textoOpcional('sede_calidad'),
   asunto_2: textoRequerido('asunto_2', 'El asunto automático es requerido'),
-  asunto_3: textoRequerido('asunto_3', 'El asunto manual es requerido'),
+  /*
+   * El asunto manual dejó de ser obligatorio: describe el documento concreto y
+   * hay documentos de los que no hay nada particular que decir. Vacío se
+   * guarda como `N/A`, igual que el resto de los campos descriptivos. El
+   * automático sí sigue siendo obligatorio.
+   */
+  asunto_3: textoOpcional('asunto_3'),
 });
 
 /**

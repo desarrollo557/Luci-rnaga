@@ -15,9 +15,27 @@ const INDICE_CODIGO_SEDE = 'uq_sub_modulos_codigo_sede';
  * repitió ni por qué el mismo código sí vale en otra sede.
  */
 function esCodigoRepetido(error: unknown): boolean {
-  const e = error as { code?: string; errno?: number; sqlMessage?: string };
-  const esDuplicado = e?.code === 'ER_DUP_ENTRY' || e?.errno === 1062;
-  return esDuplicado && (e.sqlMessage ?? '').includes(INDICE_CODIGO_SEDE);
+  const e = error as {
+    code?: string;
+    errno?: number;
+    sqlMessage?: string;
+    constraint?: string;
+    detail?: string;
+    message?: string;
+  };
+  /*
+   * PostgreSQL primero, que es la base de hoy: `23505` es unique_violation y
+   * el nombre del índice llega en `constraint`. Se conserva la lectura del
+   * formato de MySQL —`ER_DUP_ENTRY`, 1062, el texto en `sqlMessage`— porque
+   * este controlador nació sobre esa base y el mensaje al usuario es el mismo.
+   *
+   * Mirar solo `sqlMessage` era lo que fallaba: en PostgreSQL esa propiedad no
+   * existe, así que el choque con el índice se escapaba y acababa en un error
+   * genérico en vez del aviso que dice qué código está repetido.
+   */
+  const esDuplicado = e?.code === '23505' || e?.code === 'ER_DUP_ENTRY' || e?.errno === 1062;
+  const dondeVieneElNombre = `${e?.constraint ?? ''} ${e?.detail ?? ''} ${e?.sqlMessage ?? ''} ${e?.message ?? ''}`;
+  return esDuplicado && dondeVieneElNombre.includes(INDICE_CODIGO_SEDE);
 }
 
 function respuestaCodigoRepetido(codigo: string, sede: string | null | undefined) {
