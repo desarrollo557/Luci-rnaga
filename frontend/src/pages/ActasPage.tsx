@@ -144,6 +144,17 @@ export default function ActasPage() {
   const [cajaErrors, setCajaErrors] = useState<Partial<Record<keyof CajaForm, string>>>({});
   /** Siguiente número de caja libre del cliente; se enseña bajo el campo, sin escribirlo en él. */
   const [numeroSugerido, setNumeroSugerido] = useState('');
+  /*
+   * Crear **una** caja es el caso normal; la serie es la excepción.
+   *
+   * Antes el formulario pedía siempre un rango, con "Número Inicial" y "Número
+   * Final" obligatorios y los dos en blanco. Para crear una sola caja había que
+   * escribir el mismo número dos veces, y bastaba equivocarse en un dígito —o
+   * entender que el final es el siguiente— para crear dos cajas sin querer. Es
+   * lo que estaba pasando: cajas creadas de dos en dos, con números
+   * consecutivos. Ahora hay un único campo y el rango se pide a propósito.
+   */
+  const [crearVarias, setCrearVarias] = useState(false);
   // Usuarios asignados a la caja (o a toda la serie al crear). En edición se
   // conserva el estado original para aplicar solo las diferencias al guardar.
   const [asignacion, setAsignacion] = useState<AsignacionCaja>(sinAsignacion);
@@ -289,6 +300,14 @@ export default function ActasPage() {
       toast.error(getApiErrorMessage(error));
     },
   });
+
+  /** Cuántas cajas saldrían del rango escrito, o 0 si todavía no es un rango válido. */
+  const cajasDelRango = (() => {
+    if (!/^\d{6}$/.test(cajaForm.numero_inicial) || !/^\d{6}$/.test(cajaForm.numero_final)) return 0;
+    const desde = parseInt(cajaForm.numero_inicial, 10);
+    const hasta = parseInt(cajaForm.numero_final, 10);
+    return hasta >= desde ? hasta - desde + 1 : 0;
+  })();
 
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -440,6 +459,7 @@ export default function ActasPage() {
       fecha_trans_caja: moduloQuery.data?.fecha_trans_modulo?.slice(0, 10) ?? '',
     });
     setCajaErrors({});
+    setCrearVarias(false);
     setAsignacion(sinAsignacion());
     setAsignacionOriginal(sinAsignacion());
     setModalOpen(true);
@@ -628,22 +648,70 @@ export default function ActasPage() {
           ) : (
             <>
               <Input
-                label="Número Inicial (6 dígitos)"
+                label={crearVarias ? 'Número Inicial (6 dígitos)' : 'Número de caja (6 dígitos)'}
                 value={cajaForm.numero_inicial}
-                onChange={(event) => setCajaForm({ ...cajaForm, numero_inicial: event.target.value })}
+                onChange={(event) =>
+                  setCajaForm({
+                    ...cajaForm,
+                    numero_inicial: event.target.value,
+                    // Con una sola caja los dos extremos del rango son el mismo
+                    // número. Se mantienen sincronizados aquí para que quien
+                    // crea una caja no tenga que escribirlo dos veces, que es
+                    // como se acababan creando dos.
+                    ...(crearVarias ? {} : { numero_final: event.target.value }),
+                  })
+                }
                 error={cajaErrors.numero_inicial}
                 placeholder={numeroSugerido || '000001'}
                 hint={numeroSugerido ? `Siguiente número libre del cliente: ${numeroSugerido}` : undefined}
                 maxLength={6}
               />
-              <Input
-                label="Número Final (6 dígitos)"
-                value={cajaForm.numero_final}
-                onChange={(event) => setCajaForm({ ...cajaForm, numero_final: event.target.value })}
-                error={cajaErrors.numero_final}
-                placeholder={numeroSugerido || '000001'}
-                maxLength={6}
-              />
+              {crearVarias ? (
+                <Input
+                  label="Número Final (6 dígitos)"
+                  value={cajaForm.numero_final}
+                  onChange={(event) => setCajaForm({ ...cajaForm, numero_final: event.target.value })}
+                  error={cajaErrors.numero_final}
+                  placeholder={numeroSugerido || '000001'}
+                  maxLength={6}
+                />
+              ) : (
+                <div />
+              )}
+              <label className="flex items-center gap-2 text-sm text-silver-700 md:col-span-2">
+                <input
+                  type="checkbox"
+                  checked={crearVarias}
+                  onChange={(event) => {
+                    const varias = event.target.checked;
+                    setCrearVarias(varias);
+                    // Al volver a una sola caja, el final deja de ir por libre.
+                    if (!varias) setCajaForm((prev) => ({ ...prev, numero_final: prev.numero_inicial }));
+                  }}
+                />
+                Crear varias cajas seguidas
+              </label>
+              {/*
+                Cuántas cajas se van a crear, antes de pulsar. Una serie se pide
+                por un rango y el rango es fácil de leer mal; ver el número y
+                los dos extremos escritos evita enterarse después.
+              */}
+              {crearVarias && cajasDelRango > 0 && (
+                <p className="text-sm text-silver-600 md:col-span-2">
+                  Se {cajasDelRango === 1 ? 'creará' : 'crearán'}{' '}
+                  <strong>{cajasDelRango}</strong> {cajasDelRango === 1 ? 'caja' : 'cajas'}:{' '}
+                  <span className="font-mono">
+                    {prefijoCaja}
+                    {cajaForm.numero_inicial}
+                  </span>{' '}
+                  a{' '}
+                  <span className="font-mono">
+                    {prefijoCaja}
+                    {cajaForm.numero_final}
+                  </span>
+                  .
+                </p>
+              )}
             </>
           )}
           {/* Al crear viene del acta y va bloqueada, como el número de acta y la
