@@ -5,7 +5,8 @@ import { formatearFecha } from '@/lib/fechas';
  *
  * El estado no lo marca nadie a mano: el servidor lo deduce de la digitación
  * (ver `cicloCaja.service.ts`). Una caja está abierta mientras alguien trabaja
- * en ella y se cierra sola cuando esa persona pasa a la siguiente. Aquí solo se
+ * en ella y se cierra sola cuando esa persona pasa a la siguiente o cuando
+ * termina la jornada sin que la marque para continuar otro día. Aquí solo se
  * traduce ese estado a algo que se entienda de un vistazo, y sobre todo se hace
  * visible lo que antes no se veía: que una caja viene de días anteriores y está
  * a medias.
@@ -34,13 +35,18 @@ export interface DatosDeCaja {
   desde?: string | null;
   /** Jornada a la que se atribuyó el cierre. */
   fechaFinalizacion?: string | null;
+  /** Quién la reabrió a mano ("NOMBRE (CC)"), si es el caso. */
+  reabiertaPor?: string | null;
 }
+
+/** El nombre sin la cédula que lleva pegada en la firma. */
+const soloNombre = (firma: string) => firma.replace(/\s*\([^)]*\)\s*$/, '').trim() || firma;
 
 const plural = (n: number, singular: string, plural_: string) =>
   `${n.toLocaleString('es-CO')} ${n === 1 ? singular : plural_}`;
 
 export function estadoDeCaja(
-  { estado, registros, desde, fechaFinalizacion }: DatosDeCaja,
+  { estado, registros, desde, fechaFinalizacion, reabiertaPor }: DatosDeCaja,
   hoy: string,
 ): EstadoDeCaja {
   const conteo = typeof registros === 'number' ? plural(registros, 'registro', 'registros') : null;
@@ -58,6 +64,16 @@ export function estadoDeCaja(
     // Que la caja venga de otro día es lo que de verdad hay que ver: significa
     // que quedó a medias y se está continuando.
     const continuada = Boolean(desde && desde < hoy);
+    // Reabierta a mano por el líder: hay que verlo, porque es lo que permite
+    // corregir lo de días anteriores, y dura solo mientras la caja siga abierta.
+    if (reabiertaPor) {
+      return {
+        etiqueta: 'Reabierta',
+        color: 'amber',
+        detalle: `Reabierta por ${soloNombre(reabiertaPor)} para corregir registros${conteo ? ` · ${conteo}` : ''}`,
+        continuada,
+      };
+    }
     return {
       etiqueta: 'En proceso',
       color: 'amber',

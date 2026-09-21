@@ -176,22 +176,37 @@ siete dígitos y la técnica nunca escribe las siglas. La primera vez que abre u
 caja, la interfaz le pide solo el número de arranque; desde entonces cada
 registro viene con el siguiente ya puesto. Es único en toda la base.
 
+**El número de orden es el consecutivo de la caja.** Lo asigna el servidor al
+guardar cada registro, el siguiente de la caja, y lo que se muestra en pantalla
+y se exporta al Excel como "N° de orden" es el consecutivo 1, 2, 3… en el orden
+en que se digitó, sin los huecos que dejan los registros borrados. Nadie lo
+escribe: el formulario no lo pide y lo que mande se ignora.
+
 **El estado de la caja se deduce, no se marca.** Guardar un registro en una
 caja la abre; guardar uno en otra caja cierra la anterior, con la fecha de su
-último registro y no la del día del cierre. La única caja abierta es en la que
-se está trabajando, que es la que se continúa al día siguiente. Nadie pulsa
-"caja terminada": este es un software operativo y un botón que hay que acordarse
-de pulsar acaba sin pulsarse, y entonces el seguimiento miente. La lógica está
-en `backend/src/services/cicloCaja.service.ts`.
+último registro y no la del día del cierre. Y al terminar la jornada, la caja
+que quedó abierta se cierra sola, atribuida a ese día: quien se va sin declarar
+nada deja la caja terminada. Nadie pulsa "caja terminada": este es un software
+operativo y un botón que hay que acordarse de pulsar acaba sin pulsarse, y
+entonces el seguimiento miente. Lo único que se pulsa es la excepción, "la
+continúo otro día", que es la única forma de dejar una caja abierta para la
+jornada siguiente. Dentro de la jornada, salir de la caja y volver horas después
+no cambia nada. La lógica está en `backend/src/services/cicloCaja.service.ts`;
+el cierre de la jornada corre al arrancar el servidor y a las 12:05 a. m. hora
+de Colombia (`cierreDeJornada.service.ts`).
 
 **Las técnicas se asignan por caja.** Solo existe `asignacion_caja_tecnica`. La
 asignación por acta de la versión anterior se retiró porque obligaba a asignar
 dos veces a la misma persona.
 
 **Quién edita un registro FUID.** LIDER y ADMIN editan cualquiera, sin límite
-de autor ni de fecha. TECNICA corrige solo los suyos y solo el mismo día en que
-los digitó. Cada versión anterior queda copiada en `historial` por un trigger,
-así que levantarle la restricción al líder no borra el rastro.
+de autor ni de fecha. TECNICA corrige solo los suyos: los del mismo día siempre,
+y los de días anteriores únicamente mientras el líder tenga la caja reabierta.
+Reabrir una caja (desde el acta o desde la vista de la caja) deja escrito quién
+y qué día, y todo cierre lo borra, así que el permiso dura lo que dure la
+reapertura; reabrirla digitando en ella no cuenta. Cada versión anterior queda
+copiada en `historial` por un trigger, así que levantar la restricción no borra
+el rastro.
 
 **Eliminar respeta la jerarquía y deja huella.** Un cliente no se borra si
 tiene actas, ni un acta si tiene cajas. Borrar una caja arrastra, en una
@@ -248,7 +263,7 @@ o ADMIN, y el líder solo dentro de su sede):
 | GET | `/modulos_caja/count_fuiddatosreal` | Cuántos registros tiene una caja. |
 | GET | `/modulos_caja/:modulo_id/usuarios` | Técnicas asignadas a la caja. |
 | GET | `/modulos_caja/tecnica-stats` | Cifras de la técnica que pregunta. |
-| PATCH | `/modulos_caja/:id/cambiarEstado` | Corrección manual del estado de una caja (TECNICA). El estado normalmente se deduce solo. |
+| PATCH | `/modulos_caja/:id/cambiarEstado` | Corrección manual del estado de una caja: TECNICA en las suyas, LIDER en las de su sede, ADMIN en todas. Cuando un líder o administrador la pone EN PROCESO, la caja queda reabierta y la técnica puede corregir sus registros de días anteriores mientras siga abierta. El estado normalmente se deduce solo. |
 | GET | `/modulos_caja/next-upd/:caja` | Siguiente UPD de la técnica en esa caja; `requiere_inicio: true` si aún no arrancó. |
 | PUT | `/modulos_caja/:caja/upd-inicio` | Fija el UPD de arranque (TECNICA). Se rechaza si ese UPD ya existe. |
 | POST | `/asignacion_caja_tecnica` | Asigna técnicas a una caja (LIDER o ADMIN). |

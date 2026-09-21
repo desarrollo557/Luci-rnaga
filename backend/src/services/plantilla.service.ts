@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import ExcelJS from 'exceljs';
 import { query } from '../config/db.js';
+import { sqlOrdenEnCaja } from './fuid.service.js';
 import type { FuidDato } from '../types/db.js';
 import { RAIZ_BACKEND, abrirPlantillaFuid, escribirFilasFuid } from './plantillaFuid.service.js';
 
@@ -33,28 +34,30 @@ export async function generarPlantilla(
 
 async function consultarDatos(filtros: PlantillaFiltros): Promise<FuidDato[]> {
   let sql = `SELECT
-      n_orden, codigo, entidad_remitente, entidad_productora,
-      unidad_administrativa, oficina_productora, objeto, serie, subserie,
-      asunto, numero_doc, numero_doc_hasta, fecha_inicial,
-      fecha_final, caja, upd, tomo, otro, caja_interna, folios, soporte,
-      frecuencia, notas, elaborado_por, fecha_del_dato, nro_acta_transferible,
-      fecha_transferencia
-    FROM fuiddatosreal WHERE 1=1`;
+      f.n_orden, o.n_orden_caja, f.codigo, f.entidad_remitente, f.entidad_productora,
+      f.unidad_administrativa, f.oficina_productora, f.objeto, f.serie, f.subserie,
+      f.asunto, f.numero_doc, f.numero_doc_hasta, f.fecha_inicial,
+      f.fecha_final, f.caja, f.upd, f.tomo, f.otro, f.caja_interna, f.folios, f.soporte,
+      f.frecuencia, f.notas, f.elaborado_por, f.fecha_del_dato, f.nro_acta_transferible,
+      f.fecha_transferencia
+    FROM fuiddatosreal f
+    JOIN ${sqlOrdenEnCaja()} o ON o.id = f.id
+    WHERE 1=1`;
   const params: unknown[] = [];
 
   if (filtros.caja) {
-    sql += ' AND caja = ?';
+    sql += ' AND f.caja = ?';
     params.push(filtros.caja);
   }
   if (filtros.entidad_remitente) {
-    sql += ' AND entidad_remitente LIKE ?';
+    sql += ' AND f.entidad_remitente LIKE ?';
     params.push(`%${filtros.entidad_remitente}%`);
   }
 
   // Sin orden explícito, el motor devuelve las filas como le conviene y el
-  // inventario salía descolocado: los registros van por el número de orden de
-  // la caja, que es como se leen en el papel.
-  sql += ' ORDER BY caja, n_orden NULLS LAST, upd';
+  // inventario salía descolocado: los registros van por el consecutivo de la
+  // caja, que es como se leen en el papel.
+  sql += ' ORDER BY f.caja, o.n_orden_caja';
 
   const rows = await query<FuidDato>(sql, params);
   if (!rows || rows.length === 0) {

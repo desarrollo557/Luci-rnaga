@@ -63,7 +63,10 @@ router.put(
   asyncHandler(updateModuloCaja),
 );
 router.delete('/modulos_caja/:id', isAuthenticated, isLiderOrAdmin, asyncHandler(deleteModuloCaja));
-router.patch('/modulos_caja/:id/cambiarEstado', isAuthenticated, isTecnicaOnly, asyncHandler(changeEstadoCaja));
+// Quién puede cambiar el estado lo decide el controlador: la técnica en sus
+// cajas, el líder en las de su sede, el administrador en todas. La reapertura
+// por el líder es la que deja a la técnica corregir sus registros anteriores.
+router.patch('/modulos_caja/:id/cambiarEstado', isAuthenticated, asyncHandler(changeEstadoCaja));
 
 router.get('/modulos_caja/count_fuiddatosreal', isAuthenticated, asyncHandler(countFuidByCaja));
 router.get('/modulos_caja/next/:prefijo', isAuthenticated, isLiderOrAdmin, asyncHandler(getNextCajaNumero));
