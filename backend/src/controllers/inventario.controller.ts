@@ -1,5 +1,6 @@
 import type { Request, Response } from 'express';
 import { query, queryOne, queryResult } from '../config/db.js';
+import { sqlOrdenEnCaja } from '../services/fuid.service.js';
 import { audit } from '../services/audit.service.js';
 import type { FuidDato, Inventario } from '../types/db.js';
 import type { SessionUser } from '../types/index.js';
@@ -80,8 +81,9 @@ interface FuidConEstadoRow extends FuidDato {
 }
 
 const FUID_BASE_SELECT = `
-  SELECT f.*, mc.estado_caja
+  SELECT f.*, o.n_orden_caja, mc.estado_caja, mcl.acta_transferencia_modulo AS nro_acta_transferible, mcl.created_at AS acta_created_at
   FROM fuiddatosreal f
+  JOIN ${sqlOrdenEnCaja()} o ON o.id = f.id
   JOIN modulos_caja mc ON mc.caja_modulo = f.caja
   JOIN moduloscliente mcl ON mcl.id = mc.id_modulo_caja
   WHERE mcl.id_submodulo = (
@@ -89,7 +91,7 @@ const FUID_BASE_SELECT = `
   )
 `;
 
-const FUID_QUERY = `${FUID_BASE_SELECT} ORDER BY f.caja, f.n_orden`;
+const FUID_QUERY = `${FUID_BASE_SELECT} ORDER BY f.caja, o.n_orden_caja`;
 
 const FUID_COUNT_QUERY = `
   SELECT COUNT(*) AS total
@@ -116,7 +118,8 @@ const FUID_WHERE_FILTRO = `
  */
 const FUID_WHERE_ACTA = ` AND mcl.acta_transferencia_modulo = ?`;
 
-const FUID_ORDEN = ' ORDER BY f.caja, f.n_orden';
+// Por caja y, dentro de ella, por el consecutivo: como se leen en el papel.
+const FUID_ORDEN = ' ORDER BY f.caja, o.n_orden_caja';
 
 /*
  * Las tres consultas del FUID —las filas, su recuento y sus totales— comparten

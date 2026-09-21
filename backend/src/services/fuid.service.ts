@@ -162,3 +162,28 @@ export type SuggestionField = (typeof SUGGESTION_FIELDS)[number];
 export function isSuggestionField(field: string): field is SuggestionField {
   return (SUGGESTION_FIELDS as readonly string[]).includes(field);
 }
+
+/**
+ * Consecutivo de cada registro dentro de su caja: 1, 2, 3… en el orden en que
+ * se digitó, sin los huecos que dejan los registros borrados ni los saltos del
+ * número guardado. Es lo que se muestra y se exporta como "N° de orden".
+ *
+ * `n_orden`, la columna guardada, solo ordena. La asigna el servidor al crear
+ * el registro (el siguiente de la caja) y no se vuelve a tocar; para las filas
+ * heredadas sin `created_at` es la única pista de orden, por eso va primero.
+ * Antes la calculaba el navegador y se disparaba: cajas de cincuenta registros
+ * con números hasta el mil, huecos en casi todas y repetidos en cinco.
+ *
+ * Se une por `id` a la consulta que lo necesite: `JOIN ${sqlOrdenEnCaja()} o
+ * ON o.id = f.id`. Con `porCaja` la numeración se calcula solo sobre esa caja
+ * y espera el número de caja como parámetro; sin él, sobre toda la tabla, que
+ * es lo que hace falta cuando la consulta abarca varias cajas o lleva un filtro
+ * de texto, porque el consecutivo tiene que ser el de la caja entera y no el de
+ * las filas que pasan el filtro.
+ */
+export function sqlOrdenEnCaja(porCaja = false): string {
+  return `(SELECT id, ROW_NUMBER() OVER (
+             PARTITION BY caja ORDER BY n_orden NULLS LAST, created_at NULLS FIRST, id
+           ) AS n_orden_caja
+      FROM fuiddatosreal${porCaja ? ' WHERE caja = ?' : ''})`;
+}

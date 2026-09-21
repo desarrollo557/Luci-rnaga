@@ -24,6 +24,18 @@ describe('estadoDeCaja', () => {
     expect(estado.detalle).toContain('23 registros');
   });
 
+  it('una caja reabierta por el líder lo dice, y con quién, sin la cédula', () => {
+    const estado = estadoDeCaja(
+      { estado: CAJA_EN_PROCESO, registros: 5, desde: '2026-09-15', reabiertaPor: 'LIDIA LIDER (444)' },
+      HOY,
+    );
+    expect(estado.etiqueta).toBe('Reabierta');
+    expect(estado.color).toBe('amber');
+    expect(estado.detalle).toContain('Reabierta por LIDIA LIDER');
+    expect(estado.detalle).not.toContain('444');
+    expect(estado.detalle).toContain('5 registros');
+  });
+
   it('una caja empezada hoy no se presenta como continuada', () => {
     const estado = estadoDeCaja({ estado: CAJA_EN_PROCESO, registros: 4, desde: HOY }, HOY);
     expect(estado.continuada).toBe(false);

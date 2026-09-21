@@ -44,6 +44,12 @@ export interface ModuloCaja {
   oficina_productora_caja: string;
   objeto_caja: string;
   estado_caja: string;
+  /** Jornada a la que se atribuyó la caja terminada y a quién; los pone el servidor. */
+  fecha_finalizacion?: string | null;
+  finalizada_por?: string | null;
+  /** Quién reabrió la caja a mano ("NOMBRE (CC)") y qué día; se borran al cerrarla. */
+  reabierta_por?: string | null;
+  reabierta_el?: string | null;
   upd_inicio?: string | null;
   total_fuids?: number;
   created_at: string | null;
@@ -54,6 +60,8 @@ export interface FuidDato {
   id: number;
   fecha_del_dato: string | null;
   n_orden: number | null;
+  /** Consecutivo dentro de la caja, calculado en la consulta (`sqlOrdenEnCaja`); es el "N° de orden" que se muestra. */
+  n_orden_caja?: number;
   codigo: string | null;
   entidad_remitente: string | null;
   entidad_productora: string | null;

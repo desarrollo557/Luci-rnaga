@@ -31,6 +31,7 @@ El formato de error es siempre el mismo:
 | Regla de negocio | Dónde se valida en backend | Dónde se valida en frontend |
 | --- | --- | --- |
 | La caja es obligatoria | `fuiddatosreal.validator.ts` → `createFuidSchema.caja` | — (el formulario la hereda de la caja abierta) |
+| El número de orden lo pone el servidor y es el consecutivo de la caja | `createFuid` bloquea la fila de la caja y asigna el siguiente `n_orden`; lo que se muestra y se exporta es `n_orden_caja`, calculado con `sqlOrdenEnCaja()` (`fuid.service.ts`) | El formulario no lo pide; las tablas leen `n_orden_caja` |
 | El asunto automático y el asunto manual son obligatorios | `fuiddatosreal.validator.ts` → `textoRequerido`, al crear y al editar | `DatosPage.tsx` marca ambos con `*`, avisa bajo el campo y bloquea el envío |
 | El UPD es obligatorio y tiene formato `UPD` + 7 dígitos | `fuiddatosreal.validator.ts` → `updField`, que además normaliza el valor | `UpdInput.tsx`; `validUpd()` en `lib/validation.ts` |
 | El UPD no se puede repetir | Restricción `unique_upd` en la base; `createFuid` y `updateFuid` traducen el `23505` a 409 `UPD_YA_USADO` | `DatosPage.tsx` consulta `check-duplicate-upd` mientras se escribe |
@@ -45,9 +46,9 @@ El formato de error es siempre el mismo:
 | `soporte`, `frecuencia` y `otro` solo admiten valores del catálogo | `fuiddatosreal.validator.ts` → `catalogoCerrado`, con las listas de `config/constants.ts` | `Select` poblado desde `lib/catalogos.ts` |
 | Ningún texto supera el tamaño de su columna | `textoOpcional()` con `LONGITUD_MAXIMA_FUID`; `errorHandler` traduce además el `22001` de PostgreSQL | `maxLength` en los inputs, desde `lib/limites.ts` |
 | Todo texto se guarda sin espacios sobrantes y en MAYÚSCULAS | Middleware `cuerpoEnMayusculas` (usa `cleanUpper`) | `text-transform: uppercase` en `index.css`; interceptor de `lib/api.ts` |
-| Quién puede editar un registro | `updateFuid`: LIDER y ADMIN, cualquiera; TECNICA, solo los suyos y del mismo día (`fechaHoyLocal()`) | La interfaz oculta el botón según el perfil |
+| Quién puede editar un registro | `updateFuid`: LIDER y ADMIN, cualquiera; TECNICA, solo los suyos: los de hoy (`fechaHoyLocal()`) y, si la caja está reabierta por un líder (`modulos_caja.reabierta_por` con la caja EN PROCESO), también los de días anteriores | La interfaz oculta el botón según el perfil |
 | Dos personas no pueden pisarse al editar el mismo registro | Columna `version`; `UPDATE … WHERE id = ? AND version = ?`; 409 `VERSION_DESACTUALIZADA` | `DatosPage.tsx` envía `editing.version` y muestra el aviso sin cerrar el formulario |
-| Quién puede borrar un registro | `deleteFuid`: ADMIN cualquiera, LIDER los de su sede, TECNICA solo los suyos del día | La interfaz oculta el botón según el perfil |
+| Quién puede borrar un registro | `deleteFuid`: ADMIN cualquiera, LIDER los de su sede, TECNICA solo los suyos del día o, con la caja reabierta por un líder, también los de días anteriores | La interfaz oculta el botón según el perfil |
 | Marcar OK solo en cajas asignadas | `marcarOk` comprueba `asignacion_caja_tecnica` para la técnica | — |
 | Al guardar, la caja se abre y la anterior de esa persona se cierra | `createFuid` llama a `registrarDigitacion()` de `cicloCaja.service.ts` dentro de la misma transacción | `estadoCaja.ts` muestra el estado y avisa si la caja viene de días anteriores |
 
@@ -96,7 +97,8 @@ controlador reconozca el `23505` con ese nombre de restricción.
 | El objeto solo puede ser `TRANSFERENCIA PRIMARIA` o `VALORACION DOCUMENTAL` | `OBJETOS_CAJA_VALIDOS`; se exige al crear y no al editar, porque las cajas antiguas guardan textos libres | `Select` con las dos opciones |
 | Estado solo `EN PROCESO` o `FINALIZADO` | `modulosCaja.validator.ts` → `z.enum` | `Select` con las dos opciones |
 | El estado lo deduce el servidor | `cicloCaja.service.ts`: guardar un registro abre la caja; guardar en otra cierra la anterior, con la fecha de su último registro, y solo si quien guarda fue quien digitó ese último registro | `estadoCaja.ts` lo traduce a etiqueta y color |
-| Corrección manual del estado | `PATCH /modulos_caja/:id/cambiarEstado`, solo TECNICA; al finalizar, la fecha y la persona salen del último registro de la caja | `CajasPage.tsx`, en la lista de cajas de un acta |
+| Al terminar la jornada, la caja que quedó abierta se da por terminada | `cerrarJornadasVencidas()` en `cicloCaja.service.ts`, que corre al arrancar y a las 12:05 a. m. (`cierreDeJornada.service.ts`): cierra las cajas EN PROCESO cuyo último registro es de un día anterior, atribuidas a ese día, salvo que ese día alguien declarara `CONTINUA` en `jornada_caja` | `CierreDeJornada.tsx` ofrece "La continúo otro día" a quien digitó hoy |
+| Corrección manual del estado | `PATCH /modulos_caja/:id/cambiarEstado`: TECNICA en sus cajas, LIDER en las de su sede, ADMIN en todas. Al finalizar, la fecha y la persona salen del último registro de la caja. Si un líder o administrador la pone EN PROCESO se escriben `reabierta_por` y `reabierta_el`, y todo cierre los borra | `CajasPage.tsx` y `ActasPage.tsx`: "Reabrir caja" para el líder, "Cambiar Estado" para la técnica |
 | Una serie no crea más de 500 cajas de una vez | `createCajasSerie` en `modulosCaja.controller.ts` | — |
 | El rango de una serie no puede estar invertido | `createCajasSerie` | — |
 | Ningún número del rango puede existir ya | `createCajasSerie`, dentro de la transacción | — |

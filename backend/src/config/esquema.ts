@@ -20,10 +20,13 @@ import { query } from './db.js';
  * 3. **Baratos**: sobre tablas pequeñas o sin reescribir filas. El arranque
  *    espera a que terminen.
  *
- * Rellenar la columna que se acaba de crear cuenta como aditivo, y es el único
- * caso en que aquí se escriben datos: solo toca la columna nueva, nunca lo que
- * ya había, y va protegido por una comprobación previa para que en los arranques
- * siguientes no vuelva a mirar la tabla grande.
+ * Escribir datos cabe solo en dos casos, y los dos van protegidos por una
+ * comprobación previa para que en los arranques siguientes no vuelvan a mirar
+ * la tabla grande: rellenar la columna que se acaba de crear, que solo toca la
+ * columna nueva y nunca lo que ya había; y recomponer una columna **derivada**
+ * cuyo origen sigue intacto, como el asunto, que sale de los dos asuntos del
+ * formulario y se puede volver a armar en cualquier momento sin perder nada.
+ * Lo que escribe una persona no se toca aquí nunca.
  *
  * Todo lo demás —volcados, cambios de tipo, limpiezas— sigue viviendo en
  * `database/supabase/` y se aplica a mano, como hasta ahora.
@@ -181,6 +184,107 @@ export const AJUSTES: AjusteDeEsquema[] = [
     nombre: 'índice único sub_modulos(codigo, sede) (un código por cliente y sede)',
     sql: `CREATE UNIQUE INDEX IF NOT EXISTS uq_sub_modulos_codigo_sede
             ON sub_modulos (codigo, sede_submodulos)`,
+  },
+  {
+    /*
+     * Quién reabrió la caja a mano y qué día. Lo escribe el líder o el
+     * administrador al reabrirla, y es lo que autoriza a la técnica a corregir
+     * sus registros de días anteriores mientras la caja siga abierta. Todo
+     * cierre lo borra, así que el permiso dura lo que dure la reapertura.
+     * Reabrirla digitando no lo escribe: la puerta la abre el líder.
+     */
+    nombre: 'modulos_caja.reabierta_por (quién reabrió la caja para corregir)',
+    sql: 'ALTER TABLE modulos_caja ADD COLUMN IF NOT EXISTS reabierta_por varchar(255)',
+  },
+  {
+    nombre: 'modulos_caja.reabierta_el (qué día se reabrió)',
+    sql: 'ALTER TABLE modulos_caja ADD COLUMN IF NOT EXISTS reabierta_el date',
+  },
+  {
+    /*
+     * El asunto se compone sin el marcador de campo sin diligenciar.
+     *
+     * El asunto que ve el cliente en el FUID es la unión del asunto automático
+     * y el manual. Desde que el manual puede dejarse en blanco se guarda como
+     * `N/A`, y el trigger, que solo sabía saltarse el vacío, lo pegaba al
+     * automático: "APROVECHAMIENTOS N/A". El marcador se conserva en cada
+     * campo, como en todos los demás; lo que no lleva marcador es el asunto
+     * compuesto, que es un dato derivado. Si los dos quedaran vacíos, el
+     * asunto es el propio marcador, como cualquier texto sin diligenciar.
+     *
+     * Solo si el trigger existe: en una base donde el asunto no lo compone la
+     * base, no hay nada que redefinir. Es la misma definición que
+     * `database/supabase/02-triggers.sql`, que es donde vive para una base nueva.
+     */
+    nombre: 'el asunto se compone sin el marcador N/A (trigger fuid_componer_asunto)',
+    sql: `DO $ajuste$
+          BEGIN
+            IF EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'fuid_asunto_automatico') THEN
+              EXECUTE $definicion$
+                CREATE OR REPLACE FUNCTION fuid_componer_asunto() RETURNS trigger AS $cuerpo$
+                BEGIN
+                  IF TG_OP = 'INSERT'
+                     OR NEW.asunto_2 IS DISTINCT FROM OLD.asunto_2
+                     OR NEW.asunto_3 IS DISTINCT FROM OLD.asunto_3 THEN
+                    NEW.asunto := COALESCE(
+                      NULLIF(concat_ws(' ',
+                        NULLIF(NULLIF(NEW.asunto_2, ''), 'N/A'),
+                        NULLIF(NULLIF(NEW.asunto_3, ''), 'N/A')), ''),
+                      'N/A');
+                  END IF;
+                  RETURN NEW;
+                END;
+                $cuerpo$ LANGUAGE plpgsql
+              $definicion$;
+            END IF;
+          END $ajuste$`,
+  },
+  {
+    /*
+     * Los asuntos que el trigger anterior compuso con el marcador se vuelven
+     * a armar a partir de sus dos campos, que siguen intactos. Es una columna
+     * derivada: no se toca nada que haya escrito una persona.
+     *
+     * Con los triggers de historial y de `updated_at` apagados mientras dura,
+     * porque esto no es una corrección de quien digitó sino del sistema:
+     * setecientas filas de "ACTUALIZADO" en el historial, todas con el mismo
+     * cambio, solo taparían las ediciones de verdad. Va todo en una sola
+     * transacción, así que si algo falla los triggers vuelven a quedar
+     * encendidos. Cuando no queda ningún asunto por recomponer, el arranque
+     * no vuelve a tocar la tabla.
+     */
+    nombre: 'asuntos ya guardados con el marcador N/A pegado, recompuestos',
+    sql: `DO $$
+          DECLARE
+            con_historial boolean;
+            con_updated_at boolean;
+          BEGIN
+            IF EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'fuid_asunto_automatico') THEN
+              IF EXISTS (
+                SELECT 1 FROM fuiddatosreal
+                 WHERE (asunto_2 = 'N/A' OR asunto_3 = 'N/A')
+                   AND asunto IS DISTINCT FROM COALESCE(NULLIF(concat_ws(' ',
+                         NULLIF(NULLIF(asunto_2, ''), 'N/A'),
+                         NULLIF(NULLIF(asunto_3, ''), 'N/A')), ''), 'N/A')
+                 LIMIT 1
+              ) THEN
+                con_historial := EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'fuid_historial_actualizacion');
+                con_updated_at := EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'fuiddatosreal_updated_at');
+                IF con_historial THEN ALTER TABLE fuiddatosreal DISABLE TRIGGER fuid_historial_actualizacion; END IF;
+                IF con_updated_at THEN ALTER TABLE fuiddatosreal DISABLE TRIGGER fuiddatosreal_updated_at; END IF;
+                UPDATE fuiddatosreal
+                   SET asunto = COALESCE(NULLIF(concat_ws(' ',
+                         NULLIF(NULLIF(asunto_2, ''), 'N/A'),
+                         NULLIF(NULLIF(asunto_3, ''), 'N/A')), ''), 'N/A')
+                 WHERE (asunto_2 = 'N/A' OR asunto_3 = 'N/A')
+                   AND asunto IS DISTINCT FROM COALESCE(NULLIF(concat_ws(' ',
+                         NULLIF(NULLIF(asunto_2, ''), 'N/A'),
+                         NULLIF(NULLIF(asunto_3, ''), 'N/A')), ''), 'N/A');
+                IF con_historial THEN ALTER TABLE fuiddatosreal ENABLE TRIGGER fuid_historial_actualizacion; END IF;
+                IF con_updated_at THEN ALTER TABLE fuiddatosreal ENABLE TRIGGER fuiddatosreal_updated_at; END IF;
+              END IF;
+            END IF;
+          END $$`,
   },
 ];
 
