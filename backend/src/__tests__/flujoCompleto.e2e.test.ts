@@ -1,7 +1,9 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { Server } from 'node:http';
 import bcrypt from 'bcryptjs';
+import ExcelJS from 'exceljs';
 import { baseViva, moduloPgFalso, reiniciarBase } from './apoyo/baseEnMemoria.js';
+import { fechaHoyLocal, fechaLocal } from '../utils/format.js';
 
 /**
  * El flujo completo de una jornada, y sobre todo lo que **no** debe pasar.
@@ -340,5 +342,151 @@ describe('flujo completo: nada se escribe dos veces ni fuera de sitio', () => {
       ),
       'ninguna persona asignada dos veces a la misma caja',
     ).toBe(0);
+  }, 180_000);
+
+  /*
+   * La corrección de días anteriores. La técnica solo toca lo suyo del día;
+   * lo de ayer queda para el líder, salvo que el líder reabra la caja: mientras
+   * siga abierta, ella corrige también lo de días anteriores. Y el permiso se
+   * acaba solo, cuando la caja se cierra al terminar la jornada.
+   */
+  it('la técnica corrige lo de días anteriores solo mientras el líder tenga la caja reabierta', async () => {
+    const lider = sesion();
+    await json(lider, 'POST', '/login', { cc: LIDER.cc, contrasena: LIDER.contrasena });
+    const tec = sesion();
+    await json(tec, 'POST', '/login', { cc: TECNICA.cc, contrasena: TECNICA.contrasena });
+
+    const estadoDe = async (cajaModulo: string) =>
+      (
+        await baseViva().query<{ estado_caja: string; reabierta_por: string | null }>(
+          'SELECT estado_caja, reabierta_por FROM modulos_caja WHERE caja_modulo = $1',
+          [cajaModulo],
+        )
+      ).rows[0];
+    const idDeCaja = (
+      await baseViva().query<{ id: number }>('SELECT id FROM modulos_caja WHERE caja_modulo = $1', [caja(2)])
+    ).rows[0].id;
+    const { cerrarJornadasVencidas } = await import('../services/cicloCaja.service.js');
+    const { queryResult } = await import('../config/db.js');
+    const terminaLaJornada = () =>
+      cerrarJornadasVencidas(async (sql, p) => (await queryResult(sql, p)).affectedRows, fechaHoyLocal());
+
+    // Un registro de ayer en la caja 2, que la técnica tiene asignada.
+    const AYER = fechaLocal(new Date(Date.now() - 24 * 60 * 60 * 1000));
+    await json(tec, 'POST', '/fuiddatosreal', {
+      caja: caja(2),
+      upd: 'UPD8800201',
+      n_orden: 1,
+      fecha_del_dato: AYER,
+      asunto_2: 'HISTORIA CLINICA',
+      asunto_3: 'PACIENTE DE AYER',
+      elaborado_por: `${TECNICA.nombre} (${TECNICA.cc})`,
+      sede: 'BARRANQUILLA',
+      nro_acta_transferible: ACTA,
+    });
+    const { id } = (
+      await baseViva().query<{ id: number }>(`SELECT id FROM fuiddatosreal WHERE upd = 'UPD8800201'`)
+    ).rows[0];
+    // El formulario manda el registro entero: aquí se hace igual, cambiando solo el asunto.
+    const correccion = async (asunto: string) => ({
+      ...(await json<Record<string, unknown>>(tec, 'GET', `/fuiddatosreal/${id}`)),
+      asunto_3: asunto,
+    });
+    const asuntoGuardado = async () =>
+      (await baseViva().query<{ asunto_3: string }>('SELECT asunto_3 FROM fuiddatosreal WHERE id = $1', [id]))
+        .rows[0].asunto_3;
+
+    // Terminada la jornada, la caja queda cerrada y lo de ayer no se toca.
+    await terminaLaJornada();
+    expect(await estadoDe(caja(2))).toMatchObject({ estado_caja: 'FINALIZADO', reabierta_por: null });
+    const cerrada = await tec('PUT', `/fuiddatosreal/${id}`, await correccion('INTENTO CON LA CAJA CERRADA'));
+    expect(cerrada.status, 'con la caja cerrada, lo de ayer no se edita').toBe(403);
+    expect(await asuntoGuardado()).toBe('PACIENTE DE AYER');
+
+    // El líder reabre la caja: queda firmado quién.
+    await json(lider, 'PATCH', `/modulos_caja/${idDeCaja}/cambiarEstado`, { estado_caja: 'EN PROCESO' });
+    expect(await estadoDe(caja(2))).toMatchObject({
+      estado_caja: 'EN PROCESO',
+      reabierta_por: `${LIDER.nombre} (${LIDER.cc})`,
+    });
+
+    // Ahora sí: la técnica corrige su registro de ayer.
+    await json(tec, 'PUT', `/fuiddatosreal/${id}`, await correccion('PACIENTE CORREGIDO'));
+    expect(await asuntoGuardado()).toBe('PACIENTE CORREGIDO');
+
+    // Pero solo lo suyo: otra técnica no toca ese registro aunque la caja esté reabierta.
+    const otra = sesion();
+    await json(otra, 'POST', '/login', { cc: OTRA_TECNICA.cc, contrasena: OTRA_TECNICA.contrasena });
+    const ajeno = await otra('PUT', `/fuiddatosreal/${id}`, await correccion('INTRUSO'));
+    expect(ajeno.status, 'la reapertura no abre los registros de otras personas').toBe(403);
+    expect(await asuntoGuardado()).toBe('PACIENTE CORREGIDO');
+
+    // Al terminar la jornada la reapertura se acaba, y con ella el permiso.
+    await terminaLaJornada();
+    expect(await estadoDe(caja(2))).toMatchObject({ estado_caja: 'FINALIZADO', reabierta_por: null });
+    const otraVez = await tec('PUT', `/fuiddatosreal/${id}`, await correccion('INTENTO TARDIO'));
+    expect(otraVez.status, 'cerrada la caja, vuelve a no poder editar').toBe(403);
+    expect(await asuntoGuardado()).toBe('PACIENTE CORREGIDO');
+
+    // Borrar sigue la misma regla: solo con la caja reabierta por el líder.
+    const borradoCerrada = await tec('DELETE', `/fuiddatosreal/${id}`);
+    expect(borradoCerrada.status, 'con la caja cerrada tampoco se borra').toBe(403);
+    await json(lider, 'PATCH', `/modulos_caja/${idDeCaja}/cambiarEstado`, { estado_caja: 'EN PROCESO' });
+    await json(tec, 'DELETE', `/fuiddatosreal/${id}`);
+    expect(await contar('SELECT COUNT(*) AS n FROM fuiddatosreal WHERE id = $1', [id])).toBe(0);
+    // Y el borrado dejó su copia en el historial, como cualquier otro.
+    expect(await contar('SELECT COUNT(*) AS n FROM historial WHERE id_dato = $1', [id])).toBeGreaterThan(0);
+  }, 180_000);
+
+  /*
+   * El número de orden. Lo asigna el servidor, el siguiente de la caja, y lo
+   * que se muestra y se exporta es el consecutivo 1, 2, 3… sin los huecos que
+   * dejan los registros borrados. Se comprueba en la lista y abriendo el Excel.
+   */
+  it('el número de orden es el consecutivo de la caja, sin huecos, en la lista y en el Excel', async () => {
+    const lider = sesion();
+    await json(lider, 'POST', '/login', { cc: LIDER.cc, contrasena: LIDER.contrasena });
+    const tec = sesion();
+    await json(tec, 'POST', '/login', { cc: TECNICA.cc, contrasena: TECNICA.contrasena });
+
+    type Fila = { id: number; upd: string; n_orden: number | null; n_orden_caja: number };
+    const lista = () => json<Fila[]>(tec, 'GET', `/fuiddatosreal?caja=${caja(1)}`);
+
+    // La caja 1 quedó con seis registros, numerados del 1 al 6 por el servidor.
+    expect((await lista()).map((f) => f.n_orden)).toEqual([1, 2, 3, 4, 5, 6]);
+
+    // Lo que mande el formulario se ignora: el siguiente es el 7, no el 999.
+    await json(tec, 'POST', '/fuiddatosreal', {
+      caja: caja(1),
+      upd: 'UPD8800007',
+      n_orden: 999,
+      fecha_del_dato: DIA,
+      asunto_2: 'HISTORIA CLINICA',
+      asunto_3: 'PACIENTE 7',
+      elaborado_por: `${TECNICA.nombre} (${TECNICA.cc})`,
+      sede: 'BARRANQUILLA',
+      nro_acta_transferible: ACTA,
+    });
+    const conSiete = await lista();
+    expect(conSiete.find((f) => f.upd === 'UPD8800007')?.n_orden, 'el servidor pone el siguiente').toBe(7);
+
+    // El líder borra el tercero: el número guardado deja un hueco, el consecutivo no.
+    const tercero = conSiete.find((f) => f.n_orden === 3)!;
+    await json(lider, 'DELETE', `/fuiddatosreal/${tercero.id}`);
+    const sinHueco = await lista();
+    expect(sinHueco.map((f) => f.n_orden)).toEqual([1, 2, 4, 5, 6, 7]);
+    expect(sinHueco.map((f) => f.n_orden_caja)).toEqual([1, 2, 3, 4, 5, 6]);
+
+    // Y el Excel del inventario trae ese mismo consecutivo en su primera columna.
+    const respuesta = await lider('GET', `/inventario/clientes/${CLIENTE.codigo}/excel`);
+    expect(respuesta.status).toBe(200);
+    const libro = new ExcelJS.Workbook();
+    await libro.xlsx.load(Buffer.from(await respuesta.arrayBuffer()));
+    const hoja = libro.getWorksheet('F-PSD-001')!;
+    const primeraColumna = [8, 9, 10, 11, 12, 13].map((fila) => hoja.getRow(fila).getCell(1).value);
+    expect(primeraColumna, 'N° de orden del 1 al 6, sin el hueco del borrado').toEqual([1, 2, 3, 4, 5, 6]);
+    expect(hoja.getRow(8).getCell(16).value, 'el primero de la caja').toBe('UPD8800001');
+    expect(hoja.getRow(13).getCell(16).value, 'y el último, el séptimo digitado').toBe('UPD8800007');
+    expect(hoja.getRow(14).getCell(1).value, 'no hay más filas').toBeNull();
   }, 180_000);
 });

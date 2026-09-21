@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { CheckCircle2, Pencil, Search, Trash2, X } from 'lucide-react';
+import { CheckCircle2, CheckCircle, Pencil, Search, Trash2, X } from 'lucide-react';
 import { toast } from 'sonner';
 import {
   Badge,
@@ -19,7 +19,7 @@ import {
   updANumero,
   type Column,
 } from '@/components/ui';
-import { fuidApi, getApiErrorCode, getApiErrorMessage, modulosCajaApi } from '@/lib/api';
+import { fuidApi, getApiErrorCode, getApiErrorMessage, modulosCajaApi, modulosClienteApi } from '@/lib/api';
 import { cn } from '@/lib/cn';
 import { toastApiError } from '@/lib/feedback';
 import { invalidateDomain } from '@/lib/queryInvalidation';
@@ -1040,6 +1040,13 @@ export default function DatosPage() {
     enabled: Boolean(cajaId),
   });
 
+  // Acta (módulo cliente) de la caja, para obtener el número y año de creación
+  const actaQuery = useQuery({
+    queryKey: ['modulos-cliente', 'detalle', cajaQuery.data?.id_modulo_caja],
+    queryFn: () => modulosClienteApi.get(String(cajaQuery.data?.id_modulo_caja)).then((res) => res.data),
+    enabled: Boolean(cajaQuery.data?.id_modulo_caja),
+  });
+
   /*
    * El número de caja sale de la caja, y de ningún otro sitio.
    *
@@ -1184,10 +1191,11 @@ export default function DatosPage() {
         registros: registros.length,
         desde: fechas.length > 0 ? fechas.reduce((a, b) => (a < b ? a : b)) : null,
         fechaFinalizacion: cajaQuery.data?.fecha_finalizacion,
+        reabiertaPor: cajaQuery.data?.reabierta_por,
       },
       fechaHoyLocal(),
     );
-  }, [cajaQuery.data?.estado_caja, cajaQuery.data?.fecha_finalizacion, registros]);
+  }, [cajaQuery.data?.estado_caja, cajaQuery.data?.fecha_finalizacion, cajaQuery.data?.reabierta_por, registros]);
 
   const defaultNOrden = useMemo(() => {
     if (registros.length === 0) return 1;
@@ -1321,6 +1329,19 @@ export default function DatosPage() {
     },
   });
 
+  /** Finalizar caja en proceso (solo para técnica asignada). */
+  const finalizarCajaMutation = useMutation({
+    mutationFn: (id: string | number) => modulosCajaApi.cambiarEstado(id, 'FINALIZADO'),
+    onSuccess: (res) => {
+      toast.success(res.data?.message || 'Caja finalizada');
+      void invalidateDomain(queryClient, 'modulos-caja');
+      void invalidateDomain(queryClient, 'fuiddatosreal');
+    },
+    onError: (error) => {
+      toastApiError(error, { context: 'No se pudo finalizar la caja:' });
+    },
+  });
+
   const marcarOkMutation = useMutation({
     mutationFn: (ids: number[]) => fuidApi.marcarOk(ids),
     onSuccess: () => {
@@ -1446,10 +1467,10 @@ export default function DatosPage() {
               type="checkbox"
               checked={selectedIds.has(registro.id)}
               onChange={() => toggleRow(registro.id)}
-              aria-label={`Seleccionar registro ${registro.n_orden ?? registro.id}`}
+              aria-label={`Seleccionar registro ${registro.n_orden_caja ?? registro.n_orden ?? registro.id}`}
             />
           )}
-          {registro.n_orden ?? '—'}
+          {registro.n_orden_caja ?? registro.n_orden ?? '—'}
         </span>
       ),
     },
@@ -1483,6 +1504,17 @@ export default function DatosPage() {
     campo('frecuencia', 'Frecuencia', { ancho: 'max-w-[8rem]' }),
     campo('notas', 'Notas', { ancho: 'max-w-[18rem]' }),
     campo('elaborado_por', 'Digitado por', { ancho: 'max-w-[14rem]' }),
+    // No. ACTA DE TRANSFERENCIA: formato ACTA {numero}_{añoCreacionActa}
+    {
+      key: 'acta_transferencia',
+      header: 'No. ACTA DE TRANSFERENCIA',
+      render: () => {
+        const numero = actaQuery.data?.acta_transferencia_modulo ?? '';
+        const año = actaQuery.data?.created_at ? new Date(actaQuery.data.created_at).getFullYear() : '';
+        if (!numero) return <span className="text-silver-300">—</span>;
+        return <span className="font-mono text-silver-800">{año ? `ACTA ${numero}_${año}` : `ACTA ${numero}`}</span>;
+      },
+    },
     {
       key: 'created_at',
       header: 'Creado',
@@ -1560,6 +1592,19 @@ export default function DatosPage() {
               lo que la declaración cambia.
             */}
             {cajaQuery.data?.id && <CierreDeJornada cajaId={cajaQuery.data.id} />}
+            {/* Finalizar caja: solo para técnica asignada, cuando está EN PROCESO */}
+            {esTecnica &&
+              cajaQuery.data?.estado_caja === 'EN PROCESO' &&
+              cajaQuery.data?.id && (
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => finalizarCajaMutation.mutate(cajaQuery.data!.id)}
+                  loading={finalizarCajaMutation.isPending && finalizarCajaMutation.variables === cajaQuery.data!.id}
+                >
+                  <CheckCircle className="size-4" /> Finalizar caja
+                </Button>
+              )}
           </div>
         }
       />

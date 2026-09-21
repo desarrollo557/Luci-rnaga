@@ -48,7 +48,8 @@ const FUID_PAGE_SIZE = 50;
 
 /** Encabezado oficial del FUID (fila 8 del Excel) en el orden exacto: [header, campo BD]. */
 const FUID_COLUMNS: ReadonlyArray<readonly [string, keyof FuidConEstado]> = [
-  ['N° Orden', 'n_orden'],
+  // El consecutivo dentro de la caja, que es lo que sale en el Excel.
+  ['N° Orden', 'n_orden_caja'],
   ['CÓDIGO', 'codigo'],
   ['ENTIDAD REMITENTE', 'entidad_remitente'],
   ['ENTIDAD PRODUCTORA', 'entidad_productora'],

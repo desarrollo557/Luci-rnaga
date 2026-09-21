@@ -117,8 +117,18 @@ export async function abrirPlantillaFuid(): Promise<{
  * Se transforma aquí, al escribir, y no en la base: cambiar lo guardado dejaría
  * a los informes de producción sin con qué cruzar al digitador.
  */
-const AL_ESCRIBIR: Readonly<Record<string, (valor: unknown) => unknown>> = {
-  elaborado_por: soloNombre,
+const AL_ESCRIBIR: Readonly<Record<string, (valor: unknown, registro: Record<string, unknown>) => unknown>> = {
+  // El "N° de orden" del formato es el consecutivo dentro de la caja, sin los
+  // huecos de los registros borrados; el número guardado solo ordena.
+  n_orden: (valor, registro) => registro.n_orden_caja ?? valor,
+  elaborado_por: (v) => soloNombre(v),
+  nro_acta_transferible: (valor, registro) => {
+    const numero = String(valor ?? '').trim();
+    if (!numero) return '';
+    const actaCreada = registro.acta_created_at;
+    const año = actaCreada ? new Date(actaCreada as string).getFullYear() : '';
+    return año ? `ACTA ${numero}_${año}` : `ACTA ${numero}`;
+  },
 };
 
 /**
@@ -145,7 +155,7 @@ export function escribirFilasFuid<T extends object>(
       const celda = fila.getCell(columna + 1);
       celda.style = { ...modelo[columna] };
       const guardado = (registro as Record<string, unknown>)[campo];
-      const valor = AL_ESCRIBIR[campo] ? AL_ESCRIBIR[campo](guardado) : guardado;
+      const valor = AL_ESCRIBIR[campo] ? AL_ESCRIBIR[campo](guardado, registro as Record<string, unknown>) : guardado;
       if (COLUMNAS_FECHA.has(campo)) {
         const fecha = comoFecha(valor);
         if (fecha) {

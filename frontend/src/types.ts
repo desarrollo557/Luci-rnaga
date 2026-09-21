@@ -69,6 +69,9 @@ export interface ModuloCaja {
   estado_caja: string;
   /** Jornada a la que se atribuyó la caja terminada; la pone el servidor. */
   fecha_finalizacion?: string | null;
+  /** Quién reabrió la caja a mano y qué día; mientras dure, la técnica corrige sus registros anteriores. */
+  reabierta_por?: string | null;
+  reabierta_el?: string | null;
   upd_inicio?: string | null;
   total_fuids?: number;
   /** Nombres separados por coma; solo llegan en el listado para líder/admin. */
@@ -82,6 +85,8 @@ export interface FuidDato {
   id: number;
   fecha_del_dato: string | null;
   n_orden: number | null;
+  /** Consecutivo dentro de la caja, calculado en la consulta: es el "N° de orden" que se muestra. */
+  n_orden_caja?: number;
   codigo: string | null;
   entidad_remitente: string | null;
   entidad_productora: string | null;

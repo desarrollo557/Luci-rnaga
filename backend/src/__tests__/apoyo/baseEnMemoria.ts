@@ -41,6 +41,10 @@ export async function reiniciarBase(): Promise<PGlite> {
   for (const archivo of ['01-esquema.sql', '02-triggers.sql', '06-ciclo-caja.sql']) {
     await base.exec(fs.readFileSync(path.join(SQL_BASE, archivo), 'utf8'));
   }
+  // Y los ajustes que el servidor aplica al arrancar, porque la aplicación los
+  // da por hechos: sin ellos faltarían columnas que el código ya lee.
+  const { AJUSTES } = await import('../../config/esquema.js');
+  for (const ajuste of AJUSTES) await base.exec(ajuste.sql);
   return base;
 }
 

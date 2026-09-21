@@ -1,5 +1,6 @@
 import { queryOne } from '../config/db.js';
 import { fechaHoyLocal } from '../utils/format.js';
+import { proximaCitaEnColombia, yaPasoLaHoraEnColombia } from '../utils/citaDiaria.js';
 import {
   USUARIO_ACTUALIZACION_AUTOMATICA,
   recalcularTodosLosInventarios,
@@ -31,34 +32,22 @@ import {
 const HORA = 16;
 const MINUTO = 15;
 
-/** Colombia es UTC-5 todo el año: no tiene horario de verano. */
-const DESFASE_COLOMBIA_MS = 5 * 60 * 60 * 1000;
-
 let temporizador: NodeJS.Timeout | null = null;
 let ejecutando = false;
 
 /**
  * Próxima vez que toca, como instante real.
  *
- * Se calcula restando el desfase y usando los métodos UTC: sobre esa fecha
- * desplazada, "las 16:15 UTC" son las 16:15 de Colombia. Es la forma de no
- * depender de la zona horaria en la que corra el servidor, que en Render es UTC.
+ * El cálculo en hora de Colombia vive en `utils/citaDiaria.ts`, compartido con
+ * el cierre de jornada de las cajas, que tiene su propia hora.
  */
 export function proximaCita(desde: Date = new Date()): Date {
-  const enColombia = new Date(desde.getTime() - DESFASE_COLOMBIA_MS);
-  const cita = new Date(enColombia);
-  cita.setUTCHours(HORA, MINUTO, 0, 0);
-  if (cita.getTime() <= enColombia.getTime()) {
-    cita.setUTCDate(cita.getUTCDate() + 1);
-  }
-  return new Date(cita.getTime() + DESFASE_COLOMBIA_MS);
+  return proximaCitaEnColombia(HORA, MINUTO, desde);
 }
 
 /** Si en Colombia ya pasó la hora de hoy. */
 export function yaPasoLaHoraDeHoy(ahora: Date = new Date()): boolean {
-  const enColombia = new Date(ahora.getTime() - DESFASE_COLOMBIA_MS);
-  const minutosAhora = enColombia.getUTCHours() * 60 + enColombia.getUTCMinutes();
-  return minutosAhora >= HORA * 60 + MINUTO;
+  return yaPasoLaHoraEnColombia(HORA, MINUTO, ahora);
 }
 
 /** Si la actualización automática de hoy ya se hizo. */

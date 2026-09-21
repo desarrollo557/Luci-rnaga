@@ -121,11 +121,13 @@ Variables que hay que cargar a mano en el panel (las demás van en el archivo):
 mismo dominio. Solo hacen falta si algún día el frontend se sirve aparte.
 
 El plan configurado es el gratuito: el servicio **se duerme tras 15 minutos sin
-tráfico** y la primera petición después tarda cerca de un minuto. Tiene dos
+tráfico** y la primera petición después tarda cerca de un minuto. Tiene tres
 consecuencias que el código ya contempla: las pantallas consultan cada 15
-segundos en vez de mantener una conexión abierta, y la actualización diaria de
+segundos en vez de mantener una conexión abierta; la actualización diaria de
 los inventarios de las 4:15 p. m. se ejecuta al despertar si el servicio estaba
-dormido a esa hora. Cuando el sistema entre en uso real conviene pasar al plan
+dormido a esa hora; y el cierre de las cajas de la jornada anterior, previsto
+para las 12:05 a. m., se hace también en cada arranque, antes de atender la
+primera petición. Cuando el sistema entre en uso real conviene pasar al plan
 `starter`, que no se duerme; es cambiar una palabra en `render.yaml`.
 
 ---
@@ -143,16 +145,24 @@ que se aplicaron. Todos son idempotentes: se pueden repetir sin romper nada.
 | `04-sin-calidad.sql` | Retira las tablas del perfil CALIDAD y lista las cuentas que aún lo tienen. | Ya aplicado. |
 | `05-rol-secundario.sql` | La columna `users.rol_secundario` y su restricción. | El servidor la asegura al arrancar; el script queda como referencia. |
 | `06-ciclo-caja.sql` | `modulos_caja.fecha_finalizacion`, `finalizada_por`, el índice sobre `fuiddatosreal(caja)` y el relleno de las cajas ya finalizadas. | Igual: el servidor lo asegura al arrancar. |
+| `07-reapertura-caja.sql` | `modulos_caja.reabierta_por` y `reabierta_el`: quién reabrió la caja a mano y qué día, que es lo que deja a la técnica corregir sus registros de días anteriores mientras la caja siga abierta. | Igual: el servidor lo asegura al arrancar. |
+| `08-asunto-sin-marcador.sql` | El trigger del asunto deja fuera el marcador `N/A` al unir los dos asuntos, y los asuntos ya guardados con el marcador pegado se recomponen una sola vez. | Igual: el servidor lo asegura al arrancar. |
 
 ### Lo que el servidor asegura al arrancar
 
 Los cambios de esquema **aditivos** —una columna, un índice, una restricción—
 los aplica el propio servidor antes de atender la primera petición
-(`backend/src/config/esquema.ts`). Hoy son seis: `users.rol_secundario` y su
-CHECK, `modulos_caja.fecha_finalizacion` y `finalizada_por`, el índice
-`idx_fuiddatosreal_caja` y el relleno de la jornada de cierre de las cajas que
-ya estaban finalizadas cuando esas columnas no existían. Este último es el único
-que escribe datos, y solo toca la columna nueva de filas que la tienen vacía.
+(`backend/src/config/esquema.ts`). La lista completa es el arreglo `AJUSTES` de
+ese archivo; hoy cubre el segundo perfil de las cuentas, las columnas del ciclo
+de la caja (`fecha_finalizacion`, `finalizada_por`, `reabierta_por`,
+`reabierta_el`), las marcas de actividad y escritura de `users`, la tabla
+`jornada_caja`, el índice único del código de cliente por sede, el relleno de
+la jornada de cierre de las cajas que ya estaban finalizadas cuando esas
+columnas no existían, y la definición del trigger que compone el asunto sin el
+marcador `N/A` junto con la recomposición de los asuntos que ya lo traían
+pegado. Solo esos dos últimos escriben datos, y siempre datos derivados: la
+columna nueva de filas que la tienen vacía, y el asunto, que se vuelve a armar
+a partir de sus dos campos de origen sin tocar lo que escribió nadie.
 
 Esto existe por un incidente: se desplegó una versión que leía una columna nueva
 antes de que nadie ejecutara su migración, y la pantalla de Administración se
