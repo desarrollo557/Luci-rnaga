@@ -9,8 +9,9 @@ MySQL y se conservan como referencia.
 Scripts numerados en el orden en que se aplicaron, todos idempotentes. Qué hace
 cada uno y cuándo se aplica está en [`docs/ENTORNOS.md`](../docs/ENTORNOS.md),
 en la sección "La base de datos en Supabase". En resumen: `01` y `02` crean el
-esquema y los triggers; `03` y `04` fueron correcciones de una sola vez; `05` y
-`06` los aplica el propio servidor al arrancar y quedan aquí como referencia.
+esquema y los triggers; `03` y `04` fueron correcciones de una sola vez; del
+`05` al `08` los aplica el propio servidor al arrancar y quedan aquí como
+referencia.
 
 Para aplicar uno a mano hay dos caminos: pegarlo en el editor SQL de Supabase,
 o desde `backend/` con la conexión del `.env`:

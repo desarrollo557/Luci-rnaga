@@ -15,11 +15,13 @@ import { useAuthStore } from '@/stores/authStore';
 /**
  * Cerrar la jornada desde dentro de la caja: la terminé, o la sigo mañana.
  *
- * El estado de la caja se sigue deduciendo solo de la digitación, y quien no
- * pulse nada no pierde nada. Esto añade lo que la deducción no puede saber:
- * **la intención de quien está dentro**. Desde fuera, una caja sin registros
- * nuevos puede ser una caja terminada, una jornada que se acabó a las cinco o
- * alguien que se fue a otra sede; las tres se ven exactamente igual.
+ * El estado de la caja se sigue deduciendo solo de la digitación: quien no
+ * pulse nada deja la caja terminada, porque al cambiar de jornada se cierra
+ * sola. Esto añade lo que la deducción no puede saber: **la intención de quien
+ * está dentro**. Desde fuera, una caja sin registros nuevos puede ser una caja
+ * terminada o una que quedó a medias para mañana, y las dos se ven igual; "la
+ * continúo otro día" es lo único que la mantiene abierta para la jornada
+ * siguiente.
  *
  * Y sobre todo cierra el día. Antes, quien dejaba una caja a medias y la
  * retomaba a la mañana siguiente no tenía dónde quedara constancia de la

@@ -54,7 +54,7 @@ describe('qué se ejecuta al arrancar', () => {
 });
 
 describe('los ajustes son seguros de repetir en cada arranque', () => {
-  it('ninguno borra ni transforma datos', async () => {
+  it('ninguno borra datos', async () => {
     await asegurarEsquema();
     for (const sql of consultasEjecutadas) {
       const normalizado = sql.toUpperCase();
@@ -62,7 +62,22 @@ describe('los ajustes son seguros de repetir en cada arranque', () => {
       expect(normalizado, sql).not.toMatch(/\bDROP\s+COLUMN\b/);
       expect(normalizado, sql).not.toMatch(/\bDELETE\s+FROM\b/);
       expect(normalizado, sql).not.toMatch(/\bTRUNCATE\b/);
-      expect(normalizado, sql).not.toMatch(/\bUPDATE\s+\w+\s+SET\b/);
+    }
+  });
+
+  /*
+   * Escribir datos se permite en dos casos: rellenar una columna recién creada y
+   * recomponer una columna derivada. Los dos tienen que ir dentro de un bloque
+   * `DO` protegido por un `IF EXISTS`, que es lo que hace que la segunda vez no
+   * toquen nada. Un `UPDATE` suelto se ejecutaría en cada arranque.
+   */
+  it('un UPDATE solo cabe dentro de un bloque protegido, nunca suelto', async () => {
+    await asegurarEsquema();
+    for (const sql of consultasEjecutadas) {
+      const normalizado = sql.toUpperCase();
+      if (!/\bUPDATE\s+\w+(\s+\w+)?\s+SET\b/.test(normalizado)) continue;
+      expect(normalizado, sql).toMatch(/\bDO\s+\$/);
+      expect(normalizado, sql).toMatch(/\bIF\s+EXISTS\s*\(/);
     }
   });
 

@@ -8,6 +8,7 @@ import { audit } from '../services/audit.service.js';
 import { fueraDeSuSede, sedeDeActa, sedeDeCaja, tieneCajaAsignada } from '../services/jerarquia.service.js';
 import { cambiarEstadoCaja } from '../services/cicloCaja.service.js';
 import { fechaHoyLocal } from '../utils/format.js';
+import { tieneAlgunRol } from '../utils/roles.js';
 
 export async function listModulosCaja(req: Request, res: Response): Promise<void> {
   const user = req.session.user;
@@ -26,23 +27,22 @@ export async function listModulosCaja(req: Request, res: Response): Promise<void
   let sql = '';
   const params: unknown[] = [idModuloCaja];
 
-  if (user.rol === 'LIDER' || user.rol === 'ADMIN') {
+if (user.rol === 'LIDER' || user.rol === 'ADMIN') {
     // Incluye los nombres de los usuarios asignados a cada caja para mostrarlos en la lista.
     sql = `SELECT mc.*, (SELECT COUNT(*) FROM fuiddatosreal f WHERE f.caja = mc.caja_modulo) AS total_fuids,
       (SELECT string_agg(u.nombre, ', ' ORDER BY u.nombre)
          FROM asignacion_caja_tecnica a JOIN users u ON u.id = a.usuario_id
          WHERE a.modulo_id = mc.id) AS tecnicos_asignados
-      FROM modulos_caja mc
-      WHERE mc.id_modulo_caja = ?`;
+       FROM modulos_caja mc
+       WHERE mc.id_modulo_caja = ?
+       ORDER BY substring(mc.caja_modulo from 'C([0-9]{6})$')::int ASC`;
   } else if (user.rol === 'TECNICA') {
     sql = `SELECT mc.*, (SELECT COUNT(*) FROM fuiddatosreal f WHERE f.caja = mc.caja_modulo) AS total_fuids
       FROM modulos_caja mc
       JOIN asignacion_caja_tecnica act ON mc.id = act.modulo_id
-      WHERE act.usuario_id = ? AND mc.id_modulo_caja = ?`;
+      WHERE act.usuario_id = ? AND mc.id_modulo_caja = ?
+      ORDER BY substring(mc.caja_modulo from 'C([0-9]{6})$')::int ASC`;
     params.unshift(user.id);
-  } else {
-    res.status(403).json({ message: 'No tienes permiso para acceder a estos datos' });
-    return;
   }
 
   const results = await query<ModuloCaja>(sql, params);
@@ -146,11 +146,13 @@ export const JORNADA_CONTINUA = 'CONTINUA';
 /**
  * Cierre de jornada: "esta caja la terminé" o "la sigo mañana".
  *
- * El estado de las cajas se deduce de la digitación y eso no cambia: quien no
- * declare nada no pierde nada, su caja se sigue abriendo y cerrando sola. Lo
- * que la deducción no puede saber es la **intención** de quien está dentro. Un
- * día sin más registros puede ser una caja terminada, una jornada que se acabó
- * a las cinco, o alguien que se fue a otra sede; desde fuera se ven iguales.
+ * El estado de las cajas se deduce de la digitación y eso no cambia. Quien no
+ * declara nada deja la caja terminada: al cambiar de jornada se cierra sola,
+ * atribuida al día de su último registro (`cerrarJornadasVencidas`). Lo que la
+ * deducción no puede saber es la **intención** de quien está dentro: si la
+ * caja quedó a medias para seguirla otro día. Desde fuera, un día sin más
+ * registros se ve igual en los dos casos, así que "la continúo otro día" es lo
+ * único que mantiene la caja abierta para la jornada siguiente.
  *
  * Por eso esta declaración se guarda aparte y no se calcula: es el único dato
  * de la jornada que solo tiene la persona. Con ella, el trabajo de un día queda
@@ -864,7 +866,38 @@ export async function changeEstadoCaja(req: Request, res: Response): Promise<voi
   }
 
   const user = req.session.user;
-  if (!user || !(await tieneCajaAsignada(user, id))) {
+  if (!user) {
+    res.status(403).json({ message: 'Acceso denegado' });
+    return;
+  }
+  if (estado_caja !== 'EN PROCESO' && estado_caja !== 'FINALIZADO') {
+    res.status(400).json({ message: 'El estado debe ser EN PROCESO o FINALIZADO' });
+    return;
+  }
+
+  const caja = await queryOne<{ caja_modulo: string }>(
+    'SELECT caja_modulo FROM modulos_caja WHERE id = ?',
+    [id],
+  );
+  if (!caja) {
+    res.status(404).json({ message: 'Módulo de caja no encontrado' });
+    return;
+  }
+
+  /*
+   * La técnica corrige el estado de sus cajas; el líder, el de las cajas de su
+   * sede; el administrador, cualquiera. La técnica ya podía; al líder se le
+   * abre porque la reapertura es suya: es la forma de autorizar a la técnica a
+   * corregir lo de días anteriores.
+   */
+  const gestiona = tieneAlgunRol(user, ['LIDER', 'ADMIN']);
+  if (gestiona) {
+    const ubicacion = await sedeDeCaja(id);
+    if (fueraDeSuSede(user, ubicacion.sede)) {
+      res.status(403).json({ message: 'Solo puede cambiar el estado de las cajas de su sede' });
+      return;
+    }
+  } else if (!(await tieneCajaAsignada(user, id))) {
     res.status(403).json({ message: 'Solo puede cambiar el estado de las cajas que tiene asignadas' });
     return;
   }
@@ -875,9 +908,37 @@ export async function changeEstadoCaja(req: Request, res: Response): Promise<voi
    * persona salen del último registro de la caja, no de quien pulsa ni del día
    * en que pulsa, para que el seguimiento atribuya la caja al día en que se
    * trabajó de verdad.
+   *
+   * Si quien reabre es el líder o el administrador, la reapertura queda firmada
+   * y la técnica puede corregir sus registros de días anteriores en esa caja
+   * mientras siga abierta. Se cierra sola al terminar la jornada, como todas.
    */
-  await cambiarEstadoCaja(async (sql, params) => (await queryResult(sql, params)).affectedRows, id, estado_caja);
-  res.json({ message: `Estado cambiado a ${estado_caja} correctamente` });
+  const reapertura =
+    gestiona && estado_caja === 'EN PROCESO'
+      ? { por: `${user.nombre.toUpperCase()} (${user.cc})`, el: fechaHoyLocal() }
+      : undefined;
+  await cambiarEstadoCaja(
+    async (sql, params) => (await queryResult(sql, params)).affectedRows,
+    id,
+    estado_caja,
+    reapertura,
+  );
+
+  void audit({
+    entidad: 'modulos_caja',
+    entidadId: id,
+    accion: 'CAMBIAR_ESTADO',
+    detalle: reapertura
+      ? `Caja ${caja.caja_modulo} reabierta para corregir registros`
+      : `Caja ${caja.caja_modulo}: estado cambiado a ${estado_caja} a mano`,
+    usuario: user,
+  });
+
+  res.json({
+    message: reapertura
+      ? 'Caja reabierta: la técnica puede corregir sus registros mientras siga abierta'
+      : `Estado cambiado a ${estado_caja} correctamente`,
+  });
 }
 
 export async function countFuidByCaja(req: Request, res: Response): Promise<void> {

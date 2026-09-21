@@ -1,7 +1,7 @@
 import { useMemo, useState, type FormEvent } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ClipboardList, FileText, Pencil, Plus, Search, Trash2, Users } from 'lucide-react';
+import { ClipboardList, FileText, LockOpen, Pencil, Plus, Search, Trash2, Users } from 'lucide-react';
 import { toast } from 'sonner';
 import { exportExcel } from '@/lib/utils';
 import {
@@ -125,9 +125,16 @@ function ListaUsuariosAsignables({
   );
 }
 
-function EstadoBadge({ estado }: { estado: string }) {
+function EstadoBadge({ caja }: { caja: ModuloCaja }) {
+  const estado = caja.estado_caja;
   const color = estado === 'FINALIZADO' ? 'green' : estado === 'EN PROCESO' ? 'amber' : 'gray';
-  return <Badge color={color}>{estado || '—'}</Badge>;
+  return (
+    <span className="inline-flex flex-wrap items-center gap-1">
+      <Badge color={color}>{estado || '—'}</Badge>
+      {/* Reabierta a mano por el líder: mientras dure, la técnica corrige lo de días anteriores. */}
+      {estado === 'EN PROCESO' && caja.reabierta_por && <Badge color="amber">Reabierta</Badge>}
+    </span>
+  );
 }
 
 export default function ActasPage() {
@@ -192,7 +199,7 @@ export default function ActasPage() {
   const cajasData = cajasQuery.data ?? [];
   const loadingCajas = cajasQuery.isLoading;
   const terminoCajas = filtroCajas.trim().toLowerCase();
-  const cajasFiltradas = terminoCajas
+  const cajasFiltradasBase = terminoCajas
     ? cajasData.filter((caja) =>
       [
         caja.caja_modulo,
@@ -204,6 +211,15 @@ export default function ActasPage() {
       ].some((campo) => String(campo ?? '').toLowerCase().includes(terminoCajas)),
     )
     : cajasData;
+
+  // Ordenar por número de caja (últimos 6 dígitos de caja_modulo) de menor a mayor
+  const cajasFiltradas = useMemo(() => {
+    return [...cajasFiltradasBase].sort((a, b) => {
+      const numA = parseInt(a.caja_modulo.slice(-6), 10) || 0;
+      const numB = parseInt(b.caja_modulo.slice(-6), 10) || 0;
+      return numA - numB;
+    });
+  }, [cajasFiltradasBase]);
 
   const moduloQuery = useQuery({
     queryKey: ['modulos-cliente', 'get', id],
@@ -273,6 +289,22 @@ export default function ActasPage() {
       setModalOpen(false);
       void invalidateDomain(queryClient, 'modulos-caja');
       void invalidateDomain(queryClient, 'users');
+    },
+    onError: (error) => {
+      toast.error(getApiErrorMessage(error));
+    },
+  });
+
+  /*
+   * Reabrir una caja terminada. Es del líder: además de abrirla, autoriza a la
+   * técnica a corregir sus registros de días anteriores mientras siga abierta.
+   * Se cierra sola al terminar la jornada, como cualquier otra.
+   */
+  const reabrirMutation = useMutation({
+    mutationFn: (cajaId: number) => modulosCajaApi.cambiarEstado(cajaId, 'EN PROCESO'),
+    onSuccess: (res) => {
+      toast.success(res.data?.message || 'Caja reabierta');
+      void invalidateDomain(queryClient, 'modulos-caja');
     },
     onError: (error) => {
       toast.error(getApiErrorMessage(error));
@@ -604,7 +636,7 @@ export default function ActasPage() {
     {
       key: 'estado_caja',
       header: 'Estado',
-      render: (caja: ModuloCaja) => <EstadoBadge estado={caja.estado_caja} />,
+      render: (caja: ModuloCaja) => <EstadoBadge caja={caja} />,
     },
     ...(isManager
       ? [
@@ -654,15 +686,28 @@ export default function ActasPage() {
               <ClipboardList className="size-4" /> Ir a Digitación
             </Button>
           </Link>
-          {isManager && (
+          {isManager ? (
             <>
               <Button variant="secondary" size="sm" onClick={() => handleEditarCaja(caja)}>
                 <Pencil className="size-4" /> Editar
               </Button>
+              {caja.estado_caja === 'FINALIZADO' && (
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => reabrirMutation.mutate(caja.id)}
+                  loading={reabrirMutation.isPending && reabrirMutation.variables === caja.id}
+                >
+                  <LockOpen className="size-4" /> Reabrir
+                </Button>
+              )}
               <Button variant="danger" size="sm" onClick={() => setDeleteTarget(caja)}>
                 <Trash2 className="size-4" /> Eliminar
               </Button>
             </>
+          ) : (
+            // Técnica: solo Ir a Digitación (finalizar está dentro de la caja)
+            null
           )}
         </div>
       ),

@@ -21,7 +21,9 @@
 -- El estado lo mantiene el servidor solo, al guardar cada registro; la lógica
 -- está en `backend/src/services/cicloCaja.service.ts`. Nadie tiene que marcar
 -- nada a mano: este es un software operativo y un botón que hay que acordarse
--- de pulsar acaba sin pulsarse, y entonces el informe miente.
+-- de pulsar acaba sin pulsarse, y entonces el informe miente. Al terminar la
+-- jornada, la caja que quedó abierta se cierra sola, atribuida a ese día, salvo
+-- que alguien la haya marcado en `jornada_caja` como "la continúo otro día".
 --
 -- El índice sobre `fuiddatosreal(caja)` no es opcional: el cierre mira el
 -- último registro de cada caja abierta cada vez que alguien digita, y sin él

@@ -184,7 +184,9 @@ export async function buildZohoSheetFromFuid<T extends object>(
   const records = filas.map((fila) => {
     const obj: Record<string, unknown> = {};
     for (const [header, campo] of FUID_COLUMNS) {
-      const valor = (fila as Record<string, unknown>)[campo];
+      const registro = fila as Record<string, unknown>;
+      // El "N° de orden" es el consecutivo de la caja, igual que en el Excel.
+      const valor = campo === 'n_orden' ? (registro.n_orden_caja ?? registro.n_orden) : registro[campo];
       obj[header] = valor == null ? '' : valor;
     }
     return obj;

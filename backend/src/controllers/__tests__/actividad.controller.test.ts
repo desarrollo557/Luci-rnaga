@@ -69,6 +69,13 @@ async function consultar(filtros: Record<string, string> = {}): Promise<Persona[
 const quien = (personas: Persona[], nombre: string) => personas.find((p) => p.nombre === nombre);
 
 beforeAll(async () => {
+  // La consulta sin filtros mira la jornada de "hoy" en hora de Colombia, y los
+  // datos de esta prueba son todos del 18 de septiembre de 2026. Si el reloj
+  // fuera el real, la prueba pasaría solo ese día y fallaría al siguiente, que
+  // es lo que ocurrió en la integración continua. Se simula únicamente `Date`,
+  // no los temporizadores, porque PGlite los necesita de verdad.
+  vi.useFakeTimers({ toFake: ['Date'], now: new Date(`${AHORA.replace(' ', 'T')}-05:00`) });
+
   // Una sola base para todo el archivo: levantar PostgreSQL cuesta un segundo, y
   // hacerlo once veces se nota cuando la suite entera corre en paralelo.
   db = new PGlite();
@@ -99,6 +106,7 @@ beforeEach(async () => {
 });
 
 afterAll(async () => {
+  vi.useRealTimers();
   await db?.close();
 });
 

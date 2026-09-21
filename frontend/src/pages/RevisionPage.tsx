@@ -50,7 +50,7 @@ function FuidFields({ registro }: { registro: FuidDato }) {
     <>
       <Seccion title="Identificación">
         <FieldValue label="Fecha del Dato" value={registro.fecha_del_dato?.slice(0, 10)} />
-        <FieldValue label="N° Orden" value={registro.n_orden} />
+        <FieldValue label="N° Orden" value={registro.n_orden_caja ?? registro.n_orden} />
         <FieldValue label="Código" value={registro.codigo} />
         <FieldValue label="Entidad Remitente" value={registro.entidad_remitente} />
         <FieldValue label="Entidad Productora" value={registro.entidad_productora} />
@@ -360,7 +360,7 @@ export default function RevisionPage() {
   };
 
   const columns: Column<FuidDato>[] = [
-    { key: 'n_orden', header: 'N°', render: (registro: FuidDato) => registro.n_orden ?? '—' },
+    { key: 'n_orden', header: 'N°', render: (registro: FuidDato) => registro.n_orden_caja ?? registro.n_orden ?? '—' },
     { key: 'upd', header: 'UPD' },
     { key: 'codigo', header: 'Código' },
     { key: 'entidad_remitente', header: 'Entidad Remitente' },
@@ -416,7 +416,7 @@ export default function RevisionPage() {
           type="checkbox"
           checked={selectedIds.has(registro.id)}
           onChange={() => toggleRow(registro.id)}
-          aria-label={`Seleccionar registro ${registro.n_orden ?? registro.id}`}
+          aria-label={`Seleccionar registro ${registro.n_orden_caja ?? registro.n_orden ?? registro.id}`}
         />
       ),
     });

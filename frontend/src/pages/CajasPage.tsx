@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ClipboardList, Eye, FileText, PencilLine, Users, Wrench, User } from 'lucide-react';
+import { ClipboardList, Eye, FileText, LockOpen, PencilLine, Users, Wrench, User } from 'lucide-react';
 import { toast } from 'sonner';
 import { Badge, Button, Card, LoadingState, Modal, PageHeader } from '@/components/ui';
 import {
@@ -201,10 +201,11 @@ export default function CajasPage() {
 
   const cambiarEstadoMutation = useMutation({
     mutationFn: (estado: string) => modulosCajaApi.cambiarEstado(mid as string, estado),
-    onSuccess: () => {
-      toast.success('Estado de la caja actualizado');
+    onSuccess: (res) => {
+      toast.success(res.data?.message || 'Estado de la caja actualizado');
       void invalidateDomain(queryClient, 'modulos-caja');
     },
+    onError: (error) => toast.error(getApiErrorMessage(error)),
   });
 
   const caja = cajaQuery.data;
@@ -228,6 +229,11 @@ export default function CajasPage() {
           caja && (
             <>
               <Badge color={estadoColor}>{estado || '—'}</Badge>
+              {estado === 'EN PROCESO' && caja.reabierta_por && (
+                <Badge color="amber">
+                  Reabierta por {caja.reabierta_por.replace(/\s*\([^)]*\)\s*$/, '')}
+                </Badge>
+              )}
               {tieneRol(user, 'TECNICA') && (
                 <>
                   <Button
@@ -251,6 +257,27 @@ export default function CajasPage() {
               )}
               {isManager && (
                 <>
+                  {/*
+                    Reabrir es del líder: es lo que autoriza a la técnica a
+                    corregir sus registros de días anteriores mientras la caja
+                    siga abierta. Dar por terminada es lo contrario, para cuando
+                    la deducción no cubrió un caso.
+                  */}
+                  <Button
+                    variant="secondary"
+                    onClick={handleCambiarEstado}
+                    loading={cambiarEstadoMutation.isPending}
+                  >
+                    {estado === 'FINALIZADO' ? (
+                      <>
+                        <LockOpen className="size-4" /> Reabrir caja
+                      </>
+                    ) : (
+                      <>
+                        <PencilLine className="size-4" /> Dar por terminada
+                      </>
+                    )}
+                  </Button>
                   <Link to={`/cajas/${mid}/datos`} state={{ from: `/clientes/${id}/actas/${mid}/cajas` }}>
                     <Button variant="secondary">
                       <ClipboardList className="size-4" /> Ver FUIDs

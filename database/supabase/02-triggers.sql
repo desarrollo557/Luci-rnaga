@@ -16,13 +16,26 @@
 -- misma fórmula repetida, más un IF para no recalcular si ninguno de los dos
 -- cambiaba. Aquí es una sola función: `concat_ws` ya omite los valores nulos,
 -- así que no hace falta decidir a mano si toca poner el espacio de separación.
+--
+-- El marcador de campo sin diligenciar, `N/A`, tampoco entra en el asunto.
+-- Desde que el asunto manual puede dejarse en blanco se guarda como `N/A`, y
+-- pegarlo al automático dejaba en el FUID "APROVECHAMIENTOS N/A". El marcador
+-- se conserva en cada campo, como en todos los demás; el asunto compuesto, que
+-- es un dato derivado, se arma solo con los que tienen texto. Si los dos
+-- quedaran vacíos, el asunto es el propio marcador, como cualquier texto sin
+-- diligenciar. El servidor aplica esta misma definición al arrancar
+-- (`backend/src/config/esquema.ts`) y recompone los asuntos ya guardados.
 
 CREATE OR REPLACE FUNCTION fuid_componer_asunto() RETURNS trigger AS $$
 BEGIN
   IF TG_OP = 'INSERT'
      OR NEW.asunto_2 IS DISTINCT FROM OLD.asunto_2
      OR NEW.asunto_3 IS DISTINCT FROM OLD.asunto_3 THEN
-    NEW.asunto := concat_ws(' ', NULLIF(NEW.asunto_2, ''), NULLIF(NEW.asunto_3, ''));
+    NEW.asunto := COALESCE(
+      NULLIF(concat_ws(' ',
+        NULLIF(NULLIF(NEW.asunto_2, ''), 'N/A'),
+        NULLIF(NULLIF(NEW.asunto_3, ''), 'N/A')), ''),
+      'N/A');
   END IF;
   RETURN NEW;
 END;

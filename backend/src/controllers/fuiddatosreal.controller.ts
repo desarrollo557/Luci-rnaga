@@ -3,7 +3,7 @@ import mysql from 'mysql2/promise';
 import { getConnection, query, queryOne, queryResult } from '../config/db.js';
 import type { FuidDato } from '../types/db.js';
 import type { FuidCreateDto, FuidUpdateDto } from '../types/index.js';
-import { fuidValues, isSuggestionField } from '../services/fuid.service.js';
+import { fuidValues, isSuggestionField, sqlOrdenEnCaja } from '../services/fuid.service.js';
 import { audit } from '../services/audit.service.js';
 import { fechaHoyLocal } from '../utils/format.js';
 import { validarOrdenDeFechasParcial } from '../validators/fuiddatosreal.validator.js';
@@ -17,6 +17,24 @@ const fechaActual = (): string => fechaHoyLocal();
 function isErDupEntry(error: unknown): boolean {
   // 23505 es unique_violation en PostgreSQL, el equivalente del 1062 de MySQL.
   return (error as { code?: string }).code === '23505';
+}
+
+/**
+ * Si la caja del registro está reabierta por un líder o administrador.
+ *
+ * Es lo que autoriza a la técnica a corregir sus registros de días anteriores:
+ * la marca la escribe el líder al reabrir la caja y la borra cualquier cierre,
+ * así que el permiso dura lo que dure la reapertura. Reabrir la caja digitando
+ * en ella no la escribe.
+ */
+async function cajaReabiertaPorElLider(caja: string | null | undefined): Promise<boolean> {
+  if (!caja) return false;
+  const fila = await queryOne<{ reabierta: boolean }>(
+    `SELECT (estado_caja = 'EN PROCESO' AND reabierta_por IS NOT NULL) AS reabierta
+       FROM modulos_caja WHERE caja_modulo = ? LIMIT 1`,
+    [caja],
+  );
+  return Boolean(fila?.reabierta);
 }
 
 export async function listFuid(req: Request, res: Response): Promise<void> {
@@ -33,12 +51,21 @@ export async function listFuid(req: Request, res: Response): Promise<void> {
   const offset = Number.isInteger(rawOffset) ? Math.max(rawOffset, 0) : 0;
 
   if (user.rol === 'LIDER' || user.rol === 'ADMIN') {
+    // Cada fila lleva su consecutivo dentro de la caja, que es el "N° de orden"
+    // que se muestra; el número guardado solo ordena.
     const results = caja
       ? await query<FuidDato>(
-        'SELECT * FROM fuiddatosreal WHERE caja = ? LIMIT ? OFFSET ?',
-        [caja, limit, offset],
+        `SELECT f.*, o.n_orden_caja FROM fuiddatosreal f
+           JOIN ${sqlOrdenEnCaja(true)} o ON o.id = f.id
+          WHERE f.caja = ? ORDER BY o.n_orden_caja LIMIT ? OFFSET ?`,
+        [caja, caja, limit, offset],
       )
-      : await query<FuidDato>('SELECT * FROM fuiddatosreal LIMIT ? OFFSET ?', [limit, offset]);
+      : await query<FuidDato>(
+        `SELECT f.*, o.n_orden_caja FROM fuiddatosreal f
+           JOIN ${sqlOrdenEnCaja()} o ON o.id = f.id
+          ORDER BY f.caja, o.n_orden_caja LIMIT ? OFFSET ?`,
+        [limit, offset],
+      );
     res.json(results);
     return;
   }
@@ -49,21 +76,23 @@ export async function listFuid(req: Request, res: Response): Promise<void> {
     // EXISTS en lugar de JOIN: si el mismo número de caja existiera en más de un
     // registro de modulos_caja, el JOIN devolvería cada FUID repetido.
     const sql = caja
-      ? `SELECT f.* FROM fuiddatosreal f
+      ? `SELECT f.*, o.n_orden_caja FROM fuiddatosreal f
+         JOIN ${sqlOrdenEnCaja(true)} o ON o.id = f.id
          WHERE f.caja = ? AND EXISTS (
            SELECT 1 FROM modulos_caja mc
            JOIN asignacion_caja_tecnica ac ON ac.modulo_id = mc.id
            WHERE mc.caja_modulo = f.caja AND ac.usuario_id = ?
          )
-         LIMIT ? OFFSET ?`
-      : `SELECT f.* FROM fuiddatosreal f
+         ORDER BY o.n_orden_caja LIMIT ? OFFSET ?`
+      : `SELECT f.*, o.n_orden_caja FROM fuiddatosreal f
+         JOIN ${sqlOrdenEnCaja()} o ON o.id = f.id
          WHERE EXISTS (
            SELECT 1 FROM modulos_caja mc
            JOIN asignacion_caja_tecnica ac ON ac.modulo_id = mc.id
            WHERE mc.caja_modulo = f.caja AND ac.usuario_id = ?
          )
-         LIMIT ? OFFSET ?`;
-    const params = caja ? [caja, user.id, limit, offset] : [user.id, limit, offset];
+         ORDER BY f.caja, o.n_orden_caja LIMIT ? OFFSET ?`;
+    const params = caja ? [caja, caja, user.id, limit, offset] : [user.id, limit, offset];
     const results = await query<FuidDato>(sql, params);
     res.json(results);
     return;
@@ -180,6 +209,21 @@ export async function createFuid(req: Request, res: Response): Promise<void> {
   try {
     await conn.beginTransaction();
 
+    /*
+     * El número de orden lo pone el servidor: el siguiente de la caja. Antes lo
+     * calculaba el navegador y se disparaba, con cajas de cincuenta registros
+     * numeradas hasta el mil y repetidos cuando dos técnicas digitaban a la
+     * vez. La fila de la caja se bloquea dentro de la transacción para que dos
+     * guardados simultáneos no lean el mismo máximo; el bloqueo dura lo que
+     * dura el guardado. Lo que mande el formulario se ignora.
+     */
+    await conn.query('SELECT id FROM modulos_caja WHERE id = ? FOR UPDATE', [cajaDestino.id]);
+    const [filasOrden] = await conn.query<Array<{ siguiente: number | string }>>(
+      'SELECT COALESCE(MAX(n_orden), 0) + 1 AS siguiente FROM fuiddatosreal WHERE caja = ?',
+      [cajaDelRegistro],
+    );
+    body.n_orden = Number(filasOrden[0]?.siguiente ?? 1);
+
     const values = fuidValues(body);
     const placeholders = values.map(() => '?').join(', ');
     const columns = [
@@ -279,9 +323,18 @@ export async function updateFuid(req: Request, res: Response): Promise<void> {
   const editaSinRestriccion = rol === 'LIDER' || rol === 'ADMIN';
 
   // Para el resto, un registro solo se corrige el mismo día en que se digitó:
-  // así el trabajo cerrado de días anteriores no se toca por descuido.
-  if (!editaSinRestriccion && registro.fecha_del_dato !== fechaActual()) {
-    res.status(403).json({ error: 'Los registros de días anteriores no pueden ser modificados' });
+  // así el trabajo cerrado de días anteriores no se toca por descuido. La
+  // excepción es la caja que el líder reabrió a propósito: mientras siga
+  // abierta, la técnica corrige en ella también lo de días anteriores.
+  if (
+    !editaSinRestriccion &&
+    registro.fecha_del_dato !== fechaActual() &&
+    !(await cajaReabiertaPorElLider(registro.caja))
+  ) {
+    res.status(403).json({
+      error:
+        'Los registros de días anteriores no pueden ser modificados. Pídale a su líder que reabra la caja si necesita corregirlos.',
+    });
     return;
   }
 
@@ -395,9 +448,10 @@ export async function deleteFuid(req: Request, res: Response): Promise<void> {
       res.status(403).json({ error: 'Solo puede eliminar los registros que usted digitó' });
       return;
     }
-    if (registro.fecha_del_dato !== fechaActual()) {
+    if (registro.fecha_del_dato !== fechaActual() && !(await cajaReabiertaPorElLider(registro.caja))) {
       res.status(403).json({
-        error: 'Los registros de días anteriores no pueden ser eliminados; solicítelo a su líder',
+        error:
+          'Los registros de días anteriores no pueden ser eliminados. Pídale a su líder que reabra la caja si necesita corregirlos.',
       });
       return;
     }
