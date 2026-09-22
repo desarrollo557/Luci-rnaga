@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { CheckCircle2, CheckCircle, Pencil, Search, Trash2, X } from 'lucide-react';
+import { CheckCircle2, Pencil, Search, Trash2, X } from 'lucide-react';
 import { toast } from 'sonner';
 import {
   Badge,
@@ -19,7 +19,7 @@ import {
   updANumero,
   type Column,
 } from '@/components/ui';
-import { fuidApi, getApiErrorCode, getApiErrorMessage, modulosCajaApi, modulosClienteApi } from '@/lib/api';
+import { fuidApi, getApiErrorCode, getApiErrorMessage, modulosCajaApi } from '@/lib/api';
 import { cn } from '@/lib/cn';
 import { toastApiError } from '@/lib/feedback';
 import { invalidateDomain } from '@/lib/queryInvalidation';
@@ -30,7 +30,8 @@ import { retornoDeCaja } from '@/lib/navegacion';
 import { OPCIONES_FRECUENCIA, OPCIONES_OTRO, OPCIONES_SOPORTE } from '@/lib/catalogos';
 import { limiteDe } from '@/lib/limites';
 import { fechaHoyLocal, formatearFechaHora } from '@/lib/fechas';
-import { estadoDeCaja } from '@/lib/estadoCaja';
+import { CAJA_FINALIZADA, estadoDeCaja } from '@/lib/estadoCaja';
+import { CajaTerminada } from './cajas/CajaTerminada';
 import { CierreDeJornada } from './cajas/CierreDeJornada';
 import { FECHA_MINIMA_DOCUMENTAL, dateInRange, dateOrderValid, onlyDigits } from '@/lib/validation';
 import { useAuthStore } from '@/stores/authStore';
@@ -576,6 +577,14 @@ function FormularioFuid({
       });
     },
     onError: (error) => {
+      if (getApiErrorCode(error) === 'REAPERTURA_REQUIERE_LIDER') {
+        // La caja se cerró mientras el formulario estaba abierto. Al refrescar
+        // la caja, el formulario da paso a la pantalla que ofrece pedir la
+        // reapertura al líder.
+        toast.error(getApiErrorMessage(error));
+        void invalidateDomain(queryClient, 'modulos-caja');
+        return;
+      }
       if (getApiErrorCode(error) === 'UPD_YA_USADO') {
         toast.error('El UPD ya fue usado por otro registro. Se asignará el siguiente disponible.');
         void nextUpdQuery.refetch().then((result) => {
@@ -1024,6 +1033,8 @@ export default function DatosPage() {
   // autor y de fecha las aplica el backend.
   const canCrear = true;
   const canEliminar = true;
+  // Reabrir una caja terminada es del líder; a la técnica se le ofrece pedirlo.
+  const puedeReabrir = tieneAlgunRol(user, ['LIDER', 'ADMIN']);
   // El retorno se resuelve más abajo, cuando ya se conoce la caja: necesita
   // saber de qué acta cuelga para poder subir un nivel sin depender del
   // historial de navegación.
@@ -1038,13 +1049,6 @@ export default function DatosPage() {
     queryKey: ['modulos-caja', 'detalle', cajaId],
     queryFn: () => modulosCajaApi.get(cajaId as string).then((res) => res.data),
     enabled: Boolean(cajaId),
-  });
-
-  // Acta (módulo cliente) de la caja, para obtener el número y año de creación
-  const actaQuery = useQuery({
-    queryKey: ['modulos-cliente', 'detalle', cajaQuery.data?.id_modulo_caja],
-    queryFn: () => modulosClienteApi.get(String(cajaQuery.data?.id_modulo_caja)).then((res) => res.data),
-    enabled: Boolean(cajaQuery.data?.id_modulo_caja),
   });
 
   /*
@@ -1197,6 +1201,8 @@ export default function DatosPage() {
     );
   }, [cajaQuery.data?.estado_caja, cajaQuery.data?.fecha_finalizacion, cajaQuery.data?.reabierta_por, registros]);
 
+  const cajaCerradaParaMi = !puedeReabrir && cajaQuery.data?.estado_caja === CAJA_FINALIZADA;
+
   const defaultNOrden = useMemo(() => {
     if (registros.length === 0) return 1;
     return Math.max(...registros.map((registro) => registro.n_orden ?? 0)) + 1;
@@ -1326,19 +1332,6 @@ export default function DatosPage() {
     onError: (error) => {
       setBorradoMultiple(null);
       toastApiError(error, { context: 'No se pudieron eliminar los registros:' });
-    },
-  });
-
-  /** Finalizar caja en proceso (solo para técnica asignada). */
-  const finalizarCajaMutation = useMutation({
-    mutationFn: (id: string | number) => modulosCajaApi.cambiarEstado(id, 'FINALIZADO'),
-    onSuccess: (res) => {
-      toast.success(res.data?.message || 'Caja finalizada');
-      void invalidateDomain(queryClient, 'modulos-caja');
-      void invalidateDomain(queryClient, 'fuiddatosreal');
-    },
-    onError: (error) => {
-      toastApiError(error, { context: 'No se pudo finalizar la caja:' });
     },
   });
 
@@ -1504,17 +1497,6 @@ export default function DatosPage() {
     campo('frecuencia', 'Frecuencia', { ancho: 'max-w-[8rem]' }),
     campo('notas', 'Notas', { ancho: 'max-w-[18rem]' }),
     campo('elaborado_por', 'Digitado por', { ancho: 'max-w-[14rem]' }),
-    // No. ACTA DE TRANSFERENCIA: formato ACTA {numero}_{añoCreacionActa}
-    {
-      key: 'acta_transferencia',
-      header: 'No. ACTA DE TRANSFERENCIA',
-      render: () => {
-        const numero = actaQuery.data?.acta_transferencia_modulo ?? '';
-        const año = actaQuery.data?.created_at ? new Date(actaQuery.data.created_at).getFullYear() : '';
-        if (!numero) return <span className="text-silver-300">—</span>;
-        return <span className="font-mono text-silver-800">{año ? `ACTA ${numero}_${año}` : `ACTA ${numero}`}</span>;
-      },
-    },
     {
       key: 'created_at',
       header: 'Creado',
@@ -1591,20 +1573,9 @@ export default function DatosPage() {
               está la persona cuando deja la caja, y al lado del estado, que es
               lo que la declaración cambia.
             */}
-            {cajaQuery.data?.id && <CierreDeJornada cajaId={cajaQuery.data.id} />}
-            {/* Finalizar caja: solo para técnica asignada, cuando está EN PROCESO */}
-            {esTecnica &&
-              cajaQuery.data?.estado_caja === 'EN PROCESO' &&
-              cajaQuery.data?.id && (
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  onClick={() => finalizarCajaMutation.mutate(cajaQuery.data!.id)}
-                  loading={finalizarCajaMutation.isPending && finalizarCajaMutation.variables === cajaQuery.data!.id}
-                >
-                  <CheckCircle className="size-4" /> Finalizar caja
-                </Button>
-              )}
+            {cajaQuery.data?.id && (
+              <CierreDeJornada cajaId={cajaQuery.data.id} estado={cajaQuery.data.estado_caja} />
+            )}
           </div>
         }
       />
@@ -1639,7 +1610,14 @@ export default function DatosPage() {
         </Card>
       )}
 
-      {canCrear && cajaCode && (
+      {/*
+        Una caja terminada no se le reabre a la técnica digitando en ella: en
+        lugar del formulario ve cómo pedir la reapertura al líder, y en cuanto
+        la autorice el aviso llega y el formulario vuelve solo.
+      */}
+      {canCrear && cajaCode && cajaCerradaParaMi && cajaQuery.data && <CajaTerminada caja={cajaQuery.data} />}
+
+      {canCrear && cajaCode && !cajaCerradaParaMi && (
         /*
          * Denso a propósito. El formulario comparte pantalla con la lista de
          * registros, y si se lleva todo el alto hay que desplazarse para ver lo

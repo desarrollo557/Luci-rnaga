@@ -6,8 +6,8 @@
 -- decir "terminada el 15" ni distinguir la que se está continuando.
 --
 -- Por qué la fecha no es la del cierre sino la del último registro de la caja:
--- una caja que se termina el viernes y se cierra el lunes, cuando su dueña
--- empieza la siguiente, pertenece al viernes. Con la fecha del cierre, el
+-- una caja trabajada el viernes y cerrada el lunes, cuando su dueña la da por
+-- terminada, pertenece al viernes. Con la fecha del cierre, el
 -- trabajo del viernes aparecería en el lunes y el informe de la semana saldría
 -- torcido.
 --
@@ -18,16 +18,14 @@
 -- estas columnas, porque así cuenta bien también todo lo que se digitó antes de
 -- que existieran. Fiarlo al estado guardado dejaba el histórico en cero.
 --
--- El estado lo mantiene el servidor solo, al guardar cada registro; la lógica
--- está en `backend/src/services/cicloCaja.service.ts`. Nadie tiene que marcar
--- nada a mano: este es un software operativo y un botón que hay que acordarse
--- de pulsar acaba sin pulsarse, y entonces el informe miente. Al terminar la
--- jornada, la caja que quedó abierta se cierra sola, atribuida a ese día, salvo
--- que alguien la haya marcado en `jornada_caja` como "la continúo otro día".
+-- Abrir la caja lo hace el servidor al guardar cada registro; cerrarla es
+-- siempre una decisión de quien la trabaja ("terminé esta caja"), nunca del
+-- servidor: ninguna caja se cierra sola. La lógica está en
+-- `backend/src/services/cicloCaja.service.ts`.
 --
 -- El índice sobre `fuiddatosreal(caja)` no es opcional: el cierre mira el
--- último registro de cada caja abierta cada vez que alguien digita, y sin él
--- esa consulta recorre entera la tabla más grande del sistema en cada guardado.
+-- último registro de la caja, y sin él esa consulta recorre entera la tabla
+-- más grande del sistema.
 --
 -- Idempotente: se puede ejecutar varias veces sin error. El código lo aplica
 -- también al arrancar (`backend/src/config/esquema.ts`); este archivo existe

@@ -6,7 +6,8 @@ export type Domain =
   | 'modulos-caja'
   | 'fuiddatosreal'
   | 'inventario'
-  | 'sub-modulos';
+  | 'sub-modulos'
+  | 'notificaciones';
 
 /**
  * Qué se queda viejo cuando cambia cada cosa.
@@ -25,10 +26,22 @@ const DEPENDENCIES: Record<Domain, string[]> = {
   // las de lo que tienen asignado.
   users: ['users', 'modulos-caja', 'modulos-cliente'],
   'modulos-cliente': ['modulos-cliente', 'modulos-caja', 'inventario', 'produccion'],
-  'modulos-caja': ['modulos-caja', 'fuiddatosreal', 'historial', 'produccion', 'inventario', 'modulos-cliente'],
+  // Reabrir o terminar una caja resuelve las solicitudes de reapertura sobre ella.
+  'modulos-caja': [
+    'modulos-caja',
+    'fuiddatosreal',
+    'historial',
+    'produccion',
+    'inventario',
+    'modulos-cliente',
+    'solicitudes-reapertura',
+  ],
   fuiddatosreal: ['fuiddatosreal', 'historial', 'produccion', 'modulos-caja', 'inventario', 'inventario-fuid'],
   inventario: ['inventario', 'inventario-fuid', 'produccion'],
   'sub-modulos': ['sub-modulos', 'modulos-cliente', 'inventario'],
+  // Un aviso nuevo es una solicitud de reapertura o su respuesta: la campana y
+  // la lista de solicitudes cambian a la vez.
+  notificaciones: ['notificaciones', 'solicitudes-reapertura'],
 };
 
 export function invalidateDomain(queryClient: QueryClient, domain: Domain): void {

@@ -1,11 +1,10 @@
 /**
  * Citas diarias a una hora fija de Colombia.
  *
- * Dos tareas del servidor corren una vez al día a una hora concreta: la
- * actualización de los inventarios, a las 4:15 de la tarde, y el cierre de las
- * cajas que quedaron abiertas al terminar la jornada, pasada la medianoche. Las
- * dos necesitan lo mismo: saber cuándo es la próxima vez que toca, contado en
- * hora de Colombia aunque el servidor corra en UTC, como en Render.
+ * Las tareas del servidor que corren una vez al día a una hora concreta —hoy,
+ * la actualización de los inventarios a las 4:15 de la tarde— necesitan lo
+ * mismo: saber cuándo es la próxima vez que toca, contado en hora de Colombia
+ * aunque el servidor corra en UTC, como en Render.
  *
  * El cálculo resta el desfase fijo y trabaja con los métodos UTC sobre esa
  * fecha desplazada: "las 16:15 UTC" de la fecha desplazada son las 16:15 de

@@ -3,7 +3,7 @@ import type { Server } from 'node:http';
 import bcrypt from 'bcryptjs';
 import ExcelJS from 'exceljs';
 import { baseViva, moduloPgFalso, reiniciarBase } from './apoyo/baseEnMemoria.js';
-import { fechaHoyLocal, fechaLocal } from '../utils/format.js';
+import { fechaLocal } from '../utils/format.js';
 
 /**
  * El flujo completo de una jornada, y sobre todo lo que **no** debe pasar.
@@ -348,7 +348,8 @@ describe('flujo completo: nada se escribe dos veces ni fuera de sitio', () => {
    * La corrección de días anteriores. La técnica solo toca lo suyo del día;
    * lo de ayer queda para el líder, salvo que el líder reabra la caja: mientras
    * siga abierta, ella corrige también lo de días anteriores. Y el permiso se
-   * acaba solo, cuando la caja se cierra al terminar la jornada.
+   * acaba cuando la caja vuelve a cerrarse, y eso lo hace la propia técnica al
+   * darla por terminada: ninguna caja se cierra sola.
    */
   it('la técnica corrige lo de días anteriores solo mientras el líder tenga la caja reabierta', async () => {
     const lider = sesion();
@@ -366,10 +367,9 @@ describe('flujo completo: nada se escribe dos veces ni fuera de sitio', () => {
     const idDeCaja = (
       await baseViva().query<{ id: number }>('SELECT id FROM modulos_caja WHERE caja_modulo = $1', [caja(2)])
     ).rows[0].id;
-    const { cerrarJornadasVencidas } = await import('../services/cicloCaja.service.js');
-    const { queryResult } = await import('../config/db.js');
-    const terminaLaJornada = () =>
-      cerrarJornadasVencidas(async (sql, p) => (await queryResult(sql, p)).affectedRows, fechaHoyLocal());
+    // La técnica da la caja por terminada: es la única forma en que se cierra.
+    const laTecnicaLaTermina = () =>
+      json(tec, 'POST', `/modulos_caja/${idDeCaja}/jornada`, { resultado: 'TERMINADA' });
 
     // Un registro de ayer en la caja 2, que la técnica tiene asignada.
     const AYER = fechaLocal(new Date(Date.now() - 24 * 60 * 60 * 1000));
@@ -396,8 +396,8 @@ describe('flujo completo: nada se escribe dos veces ni fuera de sitio', () => {
       (await baseViva().query<{ asunto_3: string }>('SELECT asunto_3 FROM fuiddatosreal WHERE id = $1', [id]))
         .rows[0].asunto_3;
 
-    // Terminada la jornada, la caja queda cerrada y lo de ayer no se toca.
-    await terminaLaJornada();
+    // Terminada la caja, lo de ayer no se toca.
+    await laTecnicaLaTermina();
     expect(await estadoDe(caja(2))).toMatchObject({ estado_caja: 'FINALIZADO', reabierta_por: null });
     const cerrada = await tec('PUT', `/fuiddatosreal/${id}`, await correccion('INTENTO CON LA CAJA CERRADA'));
     expect(cerrada.status, 'con la caja cerrada, lo de ayer no se edita').toBe(403);
@@ -421,8 +421,8 @@ describe('flujo completo: nada se escribe dos veces ni fuera de sitio', () => {
     expect(ajeno.status, 'la reapertura no abre los registros de otras personas').toBe(403);
     expect(await asuntoGuardado()).toBe('PACIENTE CORREGIDO');
 
-    // Al terminar la jornada la reapertura se acaba, y con ella el permiso.
-    await terminaLaJornada();
+    // Al darla por terminada otra vez, la reapertura se acaba, y con ella el permiso.
+    await laTecnicaLaTermina();
     expect(await estadoDe(caja(2))).toMatchObject({ estado_caja: 'FINALIZADO', reabierta_por: null });
     const otraVez = await tec('PUT', `/fuiddatosreal/${id}`, await correccion('INTENTO TARDIO'));
     expect(otraVez.status, 'cerrada la caja, vuelve a no poder editar').toBe(403);

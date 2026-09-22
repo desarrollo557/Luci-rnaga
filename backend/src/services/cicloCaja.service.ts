@@ -1,49 +1,39 @@
 /**
- * Ciclo de vida de la caja: se abre al digitar en ella y se cierra sola cuando
- * quien la tenía pasa a otra.
+ * Ciclo de vida de la caja: se abre al digitar en ella y se cierra solo cuando
+ * quien la trabaja la da por terminada.
  *
- * Nace de una necesidad del seguimiento de inventario: saber cuántas cajas
- * terminó de verdad cada persona cada día, y cuál quedó a medias para
- * continuarla al día siguiente. La respuesta no podía costar clics. Este es un
- * software operativo y pedirle a quien digita que además marque el final de
- * cada caja es trabajo que nadie hace de forma fiable: se olvida, y entonces el
- * informe miente.
+ * Nace de una necesidad del seguimiento de inventario: saber en qué caja va
+ * cada persona, cuáles terminó y cuál quedó a medias. Y de una regla de la
+ * operación que se fijó después de probar lo contrario: **ninguna caja se
+ * cierra sola**. Hubo una versión que deducía el cierre —guardar en otra caja
+ * cerraba la anterior, y al cambiar de jornada se cerraban las que quedaban
+ * abiertas— y se retiró: cerraba cajas a medias y obligaba a reabrirlas. Quien
+ * sabe si una caja está terminada es quien la tiene en las manos.
  *
- * Así que el estado **se deduce de lo que la persona ya hace**:
+ * Así que el estado se mueve con dos cosas, y nada más:
  *
- * - Guardar un registro en una caja la pone EN PROCESO. Si estaba cerrada, se
- *   reabre: alguien volvió a trabajarla.
- * - Guardar un registro en **otra** caja cierra la anterior, porque en esta
- *   operación se trabaja una caja a la vez y empezar la siguiente demuestra que
- *   la anterior acabó.
- * - Al terminar la jornada, la caja que quedó abierta se cierra sola, atribuida
- *   a ese día. Es la regla de la operación: quien se va sin declarar nada deja
- *   la caja terminada. Dentro del día no pasa nada, salir y volver a entrar
- *   horas después es lo normal. La única forma de dejarla abierta para la
- *   jornada siguiente es pulsar "la continúo otro día", que queda en
- *   `jornada_caja`; cuesta un clic porque es el caso raro. Lo hace
- *   `cerrarJornadasVencidas`, que corre al arrancar el servidor y pasada la
- *   medianoche (`cierreDeJornada.service.ts`).
- *
- * Dos decisiones que sostienen todo lo demás:
+ * - **Guardar un registro en una caja la pone EN PROCESO** si estaba sin
+ *   empezar. Eso sí se deduce, porque no es una decisión: digitar en una caja
+ *   es trabajarla. A la técnica no le reabre una caja terminada
+ *   (`fuiddatosreal.controller.ts` lo rechaza); al líder y al administrador
+ *   sí, porque a ellos nadie tiene que autorizarlos.
+ * - **Terminarla es un acto de la persona**: "terminé esta caja" en la
+ *   digitación (`declararJornadaDeCaja`), o el cambio de estado a mano desde
+ *   la vista de la caja. Una caja que quedó abierta el viernes sigue abierta
+ *   el lunes, y eso es lo esperado: se continúa sin pedir nada.
  *
  * **La fecha de cierre no es el día en que se cierra, sino el del último
- * registro de la caja.** Una caja terminada el viernes que se cierra el lunes,
- * cuando su dueña abre la siguiente, pertenece al viernes. Sin esto, el trabajo
- * del viernes aparecería en el lunes y el informe de la semana saldría torcido.
- *
- * **Solo cierra la caja quien digitó su último registro.** Dos técnicas pueden
- * compartir caja; si una pasa a otra y la otra sigue dentro, la caja no se
- * cierra. El cierre lo provoca quien la tenía en las manos.
- *
- * La deducción se corrige sola: si alguien vuelve a digitar en una caja cerrada,
- * esta se reabre y volverá a cerrarse con la fecha nueva.
+ * registro de la caja.** Una caja terminada el viernes que se cierra el lunes
+ * pertenece al viernes. Sin esto, el trabajo del viernes aparecería en el lunes
+ * y el informe de la semana saldría torcido. Y se atribuye a quien digitó ese
+ * último registro, no a quien pulsa.
  *
  * **La reapertura por el líder abre además la corrección.** Cuando un líder o
- * administrador reabre una caja a mano, queda escrito quién y qué día
+ * administrador reabre una caja, a mano o aprobando la solicitud de la técnica
+ * (`reaperturaCaja.service.ts`), queda escrito quién y qué día
  * (`reabierta_por`, `reabierta_el`) y la técnica puede corregir sus registros
  * de días anteriores en esa caja mientras siga abierta. Todo cierre borra la
- * marca. Reabrirla digitando no la escribe.
+ * marca.
  *
  * **Para qué sirve este estado y para qué no.** Sirve para la pantalla: saber en
  * qué caja va cada quien, avisar de que una viene de días anteriores y ofrecer
@@ -54,17 +44,13 @@
  *
  * **Coste en el camino de digitación.** Guardar un registro es la operación más
  * repetida del software, así que aquí se hace lo mínimo: una actualización por
- * número de caja, que está indexado. La pasada de cierre, que es la cara, solo
- * corre cuando la caja acaba de abrirse, es decir cuando la persona cambió de
- * caja. Mientras sigue en la misma —el caso normal, decenas de veces seguidas—
- * no se ejecuta.
+ * número de caja, que está indexado, y que no cambia nada si la caja ya estaba
+ * abierta, que es el caso normal.
  */
 
 /**
  * Cómo se lanza cada consulta: con el pool o dentro de una transacción.
- *
- * Devuelve cuántas filas cambió, que es lo que permite saltarse la pasada de
- * cierre cuando la persona sigue en la misma caja.
+ * Devuelve cuántas filas cambió.
  */
 export type EjecutarSql = (sql: string, params: unknown[]) => Promise<number>;
 
@@ -95,34 +81,14 @@ export const SQL_ABRIR_CAJA = `
      AND estado_caja IS DISTINCT FROM '${CAJA_EN_PROCESO}'`;
 
 /**
- * Cierra las cajas que esta persona tenía abiertas y ya no está trabajando.
+ * Cierre de una caja concreta: "terminé esta caja" o el cambio de estado a
+ * mano. Es la única forma en que una caja se cierra.
  *
- * Parte de las cajas abiertas, que son pocas, y de cada una mira su último
- * registro. Se cierran solo aquellas cuyo último registro es de esta persona:
- * las de otras se quedan como están.
- */
-export const SQL_CERRAR_OTRAS_CAJAS = `
-  UPDATE modulos_caja mc
-     SET estado_caja = '${CAJA_FINALIZADA}',
-         fecha_finalizacion = ultimo.fecha_del_dato,
-         finalizada_por = ultimo.elaborado_por,
-         reabierta_por = NULL,
-         reabierta_el = NULL
-    FROM modulos_caja abierta
-    CROSS JOIN LATERAL (${ULTIMO_REGISTRO.replace('$CAJA$', 'abierta.caja_modulo')}) ultimo
-   WHERE mc.id = abierta.id
-     AND abierta.estado_caja = '${CAJA_EN_PROCESO}'
-     AND abierta.caja_modulo <> ?
-     AND ultimo.elaborado_por = ?
-     AND ultimo.fecha_del_dato IS NOT NULL`;
-
-/**
- * Cierre a mano de una caja concreta, para el botón de cambiar estado.
- *
- * La fecha y la persona salen igualmente del último registro, no de quien pulsa
- * ni del día en que pulsa: el seguimiento tiene que atribuir esa caja a la
- * jornada en que se trabajó. Una caja sin registros se cierra con el día de hoy
- * y sin nadie a quien atribuirla.
+ * La fecha y la persona salen del último registro, no de quien pulsa ni del
+ * día en que pulsa: el seguimiento tiene que atribuir esa caja a la jornada en
+ * que se trabajó. Una caja sin registros se cierra con el día de hoy y sin
+ * nadie a quien atribuirla. Y se borra la marca de reapertura, si la había:
+ * el permiso de corregir dura lo que dura la caja abierta.
  */
 export const SQL_CERRAR_CAJA = `
   UPDATE modulos_caja mc
@@ -136,7 +102,7 @@ export const SQL_CERRAR_CAJA = `
    WHERE mc.id = objetivo.id
      AND objetivo.id = ?`;
 
-/** Reapertura a mano: la caja vuelve a estar en proceso y pierde su cierre. */
+/** Reapertura sin firma: la caja vuelve a estar en proceso y pierde su cierre. */
 export const SQL_REABRIR_CAJA = `
   UPDATE modulos_caja
      SET estado_caja = '${CAJA_EN_PROCESO}',
@@ -145,58 +111,11 @@ export const SQL_REABRIR_CAJA = `
    WHERE id = ?`;
 
 /**
- * Cierre de las cajas que quedaron abiertas al terminar la jornada.
- *
- * Regla de la operación: si quien digita se va sin declarar nada, la caja queda
- * terminada en esa jornada. Dentro del día no pasa nada, salir de la caja y
- * volver a entrar horas después es lo normal y la caja sigue abierta; lo que
- * cierra es el cambio de jornada. Solo se salva la caja que alguien marcó "la
- * continúo otro día" ese mismo día: es la única forma de dejarla abierta para
- * la jornada siguiente, y cuesta un clic porque es el caso raro.
- *
- * La fecha y la persona salen del último registro, igual que en el cierre por
- * cambio de caja, para que el seguimiento la atribuya a la jornada en que se
- * trabajó. Una caja abierta sin registros no se toca: no hay jornada que cerrar.
- *
- * El marcador es el día de hoy en Colombia. Se pasa desde fuera y no se toma
- * de `CURRENT_DATE` para que la prueba pueda fijar el día y para que "hoy" sea
- * el mismo en todo el software (`fechaHoyLocal`).
- */
-export const SQL_CERRAR_JORNADAS_VENCIDAS = `
-  UPDATE modulos_caja mc
-     SET estado_caja = '${CAJA_FINALIZADA}',
-         fecha_finalizacion = ultimo.fecha_del_dato,
-         finalizada_por = ultimo.elaborado_por,
-         reabierta_por = NULL,
-         reabierta_el = NULL
-    FROM modulos_caja abierta
-    CROSS JOIN LATERAL (${ULTIMO_REGISTRO.replace('$CAJA$', 'abierta.caja_modulo')}) ultimo
-   WHERE mc.id = abierta.id
-     AND abierta.estado_caja = '${CAJA_EN_PROCESO}'
-     AND ultimo.fecha_del_dato IS NOT NULL
-     AND ultimo.fecha_del_dato < ?::date
-     AND NOT EXISTS (
-       SELECT 1 FROM jornada_caja j
-        WHERE j.caja_modulo = abierta.caja_modulo
-          AND j.fecha = ultimo.fecha_del_dato
-          AND j.resultado = 'CONTINUA'
-     )`;
-
-/**
- * Cierra las cajas cuya jornada ya pasó y devuelve cuántas cerró.
- *
- * Es idempotente y barata, parte de las cajas abiertas, que son pocas, así que
- * se puede lanzar en cada arranque y cada madrugada sin más cuidado.
- */
-export async function cerrarJornadasVencidas(ejecutar: EjecutarSql, hoy: string): Promise<number> {
-  return ejecutar(SQL_CERRAR_JORNADAS_VENCIDAS, [hoy]);
-}
-
-/**
- * Lo que hay que hacer con las cajas cada vez que se guarda un registro.
+ * Lo que hay que hacer con la caja cada vez que se guarda un registro: dejarla
+ * abierta. Nada más; ninguna otra caja se toca.
  *
  * Se llama dentro de la misma transacción que la inserción: si el registro no
- * llega a guardarse, el estado de las cajas tampoco cambia.
+ * llega a guardarse, el estado de la caja tampoco cambia.
  */
 export async function registrarDigitacion(
   ejecutar: EjecutarSql,
@@ -204,24 +123,14 @@ export async function registrarDigitacion(
   autor: string | null | undefined,
 ): Promise<void> {
   if (!caja || !autor) return;
-  const seAbrio = await ejecutar(SQL_ABRIR_CAJA, [caja]);
-  /*
-   * Si la caja ya estaba abierta, la persona sigue donde estaba y no hay nada
-   * que cerrar. Saltarse la pasada aquí es lo que mantiene ligero el guardado.
-   *
-   * Queda un caso raro sin cubrir: cambiar a una caja que otra persona ya tenía
-   * abierta deja la anterior marcada como abierta. Solo afecta a lo que se ve en
-   * pantalla, no a lo que cuenta el informe, y se corrige en cuanto esa caja se
-   * cierre o se retome.
-   */
-  if (seAbrio > 0) await ejecutar(SQL_CERRAR_OTRAS_CAJAS, [caja, autor]);
+  await ejecutar(SQL_ABRIR_CAJA, [caja]);
 }
 
 /**
  * Reapertura por el líder o el administrador: además de abrir la caja, deja
  * escrito quién la reabrió y qué día. Es lo que autoriza a la técnica a
  * corregir sus registros de días anteriores en esa caja mientras siga abierta;
- * todo cierre borra la marca y con ella el permiso. Reabrirla digitando no la
+ * el cierre borra la marca y con ella el permiso. Reabrirla digitando no la
  * escribe: la puerta la abre el líder, no quien digita.
  */
 export const SQL_REABRIR_CAJA_LIDER = `
@@ -233,7 +142,7 @@ export const SQL_REABRIR_CAJA_LIDER = `
          reabierta_el = ?
    WHERE id = ?`;
 
-/** Quién reabre la caja a mano, para dejar constancia y abrir la corrección. */
+/** Quién reabre la caja, para dejar constancia y abrir la corrección. */
 export interface Reapertura {
   /** "NOMBRE (CC)" de quien reabre. */
   por: string;
@@ -242,7 +151,7 @@ export interface Reapertura {
 }
 
 /**
- * Cambio de estado a mano desde la pantalla de la caja.
+ * Cambio de estado decidido por una persona: terminar la caja, o reabrirla.
  *
  * Con `reapertura`, la apertura queda firmada por el líder y autoriza la
  * corrección de registros anteriores; sin ella es la apertura corriente.

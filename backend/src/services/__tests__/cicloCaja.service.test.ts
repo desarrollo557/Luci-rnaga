@@ -7,7 +7,6 @@ import {
   CAJA_FINALIZADA,
   SQL_CERRAR_CAJA,
   cambiarEstadoCaja,
-  cerrarJornadasVencidas,
   registrarDigitacion,
 } from '../cicloCaja.service.js';
 
@@ -20,9 +19,10 @@ import {
  * llamó a la función. Por eso la prueba levanta PostgreSQL en memoria, crea las
  * tablas que hacen falta y reproduce dos jornadas de trabajo reales.
  *
- * Se prueba el comportamiento que el usuario pidió: saber con qué caja empezó
- * cada persona, en cuál acabó, cuál quedó a medias para el día siguiente, y que
- * una caja que cruza de un día a otro no se cuente dos veces.
+ * Se prueba el comportamiento que el usuario pidió: que ninguna caja se cierre
+ * sola —solo quien la trabaja la da por terminada—, saber con qué caja empezó
+ * cada persona, en cuál acabó, y que una caja que cruza de un día a otro no se
+ * cuente dos veces.
  */
 
 const TABLAS = `
@@ -38,7 +38,9 @@ const TABLAS = `
   -- el montaje entero. Es la contrapartida de comprobar los ajustes de verdad.
   CREATE TABLE sub_modulos (
     id serial PRIMARY KEY, codigo text, entidad_remitente text, sede_submodulos text);
-  CREATE TABLE moduloscliente (id serial PRIMARY KEY, codigo text, acta_transferencia_modulo text);
+  CREATE TABLE moduloscliente (
+    id serial PRIMARY KEY, codigo text, acta_transferencia_modulo text,
+    fecha_trans_modulo date, created_at timestamp DEFAULT now());
   CREATE TABLE modulos_caja (
     id serial PRIMARY KEY, caja_modulo text, id_modulo_caja int, estado_caja varchar(255));
   CREATE TABLE fuiddatosreal (
@@ -86,14 +88,6 @@ async function estadoDe(numeroDeCaja: number) {
   return rows[0];
 }
 
-/** Lo que la persona declara al dejar la caja ese día: la terminó, o la sigue otro día. */
-async function declarar(fecha: string, numeroDeCaja: number, autor: string, resultado: 'TERMINADA' | 'CONTINUA') {
-  await db.query(
-    'INSERT INTO jornada_caja (caja_modulo, fecha, colaborador, resultado) VALUES ($1, $2, $3, $4)',
-    [caja(numeroDeCaja), fecha, autor, resultado],
-  );
-}
-
 beforeAll(async () => {
   // Una sola base para todo el archivo: levantar PostgreSQL cuesta un segundo y
   // hacerlo trece veces se nota en la integración continua.
@@ -121,43 +115,41 @@ describe('ciclo de vida de la caja', () => {
     expect((await estadoDe(2406)).estado_caja).toBe(CAJA_EN_PROCESO);
   });
 
-  it('cierra la caja anterior al empezar otra, y deja abierta solo la actual', async () => {
+  it('pasar a otra caja no cierra la anterior: solo la persona la cierra', async () => {
     await digitar(LUNES, 2406, ANA);
     await digitar(LUNES, 2407, ANA);
     await digitar(LUNES, 2408, ANA);
 
-    expect(await estadoDe(2406)).toMatchObject({ estado_caja: CAJA_FINALIZADA, cierre: LUNES, finalizada_por: ANA });
-    expect(await estadoDe(2407)).toMatchObject({ estado_caja: CAJA_FINALIZADA, cierre: LUNES });
-    // La última del día se queda abierta: es la que se continúa mañana.
+    // Hubo una versión que cerraba aquí la 2406 y la 2407, y se retiró: quien
+    // sabe si una caja está terminada es quien la tiene en las manos.
+    expect(await estadoDe(2406)).toMatchObject({ estado_caja: CAJA_EN_PROCESO, cierre: null });
+    expect(await estadoDe(2407)).toMatchObject({ estado_caja: CAJA_EN_PROCESO, cierre: null });
     expect(await estadoDe(2408)).toMatchObject({ estado_caja: CAJA_EN_PROCESO, cierre: null });
   });
 
-  it('atribuye el cierre al día del último registro, no al día en que se cierra', async () => {
+  it('el cambio de día tampoco la cierra: se continúa sin pedir nada', async () => {
     await digitar(LUNES, 2406, ANA);
-    // Se va el lunes con la caja abierta y el martes empieza otra distinta.
     await digitar(MARTES, 2407, ANA);
-    expect(await estadoDe(2406)).toMatchObject({ estado_caja: CAJA_FINALIZADA, cierre: LUNES });
+    await digitar(MARTES, 2406, ANA);
+    expect(await estadoDe(2406)).toMatchObject({ estado_caja: CAJA_EN_PROCESO, cierre: null });
   });
 
-  it('reabre la caja si alguien vuelve a digitar en ella', async () => {
+  it('terminarla se atribuye al día de su último registro, no al día en que se cierra', async () => {
     await digitar(LUNES, 2406, ANA);
-    await digitar(LUNES, 2407, ANA);
+    const { rows } = await db.query<{ id: number }>('SELECT id FROM modulos_caja WHERE caja_modulo = $1', [caja(2406)]);
+    // La da por terminada el martes, pero el trabajo fue del lunes.
+    await cambiarEstadoCaja(ejecutar, rows[0].id, CAJA_FINALIZADA);
+    expect(await estadoDe(2406)).toMatchObject({ estado_caja: CAJA_FINALIZADA, cierre: LUNES, finalizada_por: ANA });
+  });
+
+  it('digitar en una caja terminada la reabre: es lo que hace el líder (a la técnica se lo impide el controlador)', async () => {
+    await digitar(LUNES, 2406, ANA);
+    const { rows } = await db.query<{ id: number }>('SELECT id FROM modulos_caja WHERE caja_modulo = $1', [caja(2406)]);
+    await cambiarEstadoCaja(ejecutar, rows[0].id, CAJA_FINALIZADA);
     expect((await estadoDe(2406)).estado_caja).toBe(CAJA_FINALIZADA);
 
     await digitar(MARTES, 2406, ANA);
-    expect(await estadoDe(2406)).toMatchObject({ estado_caja: CAJA_EN_PROCESO, cierre: null });
-
-    // Y al pasar a otra vuelve a cerrarse, ahora con la fecha nueva.
-    await digitar(MARTES, 2408, ANA);
-    expect(await estadoDe(2406)).toMatchObject({ estado_caja: CAJA_FINALIZADA, cierre: MARTES });
-  });
-
-  it('no cierra la caja de otra persona que sigue trabajando en ella', async () => {
-    await digitar(LUNES, 2411, ANA);
-    await digitar(LUNES, 2411, BETO);
-    // Ana pasa a otra caja, pero el último registro de la 2411 es de Beto.
-    await digitar(LUNES, 2412, ANA);
-    expect(await estadoDe(2411)).toMatchObject({ estado_caja: CAJA_EN_PROCESO });
+    expect(await estadoDe(2406)).toMatchObject({ estado_caja: CAJA_EN_PROCESO, cierre: null, finalizada_por: null });
   });
 
   it('el cierre a mano también se atribuye a quien digitó el último registro', async () => {
@@ -185,96 +177,11 @@ describe('ciclo de vida de la caja', () => {
 });
 
 /*
- * La regla de la operación: quien se va sin declarar nada deja la caja
- * terminada en esa jornada. Dentro del día, salir y volver es lo normal; lo
- * que cierra es el cambio de fecha, y solo "la continúo otro día" lo evita.
- */
-describe('cierre al terminar la jornada', () => {
-  const MIERCOLES = '2026-09-16';
-  const cerrar = (hoy: string) => cerrarJornadasVencidas(ejecutar, hoy);
-
-  it('la caja que quedó abierta ayer sin declarar nada se da por terminada, atribuida a ayer', async () => {
-    await digitar(LUNES, 2406, ANA);
-    expect(await cerrar(MARTES)).toBe(1);
-    expect(await estadoDe(2406)).toMatchObject({ estado_caja: CAJA_FINALIZADA, cierre: LUNES, finalizada_por: ANA });
-  });
-
-  it('dentro de la jornada no toca nada: salir y volver horas después es lo normal', async () => {
-    await digitar(LUNES, 2406, ANA);
-    expect(await cerrar(LUNES)).toBe(0);
-    expect(await estadoDe(2406)).toMatchObject({ estado_caja: CAJA_EN_PROCESO, cierre: null });
-    // Vuelve por la tarde y sigue digitando en la misma caja.
-    await digitar(LUNES, 2406, ANA);
-    expect(await estadoDe(2406)).toMatchObject({ estado_caja: CAJA_EN_PROCESO, cierre: null });
-  });
-
-  it('la caja marcada "la continúo otro día" sigue abierta para la jornada siguiente', async () => {
-    await digitar(LUNES, 2406, ANA);
-    await declarar(LUNES, 2406, ANA, 'CONTINUA');
-    expect(await cerrar(MARTES)).toBe(0);
-    expect(await estadoDe(2406)).toMatchObject({ estado_caja: CAJA_EN_PROCESO, cierre: null });
-
-    // El martes la retoma y se va sin decir nada: al cerrar esa jornada queda
-    // terminada, atribuida al martes, que es cuando se acabó de verdad.
-    await digitar(MARTES, 2406, ANA);
-    expect(await cerrar(MIERCOLES)).toBe(1);
-    expect(await estadoDe(2406)).toMatchObject({ estado_caja: CAJA_FINALIZADA, cierre: MARTES, finalizada_por: ANA });
-  });
-
-  it('una declaración de otro día no salva la caja', async () => {
-    await digitar(LUNES, 2406, ANA);
-    await declarar(LUNES, 2406, ANA, 'CONTINUA');
-    await digitar(MARTES, 2406, ANA);
-    expect(await cerrar(MIERCOLES)).toBe(1);
-  });
-
-  it('haberla dado por terminada no la reabre ni la cuenta dos veces', async () => {
-    await digitar(LUNES, 2406, ANA);
-    await declarar(LUNES, 2406, ANA, 'TERMINADA');
-    const { rows } = await db.query<{ id: number }>('SELECT id FROM modulos_caja WHERE caja_modulo = $1', [caja(2406)]);
-    await ejecutar(SQL_CERRAR_CAJA, [rows[0].id]);
-    expect(await cerrar(MARTES)).toBe(0);
-    expect(await estadoDe(2406)).toMatchObject({ estado_caja: CAJA_FINALIZADA, cierre: LUNES });
-  });
-
-  it('cierra las de todas las personas y atribuye cada una a quien digitó su último registro', async () => {
-    await digitar(LUNES, 2411, ANA);
-    await digitar(LUNES, 2411, BETO);
-    await digitar(LUNES, 2412, ANA);
-    // La 2411 quedó abierta porque su último registro es de Beto; la 2412 es la última de Ana.
-    expect(await cerrar(MARTES)).toBe(2);
-    expect(await estadoDe(2411)).toMatchObject({ estado_caja: CAJA_FINALIZADA, cierre: LUNES, finalizada_por: BETO });
-    expect(await estadoDe(2412)).toMatchObject({ estado_caja: CAJA_FINALIZADA, cierre: LUNES, finalizada_por: ANA });
-  });
-
-  it('una caja abierta sin registros no se toca: no hay jornada que cerrar', async () => {
-    await db.query('UPDATE modulos_caja SET estado_caja = $1 WHERE caja_modulo = $2', [CAJA_EN_PROCESO, caja(2400)]);
-    expect(await cerrar(MARTES)).toBe(0);
-    expect(await estadoDe(2400)).toMatchObject({ estado_caja: CAJA_EN_PROCESO, cierre: null });
-  });
-
-  it('se puede repetir sin cambiar nada la segunda vez', async () => {
-    await digitar(LUNES, 2406, ANA);
-    expect(await cerrar(MARTES)).toBe(1);
-    expect(await cerrar(MARTES)).toBe(0);
-  });
-
-  it('volver a digitar en una caja cerrada por jornada la reabre, como siempre', async () => {
-    await digitar(LUNES, 2406, ANA);
-    await cerrar(MARTES);
-    await digitar(MARTES, 2406, ANA);
-    expect(await estadoDe(2406)).toMatchObject({ estado_caja: CAJA_EN_PROCESO, cierre: null });
-  });
-});
-
-/*
  * La reapertura por el líder: abre la caja y deja firmado quién y cuándo, que
  * es lo que autoriza a la técnica a corregir sus registros de días anteriores.
  * La firma dura lo que dura la caja abierta: cualquier cierre la borra.
  */
 describe('reapertura de la caja por el líder', () => {
-  const MIERCOLES = '2026-09-16';
-
   async function idDe(numeroDeCaja: number) {
     const { rows } = await db.query<{ id: number }>('SELECT id FROM modulos_caja WHERE caja_modulo = $1', [caja(numeroDeCaja)]);
     return rows[0].id;
@@ -288,10 +195,13 @@ describe('reapertura de la caja por el líder', () => {
   }
   const reabrePorLider = async (numeroDeCaja: number, dia: string) =>
     cambiarEstadoCaja(ejecutar, await idDe(numeroDeCaja), CAJA_EN_PROCESO, { por: LIDIA, el: dia });
+  /** La técnica da la caja por terminada: la única forma en que se cierra. */
+  const cierraLaTecnica = async (numeroDeCaja: number) =>
+    cambiarEstadoCaja(ejecutar, await idDe(numeroDeCaja), CAJA_FINALIZADA);
 
   it('deja escrito quién la reabrió y qué día, y la caja vuelve a estar en proceso', async () => {
     await digitar(LUNES, 2406, ANA);
-    await cerrarJornadasVencidas(ejecutar, MARTES);
+    await cierraLaTecnica(2406);
     expect((await estadoDe(2406)).estado_caja).toBe(CAJA_FINALIZADA);
 
     await reabrePorLider(2406, MARTES);
@@ -301,28 +211,19 @@ describe('reapertura de la caja por el líder', () => {
 
   it('la reapertura de la técnica, sin firma, no deja marca', async () => {
     await digitar(LUNES, 2406, ANA);
-    await cerrarJornadasVencidas(ejecutar, MARTES);
+    await cierraLaTecnica(2406);
     await cambiarEstadoCaja(ejecutar, await idDe(2406), CAJA_EN_PROCESO);
     expect((await estadoDe(2406)).estado_caja).toBe(CAJA_EN_PROCESO);
     expect(await marcasDe(2406)).toEqual({ reabierta_por: null, reabierta_el: null });
   });
 
-  it('el cierre de la jornada borra la marca', async () => {
+  it('pasar a otra caja no la cierra ni borra la marca: sigue reabierta', async () => {
     await digitar(LUNES, 2406, ANA);
-    await cerrarJornadasVencidas(ejecutar, MARTES);
-    await reabrePorLider(2406, MARTES);
-    expect(await cerrarJornadasVencidas(ejecutar, MIERCOLES)).toBe(1);
-    expect(await estadoDe(2406)).toMatchObject({ estado_caja: CAJA_FINALIZADA, cierre: LUNES });
-    expect(await marcasDe(2406)).toEqual({ reabierta_por: null, reabierta_el: null });
-  });
-
-  it('pasar a otra caja también la borra', async () => {
-    await digitar(LUNES, 2406, ANA);
-    await cerrarJornadasVencidas(ejecutar, MARTES);
+    await cierraLaTecnica(2406);
     await reabrePorLider(2406, MARTES);
     await digitar(MARTES, 2407, ANA);
-    expect((await estadoDe(2406)).estado_caja).toBe(CAJA_FINALIZADA);
-    expect(await marcasDe(2406)).toEqual({ reabierta_por: null, reabierta_el: null });
+    expect((await estadoDe(2406)).estado_caja).toBe(CAJA_EN_PROCESO);
+    expect(await marcasDe(2406)).toEqual({ reabierta_por: LIDIA, reabierta_el: MARTES });
   });
 
   it('el cierre a mano también la borra', async () => {

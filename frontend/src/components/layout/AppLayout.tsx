@@ -5,6 +5,7 @@ import { Badge, ThemeToggle } from '@/components/ui';
 import { cn } from '@/lib/cn';
 import { useAuthStore } from '@/stores/authStore';
 import { rolesDe, tieneRol, type Role } from '@/types';
+import { NotificacionesMenu } from './NotificacionesMenu';
 
 interface NavItem {
   label: string;
@@ -164,6 +165,9 @@ export default function AppLayout() {
           </div>
 
           <div className="ml-auto flex items-center gap-3">
+            {/* Los avisos llegan aquí al instante: la solicitud de reapertura
+                al líder, y a la técnica la respuesta. */}
+            <NotificacionesMenu />
             <ThemeToggle />
             <span aria-hidden="true" className="hidden h-6 w-px bg-silver-200 sm:block" />
             <div className="hidden text-right sm:block">

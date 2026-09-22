@@ -298,7 +298,7 @@ export default function ActasPage() {
   /*
    * Reabrir una caja terminada. Es del líder: además de abrirla, autoriza a la
    * técnica a corregir sus registros de días anteriores mientras siga abierta.
-   * Se cierra sola al terminar la jornada, como cualquier otra.
+   * Si la técnica lo había pedido, su solicitud queda aprobada y se le avisa.
    */
   const reabrirMutation = useMutation({
     mutationFn: (cajaId: number) => modulosCajaApi.cambiarEstado(cajaId, 'EN PROCESO'),

@@ -236,7 +236,12 @@ export const subModulosApi = {
   remove: (id: string | number) => api.delete(`/sub_modulos/${id}`),
 };
 
-/** Lo que quien digita declara al dejar una caja. */
+/**
+ * Lo que quedó declarado en una jornada. Hoy solo se declara TERMINADA;
+ * CONTINUA ("la continúo otro día") existió y se retiró, porque ninguna caja
+ * se cierra sola y no hace falta declarar que se sigue. Se conserva en el tipo
+ * porque el historial todavía puede traer filas antiguas con ese valor.
+ */
 export type ResultadoDeJornada = 'TERMINADA' | 'CONTINUA';
 
 /** Un día de trabajo sobre una caja, tal como lo devuelve el historial. */
@@ -252,6 +257,64 @@ export interface JornadaDeCaja {
   resultado: ResultadoDeJornada | null;
   registros_declarados: number | null;
 }
+
+/** Estado de una solicitud de reapertura de caja. */
+export type EstadoDeSolicitud = 'PENDIENTE' | 'APROBADA' | 'RECHAZADA';
+
+/** La técnica pide reabrir una caja terminada; el líder la atiende. */
+export interface SolicitudReapertura {
+  id: number;
+  caja_id: number;
+  caja_modulo: string;
+  solicitante_id: number;
+  /** "NOMBRE (CC)" de quien pide. */
+  solicitante: string;
+  sede: string | null;
+  estado: EstadoDeSolicitud;
+  creada_en: string;
+  resuelta_en: string | null;
+  resuelta_por: string | null;
+}
+
+export const solicitudesReaperturaApi = {
+  /** La técnica pide reabrir una caja suya que está terminada. */
+  solicitar: (cajaId: string | number) =>
+    api.post<{ message: string; solicitud: SolicitudReapertura; nueva: boolean }>(
+      `/modulos_caja/${cajaId}/solicitar-reapertura`,
+    ),
+  /** Las que puede ver quien pregunta: el líder las de su sede, la técnica las suyas. */
+  list: (params?: { estado?: EstadoDeSolicitud; caja_id?: string | number }) =>
+    api.get<SolicitudReapertura[]>('/solicitudes_reapertura', { params }),
+  aprobar: (id: number) =>
+    api.post<{ message: string; solicitud: SolicitudReapertura }>(`/solicitudes_reapertura/${id}/aprobar`),
+  rechazar: (id: number) =>
+    api.post<{ message: string; solicitud: SolicitudReapertura }>(`/solicitudes_reapertura/${id}/rechazar`),
+};
+
+export type TipoDeNotificacion = 'SOLICITUD_REAPERTURA' | 'REAPERTURA_APROBADA' | 'REAPERTURA_RECHAZADA';
+
+/** Un aviso para la persona con sesión. */
+export interface Notificacion {
+  id: number;
+  tipo: TipoDeNotificacion;
+  mensaje: string;
+  caja_id: number | null;
+  caja_modulo: string | null;
+  solicitud_id: number | null;
+  creada_en: string;
+  leida_en: string | null;
+}
+
+export const notificacionesApi = {
+  list: () => api.get<{ notificaciones: Notificacion[]; sin_leer: number }>('/notificaciones'),
+  /** Sin ids marca todos los de la persona. */
+  marcarLeidas: (ids?: number[]) => api.post<{ leidas: number }>('/notificaciones/leidas', ids ? { ids } : {}),
+  /**
+   * La conexión abierta por la que llegan los avisos al instante. Es una URL
+   * y no una llamada porque la abre `EventSource`, no axios.
+   */
+  streamUrl: '/api/notificaciones/stream',
+};
 
 export const modulosCajaApi = {
   list: (
@@ -273,12 +336,11 @@ export const modulosCajaApi = {
     api.get<UsuarioAsignado[]>(`/modulos_caja/${moduloId}/usuarios`),
   /** Qué se digitó en la caja cada día y quién lo hizo. */
   jornadas: (id: string | number) => api.get<JornadaDeCaja[]>(`/modulos_caja/${id}/jornadas`),
-  /** Cierra la jornada de hoy en esta caja: terminada, o para continuar otro día. */
-  declararJornada: (id: string | number, resultado: ResultadoDeJornada) =>
-    api.post<{ message: string; fecha: string; resultado: ResultadoDeJornada }>(
-      `/modulos_caja/${id}/jornada`,
-      { resultado },
-    ),
+  /** Quien digita da la caja por terminada: la única forma en que se cierra. */
+  terminarCaja: (id: string | number) =>
+    api.post<{ message: string; fecha: string; resultado: 'TERMINADA' }>(`/modulos_caja/${id}/jornada`, {
+      resultado: 'TERMINADA',
+    }),
   countFuidDatosReal: (cajaModulo: string) =>
     api.get<{ total: number }>('/modulos_caja/count_fuiddatosreal', {
       params: { caja_modulo: cajaModulo },
