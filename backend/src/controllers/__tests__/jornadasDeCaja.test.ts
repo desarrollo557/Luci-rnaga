@@ -236,12 +236,12 @@ async function declarar(cajaId: number, resultado: string) {
 }
 
 describe('cierre de jornada declarado por quien digita', () => {
-  it('deja registrado el día aunque la caja siga abierta mañana', async () => {
+  it('deja la jornada anotada con la cifra que la persona vio al cerrar', async () => {
     const hoy = fechaHoyLocal();
     await digitar(JORGE, `${hoy} 08:00:00`, 'UPD0000001');
     await digitar(JORGE, `${hoy} 16:30:00`, 'UPD0000002');
 
-    const res = await declarar(1, 'CONTINUA');
+    const res = await declarar(1, 'TERMINADA');
     expect(res.codigo).toBe(200);
 
     const { rows: jornadas } = await db.query<{
@@ -252,18 +252,29 @@ describe('cierre de jornada declarado por quien digita', () => {
     }>('SELECT resultado, registros, colaborador, usuario_id FROM jornada_caja');
     const [jornada] = jornadas;
     expect(jornada).toMatchObject({
-      resultado: 'CONTINUA',
+      resultado: 'TERMINADA',
       registros: 2,
       colaborador: JORGE,
       usuario_id: 7,
     });
+    expect((await historialDe(1))[0]).toMatchObject({ resultado: 'TERMINADA', registros_declarados: 2 });
+  });
 
-    // Lo que importa: la caja NO se cierra, y aun así el día queda contado.
-    const { rows: cajas } = await db.query<{ estado_caja: string }>(
-      'SELECT estado_caja FROM modulos_caja WHERE id = 1',
-    );
-    expect(cajas[0].estado_caja).toBe('EN PROCESO');
-    expect((await historialDe(1))[0]).toMatchObject({ resultado: 'CONTINUA', registros_declarados: 2 });
+  it('"la continúo otro día" ya no se acepta y no escribe nada', async () => {
+    // Existió y se retiró: como ninguna caja se cierra sola, no hace falta
+    // declarar que se sigue. Declararlo hoy se rechaza sin tocar nada.
+    const hoy = fechaHoyLocal();
+    await digitar(JORGE, `${hoy} 08:00:00`, 'UPD0000001');
+
+    const estadoDeLaCaja = async () =>
+      (await db.query<{ estado_caja: string | null }>('SELECT estado_caja FROM modulos_caja WHERE id = 1')).rows[0]
+        .estado_caja;
+    const antes = await estadoDeLaCaja();
+
+    const res = await declarar(1, 'CONTINUA');
+    expect(res.codigo).toBe(400);
+    expect((await db.query('SELECT 1 FROM jornada_caja')).rows).toHaveLength(0);
+    expect(await estadoDeLaCaja()).toBe(antes);
   });
 
   it('darla por terminada cierra la caja con la jornada de su último registro', async () => {
@@ -288,11 +299,11 @@ describe('cierre de jornada declarado por quien digita', () => {
     expect((await historialDe(1))[0].resultado).toBe('TERMINADA');
   });
 
-  it('cambiar de opinión el mismo día corrige lo declarado, no lo duplica', async () => {
+  it('declararla terminada dos veces el mismo día no duplica la jornada', async () => {
     const hoy = fechaHoyLocal();
     await digitar(JORGE, `${hoy} 08:00:00`, 'UPD0000001');
 
-    await declarar(1, 'CONTINUA');
+    await declarar(1, 'TERMINADA');
     await declarar(1, 'TERMINADA');
 
     const filas = await db.query<{ resultado: string }>('SELECT resultado FROM jornada_caja');
@@ -309,11 +320,11 @@ describe('cierre de jornada declarado por quien digita', () => {
        VALUES ('${CAJA}', '${hoy}', '${SARA}', 'TERMINADA', 1)`,
     );
 
-    await declarar(1, 'CONTINUA');
+    await declarar(1, 'TERMINADA');
 
     const historial = await historialDe(1);
     expect(historial.map((j) => [j.colaborador, j.resultado])).toEqual([
-      [JORGE, 'CONTINUA'],
+      [JORGE, 'TERMINADA'],
       [SARA, 'TERMINADA'],
     ]);
   });

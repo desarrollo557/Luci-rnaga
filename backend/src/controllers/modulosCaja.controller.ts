@@ -6,7 +6,12 @@ import { formatUpd, isUpdValid, nextUpd, normalizeUpd, toNumeric, UPD_MAX } from
 import { asignarUsuariosACajas, validarUsuariosDeRol } from './asignacionesCaja.controller.js';
 import { audit } from '../services/audit.service.js';
 import { fueraDeSuSede, sedeDeActa, sedeDeCaja, tieneCajaAsignada } from '../services/jerarquia.service.js';
-import { cambiarEstadoCaja } from '../services/cicloCaja.service.js';
+import { CAJA_EN_PROCESO, cambiarEstadoCaja } from '../services/cicloCaja.service.js';
+import {
+  MENSAJE_REAPERTURA_REQUIERE_LIDER,
+  REAPERTURA_REQUIERE_LIDER,
+  reabrirCajaPorLider,
+} from '../services/reaperturaCaja.service.js';
 import { fechaHoyLocal } from '../utils/format.js';
 import { tieneAlgunRol } from '../utils/roles.js';
 
@@ -139,43 +144,43 @@ export async function listJornadasDeCaja(req: Request, res: Response): Promise<v
   res.json(jornadas);
 }
 
-/** Lo que quien digita puede declarar al dejar una caja. */
+/**
+ * Lo que quien digita puede declarar al dejar una caja: que la terminó.
+ *
+ * Existió también "CONTINUA" —"la continúo otro día"— y se retiró: como
+ * ninguna caja se cierra sola, no hace falta declarar que se sigue; continuarla
+ * es seguir digitando. Las filas antiguas con ese valor se conservan en
+ * `jornada_caja` como historia; declararlo hoy se rechaza.
+ */
 export const JORNADA_TERMINADA = 'TERMINADA';
-export const JORNADA_CONTINUA = 'CONTINUA';
 
 /**
- * Cierre de jornada: "esta caja la terminé" o "la sigo mañana".
+ * Cierre de jornada: "esta caja la terminé".
  *
- * El estado de las cajas se deduce de la digitación y eso no cambia. Quien no
- * declara nada deja la caja terminada: al cambiar de jornada se cierra sola,
- * atribuida al día de su último registro (`cerrarJornadasVencidas`). Lo que la
- * deducción no puede saber es la **intención** de quien está dentro: si la
- * caja quedó a medias para seguirla otro día. Desde fuera, un día sin más
- * registros se ve igual en los dos casos, así que "la continúo otro día" es lo
- * único que mantiene la caja abierta para la jornada siguiente.
+ * Es la única forma en que una caja se cierra: ninguna se cierra sola, ni al
+ * pasar a otra caja ni al cambiar de jornada. Quien no declara nada deja la
+ * caja abierta y la continúa cuando quiera sin pedir nada. Declararlo la
+ * cierra en el momento, atribuida al día de su último registro, y deja la
+ * jornada anotada con la cifra que la persona vio al cerrar.
  *
  * Por eso esta declaración se guarda aparte y no se calcula: es el único dato
- * de la jornada que solo tiene la persona. Con ella, el trabajo de un día queda
- * cerrado y contado **aunque la caja siga abierta mañana**, que era justo lo
- * que se perdía: el auxiliar dejaba la caja a medias, la retomaba al día
- * siguiente y su jornada anterior no quedaba registrada en ninguna parte.
+ * de la jornada que solo tiene la persona. Se guarda también cuántos registros
+ * llevaba ese día en el momento de declarar. Es redundante con los registros
+ * —se puede volver a contar— y aun así se guarda: es la cifra que la persona
+ * vio y dio por buena al cerrar, y si más tarde alguien corrige o borra un
+ * registro, la cuenta viva cambia pero lo que se declaró aquel día no.
  *
- * Se guarda también cuántos registros llevaba ese día en el momento de
- * declarar. Es redundante con los registros —se puede volver a contar— y aun
- * así se guarda: es la cifra que la persona vio y dio por buena al cerrar, y
- * si más tarde alguien corrige o borra un registro, la cuenta viva cambia pero
- * lo que se declaró aquel día no.
- *
- * Declarar dos veces el mismo día corrige lo dicho en lugar de duplicarlo: uno
- * puede decir "la sigo mañana" y darse cuenta de que en realidad la terminó.
+ * Declarar dos veces el mismo día no duplica nada: se actualiza la cifra. Y
+ * una vez terminada, la técnica no la reabre por su cuenta: si sigue haciendo
+ * falta, pide la reapertura al líder desde la caja.
  */
 export async function declararJornadaDeCaja(req: Request, res: Response): Promise<void> {
   const { id } = req.params;
   const { resultado } = req.body as { resultado?: string };
 
-  if (resultado !== JORNADA_TERMINADA && resultado !== JORNADA_CONTINUA) {
+  if (resultado !== JORNADA_TERMINADA) {
     res.status(400).json({
-      message: `El campo resultado debe ser ${JORNADA_TERMINADA} o ${JORNADA_CONTINUA}`,
+      message: `El campo resultado debe ser ${JORNADA_TERMINADA}`,
     });
     return;
   }
@@ -227,15 +232,12 @@ export async function declararJornadaDeCaja(req: Request, res: Response): Promis
     );
 
     /*
-     * Y se mueve el estado de la caja en consecuencia. Terminarla la cierra con
-     * la jornada de su último registro, igual que el cierre automático; seguir
-     * mañana la deja abierta, que es lo que ya estaba, salvo que la deducción
-     * la hubiera cerrado por haber pasado a otra caja y se vuelva sobre ella.
+     * Y la caja se cierra, atribuida a la jornada de su último registro.
      */
     await cambiarEstadoCaja(
       async (sql, params) => (await conn.queryResult(sql, params)).affectedRows,
       id,
-      resultado === JORNADA_TERMINADA ? 'FINALIZADO' : 'EN PROCESO',
+      'FINALIZADO',
     );
   });
 
@@ -245,18 +247,12 @@ export async function declararJornadaDeCaja(req: Request, res: Response): Promis
     // El mismo tipo de evento para los dos: lo que cambia es lo que se declaró,
     // y eso va en el detalle, que es lo que se lee en el historial.
     accion: 'CAMBIAR_ESTADO',
-    detalle:
-      resultado === JORNADA_TERMINADA
-        ? `Caja ${caja.caja_modulo} dada por terminada por quien la digitó`
-        : `Caja ${caja.caja_modulo}: jornada cerrada, queda para continuarla otro día`,
+    detalle: `Caja ${caja.caja_modulo} dada por terminada por quien la digitó`,
     usuario: user,
   });
 
   res.json({
-    message:
-      resultado === JORNADA_TERMINADA
-        ? 'Caja dada por terminada'
-        : 'Jornada cerrada; la caja queda abierta para continuarla',
+    message: 'Caja dada por terminada',
     fecha: hoy,
     resultado,
   });
@@ -885,10 +881,10 @@ export async function changeEstadoCaja(req: Request, res: Response): Promise<voi
   }
 
   /*
-   * La técnica corrige el estado de sus cajas; el líder, el de las cajas de su
-   * sede; el administrador, cualquiera. La técnica ya podía; al líder se le
-   * abre porque la reapertura es suya: es la forma de autorizar a la técnica a
-   * corregir lo de días anteriores.
+   * El líder cambia el estado de las cajas de su sede; el administrador, el de
+   * cualquiera. La técnica solo puede **terminar** sus cajas: reabrirlas es
+   * del líder, y si lo intenta se le dice cómo pedirlo. El código es lo que
+   * permite a la pantalla ofrecer la solicitud en lugar de un error seco.
    */
   const gestiona = tieneAlgunRol(user, ['LIDER', 'ADMIN']);
   if (gestiona) {
@@ -897,48 +893,66 @@ export async function changeEstadoCaja(req: Request, res: Response): Promise<voi
       res.status(403).json({ message: 'Solo puede cambiar el estado de las cajas de su sede' });
       return;
     }
-  } else if (!(await tieneCajaAsignada(user, id))) {
-    res.status(403).json({ message: 'Solo puede cambiar el estado de las cajas que tiene asignadas' });
+  } else {
+    if (!(await tieneCajaAsignada(user, id))) {
+      res.status(403).json({ message: 'Solo puede cambiar el estado de las cajas que tiene asignadas' });
+      return;
+    }
+    if (estado_caja === CAJA_EN_PROCESO) {
+      res.status(403).json({ error: MENSAJE_REAPERTURA_REQUIERE_LIDER, code: REAPERTURA_REQUIERE_LIDER });
+      return;
+    }
+  }
+
+  /*
+   * Reabrir es del líder o el administrador: la reapertura queda firmada y la
+   * técnica puede corregir sus registros de días anteriores en esa caja
+   * mientras siga abierta. Si había solicitudes pendientes sobre la caja,
+   * quedan aprobadas y avisadas en el mismo paso, porque es lo que pedían.
+   */
+  if (estado_caja === CAJA_EN_PROCESO) {
+    const aprobadas = await reabrirCajaPorLider(user, id);
+    const solicitantes = aprobadas.map((s) => s.solicitante).join(', ');
+    void audit({
+      entidad: 'modulos_caja',
+      entidadId: id,
+      accion: 'CAMBIAR_ESTADO',
+      detalle:
+        aprobadas.length > 0
+          ? `Caja ${caja.caja_modulo} reabierta a petición de ${solicitantes}`
+          : `Caja ${caja.caja_modulo} reabierta para corregir registros`,
+      usuario: user,
+    });
+    res.json({
+      message:
+        aprobadas.length > 0
+          ? `Caja reabierta: se avisó a ${solicitantes} de que ya puede editarla`
+          : 'Caja reabierta: la técnica puede corregir sus registros mientras siga abierta',
+    });
     return;
   }
 
   /*
-   * El estado normalmente se deduce de la digitación; esto es la corrección a
-   * mano para los casos que la deducción no cubre. Al finalizar, la jornada y la
+   * Terminar a mano, para los casos que la deducción no cubre. La jornada y la
    * persona salen del último registro de la caja, no de quien pulsa ni del día
    * en que pulsa, para que el seguimiento atribuya la caja al día en que se
    * trabajó de verdad.
-   *
-   * Si quien reabre es el líder o el administrador, la reapertura queda firmada
-   * y la técnica puede corregir sus registros de días anteriores en esa caja
-   * mientras siga abierta. Se cierra sola al terminar la jornada, como todas.
    */
-  const reapertura =
-    gestiona && estado_caja === 'EN PROCESO'
-      ? { por: `${user.nombre.toUpperCase()} (${user.cc})`, el: fechaHoyLocal() }
-      : undefined;
   await cambiarEstadoCaja(
     async (sql, params) => (await queryResult(sql, params)).affectedRows,
     id,
     estado_caja,
-    reapertura,
   );
 
   void audit({
     entidad: 'modulos_caja',
     entidadId: id,
     accion: 'CAMBIAR_ESTADO',
-    detalle: reapertura
-      ? `Caja ${caja.caja_modulo} reabierta para corregir registros`
-      : `Caja ${caja.caja_modulo}: estado cambiado a ${estado_caja} a mano`,
+    detalle: `Caja ${caja.caja_modulo}: estado cambiado a ${estado_caja} a mano`,
     usuario: user,
   });
 
-  res.json({
-    message: reapertura
-      ? 'Caja reabierta: la técnica puede corregir sus registros mientras siga abierta'
-      : `Estado cambiado a ${estado_caja} correctamente`,
-  });
+  res.json({ message: `Estado cambiado a ${estado_caja} correctamente` });
 }
 
 export async function countFuidByCaja(req: Request, res: Response): Promise<void> {

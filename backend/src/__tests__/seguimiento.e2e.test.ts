@@ -28,7 +28,7 @@ import { serialDeFecha } from '../services/seguimientoInventario.service.js';
 vi.mock('pg', () => moduloPgFalso());
 
 const CLIENTE = { codigo: '077', entidad: 'ALCALDIA DE PRUEBA E2E' };
-const ACTA = 'ACTA-E2E-001';
+const ACTA = '122';
 const caja = (n: number) => CLIENTE.codigo + 'C' + String(n).padStart(6, '0');
 const LIDER = { cc: '9000001', nombre: 'LIDER E2E', contrasena: 'Clave.Lider1' };
 const TECNICA = { cc: '9000002', nombre: 'TECNICA E2E', contrasena: 'Clave.Tecnica1' };
@@ -247,7 +247,14 @@ describe('de crear un cliente a descargar el seguimiento', () => {
     expect(celda('E'), 'caja final').toBe('4432');
     expect(celda('I'), 'registros digitados con la primera lista').toBe('18');
     expect(celda('J'), 'colaborador, sin la cédula').toBe(TECNICA.nombre);
-    expect(celda('L'), 'acta de transferencia').toBe(ACTA);
+    // El acta va como "ACTA 122-2026": el número y el año en que se creó, con guion.
+    const {
+      rows: [{ anio }],
+    } = await baseViva().query<{ anio: number }>(
+      'SELECT EXTRACT(YEAR FROM created_at)::int AS anio FROM moduloscliente WHERE acta_transferencia_modulo = $1',
+      [ACTA],
+    );
+    expect(celda('L'), 'acta de transferencia, con su año').toBe(`ACTA ${ACTA}-${anio}`);
     // La caja se cuenta una sola vez, en el tramo donde está su último registro.
     expect(celda('F'), 'cajas terminadas en el primer tramo').toBe('1');
 

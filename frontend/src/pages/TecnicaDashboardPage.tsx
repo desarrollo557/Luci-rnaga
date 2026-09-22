@@ -166,9 +166,8 @@ export default function TecnicaDashboardPage() {
       {/*
         Lo primero: la caja que quedó a medias. Es el trabajo que hay que
         retomar, y llegar a ella por clientes, actas y cajas costaba tres o
-        cuatro pasos. Está abierta porque hoy se digitó en ella o porque se
-        marcó "la continúo otro día": las demás se cierran solas al terminar
-        la jornada.
+        cuatro pasos. Sigue abierta porque nadie la ha dado por terminada:
+        ninguna caja se cierra sola.
       */}
       {cajasSinTerminar.length > 0 && (
         <Card className="border-amber-200 bg-amber-50 p-4">
@@ -182,7 +181,7 @@ export default function TecnicaDashboardPage() {
                     : `Tienes ${cajasSinTerminar.length} cajas sin terminar`}
                 </p>
                 <p className="text-sm text-silver-600">
-                  Continúa donde la dejaste. Al terminar la jornada se dará por terminada, salvo que la marques para continuar otro día.
+                  Continúa donde la dejaste. La caja sigue abierta hasta que la des por terminada desde la digitación; si ya la cerraste y necesitas volver, pídele al líder que la reabra desde la caja.
                 </p>
               </div>
               <div className="flex flex-wrap gap-2">

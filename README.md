@@ -182,18 +182,15 @@ y se exporta al Excel como "N° de orden" es el consecutivo 1, 2, 3… en el ord
 en que se digitó, sin los huecos que dejan los registros borrados. Nadie lo
 escribe: el formulario no lo pide y lo que mande se ignora.
 
-**El estado de la caja se deduce, no se marca.** Guardar un registro en una
-caja la abre; guardar uno en otra caja cierra la anterior, con la fecha de su
-último registro y no la del día del cierre. Y al terminar la jornada, la caja
-que quedó abierta se cierra sola, atribuida a ese día: quien se va sin declarar
-nada deja la caja terminada. Nadie pulsa "caja terminada": este es un software
-operativo y un botón que hay que acordarse de pulsar acaba sin pulsarse, y
-entonces el seguimiento miente. Lo único que se pulsa es la excepción, "la
-continúo otro día", que es la única forma de dejar una caja abierta para la
-jornada siguiente. Dentro de la jornada, salir de la caja y volver horas después
-no cambia nada. La lógica está en `backend/src/services/cicloCaja.service.ts`;
-el cierre de la jornada corre al arrancar el servidor y a las 12:05 a. m. hora
-de Colombia (`cierreDeJornada.service.ts`).
+**La caja la cierra quien la trabaja, nunca el servidor.** Guardar un registro
+en una caja la abre. Cerrarla es siempre una decisión de la técnica: "Terminé
+esta caja" en la digitación (o el cambio de estado desde la vista de la caja),
+que la cierra atribuida a la fecha de su último registro y deja la jornada
+anotada. Ninguna caja se cierra sola: ni al pasar a otra caja ni al cambiar de
+día. Una caja que quedó abierta el viernes sigue abierta el lunes y se continúa
+sin pedir nada. Hubo una versión que deducía el cierre y se retiró porque
+cerraba cajas a medias. La lógica está en
+`backend/src/services/cicloCaja.service.ts`.
 
 **Las técnicas se asignan por caja.** Solo existe `asignacion_caja_tecnica`. La
 asignación por acta de la versión anterior se retiró porque obligaba a asignar
@@ -207,6 +204,16 @@ y qué día, y todo cierre lo borra, así que el permiso dura lo que dure la
 reapertura; reabrirla digitando en ella no cuenta. Cada versión anterior queda
 copiada en `historial` por un trigger, así que levantar la restricción no borra
 el rastro.
+
+**Reabrir una caja terminada se pide al líder.** La técnica no reabre por su
+cuenta: ni cambiando el estado ni digitando un registro nuevo en una caja
+terminada. Desde la caja envía la solicitud; los líderes de la sede la reciben
+al instante en la campana de notificaciones (una conexión abierta por eventos
+del servidor, `backend/src/services/notificaciones.service.ts`, además de la
+lista guardada en la tabla `notificacion`) y la aprueban o rechazan con un
+clic. Aprobar es reabrir, firmada por el líder como cualquier reapertura a
+mano, y la técnica recibe a su vez el aviso de que la caja ya está disponible.
+La lógica está en `backend/src/services/reaperturaCaja.service.ts`.
 
 **Eliminar respeta la jerarquía y deja huella.** Un cliente no se borra si
 tiene actas, ni un acta si tiene cajas. Borrar una caja arrastra, en una
@@ -308,7 +315,7 @@ desde la raíz del repositorio y no desde `backend/`.
 | Archivo | Para qué | Cómo se genera |
 | --- | --- | --- |
 | `F-PSD-001.xlsx` | Inventario de un cliente en el formato oficial: membrete, código, versión y los 27 encabezados. Los registros empiezan en la fila 8. | `inventarioExcel.service.ts` con ExcelJS. |
-| `F-PSD-IDA-001.xlsx` | Seguimiento de inventario: una fila por jornada, cliente y colaborador, con qué caja se empezó, en cuál se acabó y cuántas quedaron terminadas. | `seguimientoInventario.service.ts` reescribe solo la hoja de datos dentro del zip. La plantilla se prepara una vez con `backend/scripts/plantilla/preparar-seguimiento.mts` a partir del original del cliente. |
+| `F-PSD-IDA-001.xlsx` | Seguimiento de inventario: una fila por jornada, cliente y colaborador, con qué caja se empezó, en cuál se acabó y cuántas quedaron terminadas. El acta va como `ACTA 122-2026` (número y año de creación del acta, con guion); es el único documento que lo escribe así, el inventario del cliente lleva el número tal cual. | `seguimientoInventario.service.ts` reescribe solo la hoja de datos dentro del zip. La plantilla se prepara una vez con `backend/scripts/plantilla/preparar-seguimiento.mts` a partir del original del cliente. |
 | `PLANTILLA.xlsx` | Exportación genérica de registros. | `plantilla.service.ts`. |
 
 ## Pruebas

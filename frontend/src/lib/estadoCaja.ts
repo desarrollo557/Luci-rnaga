@@ -3,13 +3,12 @@ import { formatearFecha } from '@/lib/fechas';
 /**
  * Cómo se cuenta el estado de una caja en la interfaz.
  *
- * El estado no lo marca nadie a mano: el servidor lo deduce de la digitación
- * (ver `cicloCaja.service.ts`). Una caja está abierta mientras alguien trabaja
- * en ella y se cierra sola cuando esa persona pasa a la siguiente o cuando
- * termina la jornada sin que la marque para continuar otro día. Aquí solo se
- * traduce ese estado a algo que se entienda de un vistazo, y sobre todo se hace
- * visible lo que antes no se veía: que una caja viene de días anteriores y está
- * a medias.
+ * Guardar un registro abre la caja; cerrarla es siempre una decisión de la
+ * persona ("terminé esta caja"), nunca del servidor (ver
+ * `cicloCaja.service.ts`): ninguna caja se cierra sola. Aquí solo se traduce
+ * ese estado a algo que se entienda de un vistazo, y sobre todo se hace
+ * visible lo que antes no se veía: que una caja viene de días anteriores y
+ * sigue abierta.
  *
  * Vive aparte de las pantallas porque lo usan dos, la digitación y el panel de
  * la técnica, y tienen que decir exactamente lo mismo.
