@@ -109,26 +109,24 @@ export async function abrirPlantillaFuid(): Promise<{
 /**
  * Columnas que no se escriben tal cual están guardadas.
  *
- * Por ahora solo una: `elaborado_por` se guarda como "NOMBRE (CC)" porque los
+ * Dos. El número de orden, que sale como el consecutivo de la caja. Y
+ * `elaborado_por`, que se guarda como "NOMBRE (CC)" porque los
  * informes de producción cruzan al digitador por esa cédula, pero el FUID se le
  * entrega al cliente y la cédula de quien digitó no pinta nada ahí. Al líder le
  * tocaba borrarla a mano de cada fila antes de entregar.
  *
  * Se transforma aquí, al escribir, y no en la base: cambiar lo guardado dejaría
  * a los informes de producción sin con qué cruzar al digitador.
+ *
+ * El número de acta se escribe tal cual: este es el inventario que recibe el
+ * cliente y no se le cambia el formato. El "ACTA 122-2026" con el año va solo
+ * en el seguimiento de inventario (`reportes.controller.ts`).
  */
 const AL_ESCRIBIR: Readonly<Record<string, (valor: unknown, registro: Record<string, unknown>) => unknown>> = {
   // El "N° de orden" del formato es el consecutivo dentro de la caja, sin los
   // huecos de los registros borrados; el número guardado solo ordena.
   n_orden: (valor, registro) => registro.n_orden_caja ?? valor,
   elaborado_por: (v) => soloNombre(v),
-  nro_acta_transferible: (valor, registro) => {
-    const numero = String(valor ?? '').trim();
-    if (!numero) return '';
-    const actaCreada = registro.acta_created_at;
-    const año = actaCreada ? new Date(actaCreada as string).getFullYear() : '';
-    return año ? `ACTA ${numero}_${año}` : `ACTA ${numero}`;
-  },
 };
 
 /**

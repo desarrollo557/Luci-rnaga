@@ -4,7 +4,6 @@ import { DEFAULT_HOST, DEFAULT_PORT } from './config/constants.js';
 import { faltaConfiguracionDeBase } from './config/db.js';
 import { asegurarEsquema } from './config/esquema.js';
 import { iniciarActualizacionDiaria } from './services/actualizacionDiaria.service.js';
-import { ejecutarCierreDeJornadas, iniciarCierreDeJornadas } from './services/cierreDeJornada.service.js';
 
 /*
  * El esquema se comprueba antes de atender la primera petición, no después: si
@@ -34,19 +33,15 @@ if (falta) {
 await asegurarEsquema();
 
 /*
- * Las cajas que quedaron abiertas en jornadas anteriores se cierran antes de
- * atender a nadie. En el plan gratuito de Render el servidor duerme de noche y
- * despierta con la primera petición de la mañana, y esa petición ya tiene que
- * ver la caja de ayer como terminada. Nunca lanza: si falla, lo registra.
+ * Ninguna caja se cierra sola. Hubo un cierre de jornada que corría aquí y a
+ * las 12:05 a. m.; se retiró porque la caja solo se cierra cuando la técnica
+ * la da por terminada (`cicloCaja.service.ts`).
  */
-await ejecutarCierreDeJornadas('arranque del servidor');
 
 app.listen(DEFAULT_PORT, DEFAULT_HOST, () => {
   console.log(`API Luciérnaga ejecutándose en http://localhost:${DEFAULT_PORT}`);
-  // Las citas diarias: los inventarios se ponen al día a las 4:15 p. m. y las
-  // cajas de la jornada anterior se cierran a las 12:05 a. m., hora de
-  // Colombia. Se arrancan aquí y no en `app.ts` para que las pruebas, que
+  // La cita diaria: los inventarios se ponen al día a las 4:15 p. m., hora de
+  // Colombia. Se arranca aquí y no en `app.ts` para que las pruebas, que
   // importan la aplicación sin levantarla, no queden con un temporizador vivo.
   iniciarActualizacionDiaria();
-  iniciarCierreDeJornadas();
 });
