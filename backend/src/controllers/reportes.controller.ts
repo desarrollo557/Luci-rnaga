@@ -728,7 +728,10 @@ export async function produccionDetallada(req: Request, res: Response): Promise<
  * productividad, y una jornada de trabajo cuenta aunque falte su ficha de caja.
  *
  * El número de acta se toma del propio registro FUID, que es lo que escribió
- * quien digitó, y solo si viene vacío se cae al del acta relacionada.
+ * quien digitó, y solo si viene vacío se cae al del acta relacionada. Se
+ * escribe como lo pide el seguimiento, "ACTA 122-2026": el número y el año en
+ * que se creó el acta, con guion. Es el único documento donde va así; el
+ * inventario del cliente lleva el número tal cual está guardado.
  */
 /** El número de caja que pide el formato: de `051C002406` sale 2406. */
 const NUMERO_DE_CAJA = `NULLIF(substring(f.caja from '^[0-9]{3}C([0-9]{6})$'), '')::int`;
@@ -746,6 +749,12 @@ const SALTO_DE_LISTA = 50;
 /** El número del UPD que pide el formato: de `UPD2950001` sale 2950001. */
 const NUMERO_DE_UPD = `NULLIF(substring(f.upd from '^UPD([0-9]{7})$'), '')::int`;
 
+/** El número de acta: el del registro y, si viene vacío, el del acta relacionada. */
+const NUMERO_DE_ACTA = `COALESCE(NULLIF(f.nro_acta_transferible, 'N/A'), mcl.acta_transferencia_modulo)`;
+
+/** El año del acta: el de su creación y, si no lo tiene, el de la transferencia. */
+const AÑO_DEL_ACTA = `EXTRACT(YEAR FROM COALESCE(mcl.created_at, mcl.fecha_trans_modulo))::int::text`;
+
 /**
  * La consulta del seguimiento, con el filtro de la petición ya dentro.
  *
@@ -759,7 +768,15 @@ export function consultaSeguimiento(where: string): string {
     SELECT f.fecha_del_dato AS fecha,
            mcl.codigo       AS codigo_cliente,
            f.elaborado_por  AS colaborador,
-           COALESCE(NULLIF(f.nro_acta_transferible, 'N/A'), mcl.acta_transferencia_modulo) AS acta,
+           /*
+            * "ACTA 122-2026": el número y el año del acta, con guion. Un registro
+            * heredado sin ficha de caja no tiene acta relacionada y sale sin año.
+            */
+           CASE
+             WHEN ${NUMERO_DE_ACTA} IS NULL THEN NULL
+             WHEN ${AÑO_DEL_ACTA} IS NULL THEN 'ACTA ' || ${NUMERO_DE_ACTA}
+             ELSE 'ACTA ' || ${NUMERO_DE_ACTA} || '-' || ${AÑO_DEL_ACTA}
+           END AS acta,
            f.caja,
            f.created_at,
            f.id,

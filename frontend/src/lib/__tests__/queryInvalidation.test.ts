@@ -54,6 +54,7 @@ describe('cada dominio se invalida a sí mismo', () => {
     'fuiddatosreal',
     'inventario',
     'sub-modulos',
+    'notificaciones',
   ] as const;
 
   for (const dominio of dominios) {
@@ -81,6 +82,18 @@ describe('otros cambios que llegan al inventario', () => {
 
   it('editar un cliente lo mueve: su nombre y sus actas salen ahí', () => {
     expect(clavesInvalidadas('sub-modulos')).toContain('inventario');
+  });
+});
+
+describe('la reapertura de cajas por solicitud', () => {
+  it('reabrir o terminar una caja mueve sus solicitudes de reapertura', () => {
+    expect(clavesInvalidadas('modulos-caja')).toContain('solicitudes-reapertura');
+  });
+
+  it('un aviso nuevo mueve la campana y las solicitudes pendientes', () => {
+    const claves = clavesInvalidadas('notificaciones');
+    expect(claves).toContain('notificaciones');
+    expect(claves).toContain('solicitudes-reapertura');
   });
 });
 

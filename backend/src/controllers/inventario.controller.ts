@@ -81,7 +81,7 @@ interface FuidConEstadoRow extends FuidDato {
 }
 
 const FUID_BASE_SELECT = `
-  SELECT f.*, o.n_orden_caja, mc.estado_caja, mcl.acta_transferencia_modulo AS nro_acta_transferible, mcl.created_at AS acta_created_at
+  SELECT f.*, o.n_orden_caja, mc.estado_caja
   FROM fuiddatosreal f
   JOIN ${sqlOrdenEnCaja()} o ON o.id = f.id
   JOIN modulos_caja mc ON mc.caja_modulo = f.caja

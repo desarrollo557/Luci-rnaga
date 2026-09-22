@@ -125,9 +125,10 @@ tráfico** y la primera petición después tarda cerca de un minuto. Tiene tres
 consecuencias que el código ya contempla: las pantallas consultan cada 15
 segundos en vez de mantener una conexión abierta; la actualización diaria de
 los inventarios de las 4:15 p. m. se ejecuta al despertar si el servicio estaba
-dormido a esa hora; y el cierre de las cajas de la jornada anterior, previsto
-para las 12:05 a. m., se hace también en cada arranque, antes de atender la
-primera petición. Cuando el sistema entre en uso real conviene pasar al plan
+dormido a esa hora; y la conexión abierta de las notificaciones (la única que
+se mantiene, para que la solicitud de reapertura llegue al líder al instante)
+se cierra cuando la pestaña no está en primer plano, para no mantener el
+servicio despierto sin motivo. Cuando el sistema entre en uso real conviene pasar al plan
 `starter`, que no se duerme; es cambiar una palabra en `render.yaml`.
 
 ---
@@ -147,6 +148,7 @@ que se aplicaron. Todos son idempotentes: se pueden repetir sin romper nada.
 | `06-ciclo-caja.sql` | `modulos_caja.fecha_finalizacion`, `finalizada_por`, el índice sobre `fuiddatosreal(caja)` y el relleno de las cajas ya finalizadas. | Igual: el servidor lo asegura al arrancar. |
 | `07-reapertura-caja.sql` | `modulos_caja.reabierta_por` y `reabierta_el`: quién reabrió la caja a mano y qué día, que es lo que deja a la técnica corregir sus registros de días anteriores mientras la caja siga abierta. | Igual: el servidor lo asegura al arrancar. |
 | `08-asunto-sin-marcador.sql` | El trigger del asunto deja fuera el marcador `N/A` al unir los dos asuntos, y los asuntos ya guardados con el marcador pegado se recomponen una sola vez. | Igual: el servidor lo asegura al arrancar. |
+| `09-reapertura-por-solicitud.sql` | Las tablas `solicitud_reapertura` (la técnica pide reabrir una caja terminada; el líder la aprueba o rechaza) y `notificacion` (los avisos de cada persona, que la campana muestra y la conexión abierta entrega al instante). | Igual: el servidor lo asegura al arrancar. |
 
 ### Lo que el servidor asegura al arrancar
 
