@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { isAuthenticated, isLiderOrAdmin } from '../middlewares/auth.js';
+import { isAuthenticated, isLiderOrAdmin, isTecnica } from '../middlewares/auth.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { idNumerico } from '../middlewares/paramId.js';
 import {
@@ -14,6 +14,7 @@ import {
   getClienteParaInventario,
   descargarInventarioExcel,
   descargarFuidDeCliente,
+  descargarMiInventario,
   recalcularInventarioController,
 } from '../controllers/inventario.controller.js';
 
@@ -22,6 +23,9 @@ router.param('id', idNumerico);
 
 router.get('/inventario', isAuthenticated, isLiderOrAdmin, asyncHandler(listInventario));
 router.get('/inventario/clientes', isAuthenticated, isLiderOrAdmin, asyncHandler(listClientesParaInventario));
+// El inventario general de quien digita: sus propios registros. Va antes de las
+// rutas con `:id` para que "mio" no se lea como un identificador.
+router.get('/inventario/mio/excel', isAuthenticated, isTecnica, asyncHandler(descargarMiInventario));
 // La ruta del Excel va antes que la del cliente a secas: si no, `:codigo`
 // capturaría también el segmento `excel`.
 router.get('/inventario/clientes/:codigo/excel', isAuthenticated, isLiderOrAdmin, asyncHandler(descargarFuidDeCliente));

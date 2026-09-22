@@ -46,6 +46,8 @@ const TABLAS = `
   CREATE TABLE fuiddatosreal (
     id serial PRIMARY KEY, fecha_del_dato date, caja text, upd text,
     elaborado_por text, nro_acta_transferible text, created_at timestamptz);
+  CREATE TABLE asignacion_caja_tecnica (
+    id serial PRIMARY KEY, modulo_id int, usuario_id int, upd_inicio text, ultimo_upd text);
 `;
 
 const ANA = 'ANA PEREZ (111)';
@@ -98,7 +100,9 @@ beforeAll(async () => {
 
 beforeEach(async () => {
   reloj = 0;
-  await db.exec('TRUNCATE fuiddatosreal, modulos_caja, moduloscliente, jornada_caja RESTART IDENTITY');
+  await db.exec(
+    'TRUNCATE fuiddatosreal, modulos_caja, moduloscliente, jornada_caja, asignacion_caja_tecnica RESTART IDENTITY',
+  );
   await db.exec(`INSERT INTO moduloscliente (codigo, acta_transferencia_modulo) VALUES ('051', 'ACTA-7')`);
   for (let n = 2400; n <= 2412; n += 1) {
     await db.query('INSERT INTO modulos_caja (caja_modulo, id_modulo_caja, estado_caja) VALUES ($1, 1, NULL)', [caja(n)]);
@@ -167,6 +171,37 @@ describe('ciclo de vida de la caja', () => {
     expect(estado.estado_caja).toBe(CAJA_FINALIZADA);
     expect(estado.cierre).not.toBeNull();
     expect(estado.finalizada_por).toBeNull();
+  });
+
+  it('terminarla deja el cierre anotado en la jornada de su último registro', async () => {
+    await digitar(LUNES, 2406, ANA);
+    await digitar(LUNES, 2406, ANA);
+    const { rows } = await db.query<{ id: number }>('SELECT id FROM modulos_caja WHERE caja_modulo = $1', [caja(2406)]);
+    await cambiarEstadoCaja(ejecutar, rows[0].id, CAJA_FINALIZADA);
+
+    const { rows: jornadas } = await db.query<{ fecha: string; colaborador: string; resultado: string; registros: number }>(
+      'SELECT fecha::text AS fecha, colaborador, resultado, registros FROM jornada_caja WHERE caja_modulo = $1',
+      [caja(2406)],
+    );
+    expect(jornadas).toEqual([{ fecha: LUNES, colaborador: ANA, resultado: 'TERMINADA', registros: 2 }]);
+  });
+
+  it('reabrirla borra el arranque de UPD de las técnicas asignadas, para que lo indiquen de nuevo', async () => {
+    const { rows } = await db.query<{ id: number }>('SELECT id FROM modulos_caja WHERE caja_modulo = $1', [caja(2406)]);
+    await db.query(
+      `INSERT INTO asignacion_caja_tecnica (modulo_id, usuario_id, upd_inicio, ultimo_upd)
+       VALUES ($1, 1, 'UPD0001000', 'UPD0001003')`,
+      [rows[0].id],
+    );
+    await digitar(LUNES, 2406, ANA);
+    await cambiarEstadoCaja(ejecutar, rows[0].id, CAJA_FINALIZADA);
+    await cambiarEstadoCaja(ejecutar, rows[0].id, CAJA_EN_PROCESO);
+
+    const { rows: asignaciones } = await db.query<{ upd_inicio: string | null; ultimo_upd: string | null }>(
+      'SELECT upd_inicio, ultimo_upd FROM asignacion_caja_tecnica WHERE modulo_id = $1',
+      [rows[0].id],
+    );
+    expect(asignaciones).toEqual([{ upd_inicio: null, ultimo_upd: null }]);
   });
 
   it('no hace nada si falta la caja o el autor', async () => {
@@ -311,6 +346,24 @@ describe('columnas del seguimiento de inventario', () => {
     ]);
     // Cinco cajas trabajadas, cinco contadas, ninguna dos veces.
     expect(filas.reduce((suma, f) => suma + f.cerradas, 0)).toBe(5);
+  });
+
+  it('cerrada un día y reabierta al siguiente, la caja cuenta los dos días', async () => {
+    const { rows } = await db.query<{ id: number }>('SELECT id FROM modulos_caja WHERE caja_modulo = $1', [caja(2406)]);
+    // Lunes: dos registros y la da por terminada.
+    await digitar(LUNES, 2406, ANA);
+    await digitar(LUNES, 2406, ANA);
+    await cambiarEstadoCaja(ejecutar, rows[0].id, CAJA_FINALIZADA);
+    // Martes: la reabre, sigue y la vuelve a terminar.
+    await cambiarEstadoCaja(ejecutar, rows[0].id, CAJA_EN_PROCESO);
+    await digitar(MARTES, 2406, ANA);
+    await cambiarEstadoCaja(ejecutar, rows[0].id, CAJA_FINALIZADA);
+
+    // El lunes no pierde su caja por haberla retomado el martes.
+    expect(await informe()).toEqual([
+      { quien: ANA, ini: 2406, fin: 2406, updIni: 1001, updFin: 1002, cerradas: 1, registros: 2 },
+      { quien: ANA, ini: 2406, fin: 2406, updIni: 1003, updFin: 1003, cerradas: 1, registros: 1 },
+    ]);
   });
 
   it('la caja compartida cuenta para quien digitó su último registro, no para las dos', async () => {

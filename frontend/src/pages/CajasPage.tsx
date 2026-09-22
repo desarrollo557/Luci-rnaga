@@ -14,7 +14,6 @@ import {
 import { invalidateDomain } from '@/lib/queryInvalidation';
 import { formatearFechaHora } from '@/lib/fechas';
 import { useAuthStore } from '@/stores/authStore';
-import { BotonPedirReapertura } from './cajas/CajaTerminada';
 import { HistorialDeDigitacion } from './cajas/HistorialDeDigitacion';
 import { tieneAlgunRol, tieneRol } from '@/types';
 
@@ -238,20 +237,25 @@ export default function CajasPage() {
               {tieneRol(user, 'TECNICA') && (
                 <>
                   {/*
-                    La técnica termina sus cajas; reabrirlas es del líder, y
-                    desde aquí se lo pide. Ninguna caja se cierra sola.
+                    La técnica termina sus cajas y las reabre ella misma; nada
+                    las cierra solas. Al reabrir se le vuelve a pedir el UPD con
+                    el que continúa.
                   */}
-                  {estado === 'FINALIZADO' ? (
-                    <BotonPedirReapertura cajaId={caja.id} />
-                  ) : (
-                    <Button
-                      variant="secondary"
-                      onClick={handleCambiarEstado}
-                      loading={cambiarEstadoMutation.isPending}
-                    >
-                      <PencilLine className="size-4" /> Dar por terminada
-                    </Button>
-                  )}
+                  <Button
+                    variant="secondary"
+                    onClick={handleCambiarEstado}
+                    loading={cambiarEstadoMutation.isPending}
+                  >
+                    {estado === 'FINALIZADO' ? (
+                      <>
+                        <LockOpen className="size-4" /> Reabrir caja
+                      </>
+                    ) : (
+                      <>
+                        <PencilLine className="size-4" /> Dar por terminada
+                      </>
+                    )}
+                  </Button>
                   <Link to={`/cajas/${mid}/datos`} state={{ from: `/clientes/${id}/actas/${mid}/cajas` }}>
                     <Button>
                       <ClipboardList className="size-4" /> Ir a Digitación
