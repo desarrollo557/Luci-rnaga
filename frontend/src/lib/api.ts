@@ -301,10 +301,20 @@ export const modulosCajaApi = {
     ),
   getTecnicaStats: () => api.get<{
     usuario: { id: number; nombre: string; cc: string };
-    resumen: { cajas_asignadas: number; fuid_creados: number; ultimo_upd_global: string | null };
+    resumen: {
+      cajas_asignadas: number;
+      fuid_creados: number;
+      /** Lo digitado hoy por esta persona, por la fecha del dato. */
+      fuid_hoy: number;
+      ultimo_upd_global: string | null;
+    };
     detalle_cajas: Array<{
       id: number;
       caja_modulo: string;
+      /** De quién es la caja y con qué acta entró: sin esto es solo un número. */
+      codigo_cliente: string | null;
+      entidad_cliente: string | null;
+      acta: string | null;
       estado_caja: string | null;
       fecha_finalizacion: string | null;
       fuid_creados: number;
@@ -650,7 +660,9 @@ export const reportesApi = {
    * Sin fechas trae todo lo digitado; con ellas, solo ese periodo. Los filtros
    * vacíos no se envían para que no lleguen como cadena vacía al servidor.
    */
-  descargarSeguimiento: (filtros: { desde?: string; hasta?: string; persona?: string } = {}) =>
+  descargarSeguimiento: (
+    filtros: { desde?: string; hasta?: string; persona?: string; cliente?: string; acta?: string } = {},
+  ) =>
     api.get('/seguimiento-inventario/excel', { responseType: 'blob', params: sinVacios(filtros) }),
   /**
    * Cuántas jornadas y registros llevará el seguimiento con esos filtros. Se pide
@@ -661,7 +673,9 @@ export const reportesApi = {
   /** Quién está dentro del software y cómo va su jornada. */
   actividad: (filtros: { desde?: string; hasta?: string } = {}) =>
     api.get<ActividadDelEquipo>('/actividad', { params: sinVacios(filtros) }),
-  resumenSeguimiento: (filtros: { desde?: string; hasta?: string; persona?: string } = {}) =>
+  resumenSeguimiento: (
+    filtros: { desde?: string; hasta?: string; persona?: string; cliente?: string; acta?: string } = {},
+  ) =>
     api.get<{ jornadas: number; registros: number }>('/seguimiento-inventario/resumen', {
       params: sinVacios(filtros),
     }),

@@ -24,6 +24,10 @@ export interface FiltrosSeguimiento {
   desde?: string;
   hasta?: string;
   persona?: string;
+  /** Código del cliente, para acotar el seguimiento a uno solo. */
+  cliente?: string;
+  /** Número de acta, tal como se escribió en los registros. */
+  acta?: string;
 }
 
 const plural = (n: number) => `${n.toLocaleString('es-CO')} ${n === 1 ? 'jornada' : 'jornadas'}`;
@@ -43,9 +47,15 @@ export function mensajeDeEtapa(etapa: EtapaSeguimiento, jornadas: number | null)
 }
 
 /** Nombre con el que se guarda el archivo: lleva el periodo pedido, o el día si no se pidió ninguno. */
-export function nombreArchivoSeguimiento({ desde = '', hasta = '' }: FiltrosSeguimiento, hoy = fechaHoyLocal()): string {
+export function nombreArchivoSeguimiento(
+  { desde = '', hasta = '', cliente = '', acta = '' }: FiltrosSeguimiento,
+  hoy = fechaHoyLocal(),
+): string {
   const periodo = desde && hasta ? `_${desde}_a_${hasta}` : desde ? `_desde_${desde}` : hasta ? `_hasta_${hasta}` : `_${hoy}`;
-  return `Seguimiento_Inventario${periodo}.xlsx`;
+  // Lo acotado se dice en el nombre: con tres seguimientos en la carpeta de
+  // descargas, el periodo solo no basta para saber cuál es cuál.
+  const alcance = `${cliente ? `_${cliente}` : ''}${acta ? `_ACTA_${acta.replace(/\s+/g, '-')}` : ''}`;
+  return `Seguimiento_Inventario${alcance}${periodo}.xlsx`;
 }
 
 export function useDescargaSeguimiento() {

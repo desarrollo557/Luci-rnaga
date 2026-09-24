@@ -7,6 +7,7 @@ import {
   seguimientoFilename,
   type FilaSeguimiento,
 } from '../services/seguimientoInventario.service.js';
+import { tieneAlgunRol } from '../utils/roles.js';
 
 export interface FuidConEstado {
   id: number;
@@ -886,10 +887,22 @@ function filtrosSeguimiento(req: Request): {
   desde: string;
   hasta: string;
   persona: string;
+  cliente: string;
+  acta: string;
 } {
   const desde = String(req.query.desde ?? '').trim();
   const hasta = String(req.query.hasta ?? '').trim();
-  const persona = String(req.query.persona ?? '').trim();
+  const cliente = String(req.query.cliente ?? '').trim();
+  const acta = String(req.query.acta ?? '').trim();
+  /*
+   * Quien digita solo puede sacar su propio seguimiento, y no por lo que mande
+   * en la petición: se le impone su nombre. Un líder o un administrador sí
+   * eligen de quién lo quieren, o de nadie para sacarlo entero.
+   */
+  const user = req.session.user;
+  const persona = tieneAlgunRol(user, ['LIDER', 'ADMIN'])
+    ? String(req.query.persona ?? '').trim()
+    : `${user?.nombre?.toUpperCase() ?? ''} (${user?.cc ?? ''})`;
   const condiciones: string[] = ['TRUE'];
   const params: unknown[] = [];
   if (desde) {
@@ -904,7 +917,21 @@ function filtrosSeguimiento(req: Request): {
     condiciones.push('f.elaborado_por = ?');
     params.push(persona);
   }
-  return { where: condiciones.join(' AND '), params, desde, hasta, persona };
+  /*
+   * El cliente va por su código, que es lo que identifica al cliente en el
+   * acta; y el acta, por el número que escribió quien digitó, cayendo al del
+   * acta relacionada cuando el registro no lo trae, igual que en la columna del
+   * formato. Así lo que se filtra es lo mismo que después se lee en el Excel.
+   */
+  if (cliente) {
+    condiciones.push('mcl.codigo = ?');
+    params.push(cliente);
+  }
+  if (acta) {
+    condiciones.push(`COALESCE(NULLIF(f.nro_acta_transferible, 'N/A'), mcl.acta_transferencia_modulo) = ?`);
+    params.push(acta);
+  }
+  return { where: condiciones.join(' AND '), params, desde, hasta, persona, cliente, acta };
 }
 
 /**
