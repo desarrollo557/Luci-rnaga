@@ -205,7 +205,6 @@ type CamposHeredados = Pick<
   | 'objeto'
   | 'nro_acta_transferible'
   | 'fecha_transferencia'
-  | 'asunto_2'
   | 'caja_interna'
 >;
 
@@ -224,7 +223,6 @@ type CamposHeredados = Pick<
  */
 function valoresHeredados(
   caja: ModuloCaja | null | undefined,
-  asuntoAutomatico = '',
   cajaInterna = '',
 ): CamposHeredados {
   return {
@@ -235,15 +233,13 @@ function valoresHeredados(
     objeto: sinNA(caja?.objeto_caja),
     nro_acta_transferible: caja?.acta_trans_caja ?? '',
     fecha_transferencia: caja?.fecha_trans_caja?.slice(0, 10) ?? '',
-    // El asunto automático del último registro de la caja. Una caja suele
-    // contener documentos del mismo asunto, así que se trae ya escrito y quien
-    // necesite otro lo cambia; volver a teclearlo en cada registro era el
-    // trabajo repetido más caro de la digitación.
-    //
-    // El asunto manual NO se hereda: describe el documento concreto, cambia de
-    // un registro al siguiente y arrastrarlo hacía que se guardara el del
-    // anterior cuando alguien pasaba de largo.
-    asunto_2: asuntoAutomatico,
+    // Ni el asunto automático ni el manual se heredan: los dos arrancan en
+    // blanco. El automático venía puesto con el del último registro de la
+    // caja, y se quitó el 24 de septiembre de 2026 a pedido de la operación —
+    // hay cajas con veintinueve asuntos distintos en treinta registros, donde
+    // el heredado casi nunca era el bueno y había que borrarlo antes de
+    // escribir. Ahora se teclean tres letras y Tab lo completa con lo que ya
+    // hay en la caja (`sugerencias.ts`), que cuesta menos que corregir.
     // La caja interna se hereda del **primer** registro de la caja. Es un dato
     // de la caja, no del documento: una vez fijado en el primero vale para
     // todos los que vengan detrás. Del primero y no del último —que es como se
@@ -258,12 +254,11 @@ function emptyFormFor(
   user: SessionUser | null,
   defaultNOrden: number,
   caja?: ModuloCaja | null,
-  asuntoAutomatico?: string,
   cajaInterna?: string,
 ): FuidFormValues {
   return {
     ...EMPTY_FORM,
-    ...valoresHeredados(caja, asuntoAutomatico, cajaInterna),
+    ...valoresHeredados(caja, cajaInterna),
     caja: cajaId,
     n_orden: String(defaultNOrden),
     // El tomo queda en blanco a propósito. Antes se sugería el siguiente de la
@@ -453,8 +448,6 @@ interface FormularioFuidProps {
   /** Registro que se corrige, o `null` para digitar uno nuevo. */
   editing: FuidDato | null;
   defaultNOrden: number;
-  /** Asunto automático del último registro de la caja, para no reescribirlo. */
-  asuntoAutomaticoDeLaCaja: string;
   /** Caja interna del primer registro de la caja: es la misma para toda ella. */
   cajaInternaDeLaCaja: string;
   /** Avisa del UPD recién guardado, para que la lista pueda señalar su fila. */
@@ -482,7 +475,6 @@ function FormularioFuid({
   cajaId,
   editing,
   defaultNOrden,
-  asuntoAutomaticoDeLaCaja,
   cajaInternaDeLaCaja,
   caja,
   onTerminar,
@@ -499,7 +491,7 @@ function FormularioFuid({
   const [form, setForm] = useState<FuidFormValues>(() =>
     editing
       ? formFromRecord(editing)
-      : emptyFormFor(cajaId, user, defaultNOrden, caja, asuntoAutomaticoDeLaCaja, cajaInternaDeLaCaja),
+      : emptyFormFor(cajaId, user, defaultNOrden, caja, cajaInternaDeLaCaja),
   );
   /** Registros guardados sin cerrar el formulario; remonta el formulario para volver a enfocar Asunto Manual. */
   const [racha, setRacha] = useState(0);
@@ -536,7 +528,7 @@ function FormularioFuid({
    */
   useEffect(() => {
     if (editing) return;
-    const heredados = valoresHeredados(caja, asuntoAutomaticoDeLaCaja, cajaInternaDeLaCaja);
+    const heredados = valoresHeredados(caja, cajaInternaDeLaCaja);
     setForm((prev) => {
       const pendientes = Object.entries(heredados).filter(
         ([campo, valor]) => valor !== '' && prev[campo as keyof FuidFormValues] === '',
@@ -544,7 +536,7 @@ function FormularioFuid({
       if (pendientes.length === 0) return prev;
       return { ...prev, ...Object.fromEntries(pendientes) };
     });
-  }, [caja, asuntoAutomaticoDeLaCaja, cajaInternaDeLaCaja, editing]);
+  }, [caja, cajaInternaDeLaCaja, editing]);
 
   const debouncedUpd = useDebouncedValue(form.upd.trim(), 500);
   const updExistsQuery = useQuery({
@@ -582,25 +574,18 @@ function FormularioFuid({
       // con el UPD consecutivo, el N° de orden y los datos de la caja
       // precargados; el cursor vuelve a Codigo.
       //
-      // Del registro que se acaba de guardar se arrastran el asunto automático
-      // y la caja interna: lo habitual es encadenar varios documentos del mismo
-      // asunto dentro de la misma caja interna, y volver a escribirlos cada vez
-      // cuesta más que corregirlos cuando cambian. Se toman de aquí y no de la
-      // lista para que el siguiente registro los tenga ya puestos, sin esperar
-      // a que la consulta se refresque. El asunto manual y las notas arrancan
-      // en blanco, porque describen el documento concreto y no se repiten de un
-      // registro al siguiente.
+      // Del registro que se acaba de guardar se arrastra la caja interna, que
+      // es un dato de la caja y no del documento. Se toma de aquí y no de la
+      // lista para que el siguiente registro la tenga ya puesta, sin esperar a
+      // que la consulta se refresque.
+      //
+      // El asunto automático ya no: arranca en blanco como el manual y las
+      // notas. Se teclean tres letras y Tab lo completa con lo que ya hay en la
+      // caja.
       const guardado = form.upd.trim().toUpperCase();
       const siguienteUpd = siguienteUpdLocal(guardado);
       setForm({
-        ...emptyFormFor(
-          cajaId,
-          user,
-          defaultNOrden + racha + 1,
-          caja,
-          form.asunto_2,
-          form.caja_interna,
-        ),
+        ...emptyFormFor(cajaId, user, defaultNOrden + racha + 1, caja, form.caja_interna),
         upd: siguienteUpd,
       });
       setRacha((r) => r + 1);
@@ -1269,22 +1254,6 @@ export default function DatosPage() {
     return sinNA(primero?.caja_interna);
   }, [registros]);
 
-  /*
-   * Asunto automático con el que se abre un registro nuevo: el del último que se
-   * digitó en la caja. Se toma el de mayor número de orden, no el último que
-   * devuelva la consulta, porque el orden de las filas no está garantizado.
-   *
-   * El asunto manual no entra aquí a propósito: es el único texto que describe
-   * el documento concreto, así que cada registro lo escribe desde cero.
-   */
-  const asuntoAutomaticoDeLaCaja = useMemo<string>(() => {
-    const ultimo = registros.reduce<FuidDato | null>(
-      (mayor, registro) => ((registro.n_orden ?? 0) >= (mayor?.n_orden ?? -1) ? registro : mayor),
-      null,
-    );
-    return sinNA(ultimo?.asunto_2);
-  }, [registros]);
-
 
 
   const deleteMutation = useMutation({
@@ -1676,7 +1645,6 @@ export default function DatosPage() {
             cajaId={cajaCode}
             editing={null}
             defaultNOrden={defaultNOrden}
-            asuntoAutomaticoDeLaCaja={asuntoAutomaticoDeLaCaja}
             cajaInternaDeLaCaja={cajaInternaDeLaCaja}
             caja={cajaQuery.data}
             onGuardado={setUltimoGuardado}
@@ -1792,7 +1760,6 @@ export default function DatosPage() {
             cajaId={cajaCode}
             editing={editing}
             defaultNOrden={defaultNOrden}
-            asuntoAutomaticoDeLaCaja={asuntoAutomaticoDeLaCaja}
             cajaInternaDeLaCaja={cajaInternaDeLaCaja}
             caja={cajaQuery.data}
             onTerminar={cerrarEdicion}
