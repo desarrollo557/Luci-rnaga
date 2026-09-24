@@ -1,14 +1,12 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { cn } from '@/lib/cn';
 import { useQuery } from '@tanstack/react-query';
 import { formatearHora } from '@/lib/fechas';
 import {
   Activity,
   Boxes,
-  CheckCircle2,
   Download,
   FileStack,
-  FileText,
   FilterX,
   Layers,
   MapPin,
@@ -33,14 +31,11 @@ import {
 import {
   BarrasHorizontales,
   ChartCard,
-  Dona,
   ESTADO,
   Leyenda,
   Medidor,
   SERIES,
-  SERIES_ORDEN,
   SerieTemporal,
-  StatTile,
   conSeparador,
   etiquetaDia,
   etiquetaMes,
@@ -49,6 +44,7 @@ import {
   modulosClienteApi,
   reportesApi,
   subModulosApi,
+  type CajaDeCliente,
   type ClienteConDetalle,
   type Digitador,
 } from '@/lib/api';
@@ -169,10 +165,50 @@ export default function ProduccionPage() {
     queryFn: () => modulosClienteApi.list().then((res) => res.data),
     enabled: eligiendoPeriodo,
   });
+  /*
+   * El detalle por cliente, para saber **quién trabajó en cada uno**. Sin esto,
+   * el diálogo ofrecía los digitadores de toda la empresa y se podía pedir el
+   * seguimiento de alguien que no ha tocado ese cliente: el documento salía
+   * vacío y parecía un fallo del sistema.
+   *
+   * Es la misma consulta que usa el detalle de abajo, sin filtros, así que
+   * React Query la comparte en vez de pedirla dos veces.
+   */
+  const detalleQuery = useQuery({
+    queryKey: ['estadisticas', 'detalle', '', '', ''],
+    queryFn: async () => (await reportesApi.produccionDetallada({})).data,
+    enabled: eligiendoPeriodo,
+  });
+
   const opcionesCliente = useMemo(
     () => (clientesQuery.data ?? []).map((c) => ({ value: c.codigo, label: `${c.codigo} — ${c.entidad_remitente}` })),
     [clientesQuery.data],
   );
+  /*
+   * Los técnicos que se ofrecen: los que han digitado en lo que se está
+   * pidiendo. Con un cliente elegido, los suyos; si además hay un acta, solo
+   * los de esa acta. Sin cliente, todos los que tienen registros.
+   */
+  const opcionesTecnico = useMemo(() => {
+    const todos = (stats?.digitadores ?? []).map((d) => d.nombre);
+    if (!segCliente) return todos.map((nombre) => ({ value: nombre, label: nombre }));
+    const cliente = (detalleQuery.data ?? []).find((c) => c.codigo === segCliente);
+    if (!cliente) return [];
+    const nombres = segActa
+      ? [...new Set(cliente.detalle_cajas.filter((c) => c.acta === segActa).flatMap((c) => c.personas))]
+      : cliente.digitadores.map((d) => d.nombre);
+    return nombres.sort((uno, otro) => uno.localeCompare(otro, 'es')).map((nombre) => ({ value: nombre, label: nombre }));
+  }, [stats?.digitadores, detalleQuery.data, segCliente, segActa]);
+
+  /*
+   * Si lo elegido deja de estar en la lista —se cambió de cliente o de acta—,
+   * se suelta. Quedaría puesto un técnico que no trabajó ahí y el documento
+   * saldría vacío sin decir por qué.
+   */
+  useEffect(() => {
+    if (segPersona && !opcionesTecnico.some((o) => o.value === segPersona)) setSegPersona('');
+  }, [opcionesTecnico, segPersona]);
+
   /* Las actas se acotan al cliente elegido: un acta de otro daría un documento vacío. */
   const opcionesActa = useMemo(() => {
     const todas = actasQuery.data ?? [];
@@ -216,11 +252,6 @@ export default function ProduccionPage() {
     [stats],
   );
 
-  const tendenciaDigitacion = useMemo(
-    () => (stats?.fuids_por_mes ?? []).map((m) => m.total),
-    [stats],
-  );
-
   // Búsqueda por nombre, cédula, rol o sede sobre TODOS los digitadores.
   const termino = filtroDigitador.trim().toLowerCase();
   const digitadoresFiltrados = useMemo(() => {
@@ -238,9 +269,6 @@ export default function ProduccionPage() {
       </div>
     );
   }
-
-  const pctAvance =
-    stats.total_fuids > 0 ? Math.round((stats.fuids_aprobados / stats.total_fuids) * 100) : 0;
 
   const columnasDigitadores: Column<Digitador>[] = [
     {
@@ -384,13 +412,17 @@ export default function ProduccionPage() {
             <Select
               label="Técnico"
               placeholder="Todos"
-              options={[
-                { value: '', label: 'Todos' },
-                ...(stats?.digitadores ?? []).map((d) => ({ value: d.nombre, label: d.nombre })),
-              ]}
+              options={[{ value: '', label: 'Todos' }, ...opcionesTecnico]}
               value={segPersona}
               onChange={setSegPersona}
               disabled={seguimiento.descargando}
+              hint={
+                segCliente && opcionesTecnico.length === 0
+                  ? 'Nadie ha digitado todavía en lo que elegiste'
+                  : segCliente
+                    ? 'Solo quienes han digitado en este cliente'
+                    : undefined
+              }
             />
             <DatePicker label="Desde" value={segDesde} onChange={setSegDesde} max={segHasta || undefined} disabled={seguimiento.descargando} />
             <DatePicker label="Hasta" value={segHasta} onChange={setSegHasta} min={segDesde || undefined} disabled={seguimiento.descargando} />
@@ -439,38 +471,14 @@ export default function ProduccionPage() {
         </div>
       </section>
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <StatTile
-          label="FUID aprobados"
-          value={stats.fuids_aprobados}
-          icon={CheckCircle2}
-          tono="aqua"
-          detalle={`${pctAvance}% del total digitado`}
-        />
-        <StatTile
-          label="FUID pendientes de revisión"
-          value={stats.fuids_pendientes}
-          icon={FileText}
-          tono="ambar"
-          detalle={`${100 - pctAvance}% del total digitado`}
-        />
-        <StatTile
-          label="Cajas registradas"
-          value={stats.total_cajas}
-          icon={Boxes}
-          tono="azul"
-          detalle={`${conSeparador(stats.cajas_sin_fuids)} aún sin FUID`}
-        />
-        <StatTile
-          label="Ritmo mensual"
-          value={tendenciaDigitacion[tendenciaDigitacion.length - 1] ?? 0}
-          icon={TrendingUp}
-          tono="marca"
-          detalle="registros del último mes con datos"
-          tendencia={tendenciaDigitacion}
-          colorTendencia={SERIES.uno}
-        />
-      </div>
+      {/*
+        Aquí había cuatro tarjetas —aprobados, pendientes, cajas registradas y
+        ritmo mensual— y las cuatro repetían algo que ya está más abajo y mejor
+        contado: la aprobación la dice el medidor de arriba con su porcentaje;
+        las cajas, la tarjeta "Estado de las cajas"; y el ritmo, la curva que
+        viene a continuación, que además deja ver la forma y no solo el último
+        mes.
+      */}
 
       <ChartCard
         title={granularidad === 'mes' ? 'Digitación y revisión por mes' : 'Digitación y revisión por día'}
@@ -595,59 +603,49 @@ export default function ProduccionPage() {
           />
         </ChartCard>
 
-        <div className="space-y-6">
-          <ChartCard
-            title="Cobertura documental"
-            subtitle="Alcance del inventario"
-            icon={<FileStack className="size-4 text-primary-600" />}
-          >
-            <dl className="space-y-3 text-sm">
-              <div className="flex items-center justify-between">
-                <dt className="text-silver-600">Clientes</dt>
-                <dd className="font-semibold text-silver-900">{conSeparador(stats.total_clientes)}</dd>
-              </div>
-              <div className="flex items-center justify-between">
-                <dt className="text-silver-600">Actas de transferencia</dt>
-                <dd className="font-semibold text-silver-900">{conSeparador(stats.total_actas)}</dd>
-              </div>
-              <div className="flex items-center justify-between">
-                <dt className="text-silver-600">Cajas con FUID</dt>
-                <dd className="font-semibold text-silver-900">{conSeparador(stats.cajas_con_fuids)}</dd>
-              </div>
-              <div className="flex items-center justify-between">
-                <dt className="text-silver-600">Cajas sin FUID</dt>
-                <dd className="font-semibold text-primary-700">{conSeparador(stats.cajas_sin_fuids)}</dd>
-              </div>
-              {sedePrincipal && (
-                <div className="flex items-center justify-between border-t border-silver-100 pt-3">
-                  <dt className="flex items-center gap-1.5 text-silver-600">
-                    <MapPin className="size-3.5" /> {sedePrincipal.sede}
-                  </dt>
-                  <dd className="font-semibold text-silver-900">{conSeparador(sedePrincipal.total)}</dd>
-                </div>
-              )}
-            </dl>
-          </ChartCard>
+        {/*
+          Lo que queda del bloque lateral: dos cifras que no están en ninguna
+          otra parte de la pantalla, y dónde se está trabajando.
 
-          <ChartCard title="Personal por rol" subtitle={`${stats.total_usuarios} usuarios registrados`}>
-            <Dona
-              porciones={stats.usuarios_por_rol.map((u, i) => ({
-                etiqueta: u.rol,
-                valor: u.total,
-                color: SERIES_ORDEN[i % SERIES_ORDEN.length],
-              }))}
-              tamano={140}
-              centroValor={String(stats.total_usuarios)}
-              centroEtiqueta="personas"
-            />
-          </ChartCard>
-        </div>
+          Tenía también las cajas con y sin FUID —que ya cuenta "Estado de las
+          cajas"— y una dona de personal por rol, que dice cuántos usuarios hay
+          de cada perfil: eso es administración de cuentas, no producción, y en
+          un módulo que se mira para saber cómo va el trabajo ocupaba el sitio
+          de algo que sí se usa para decidir.
+        */}
+        <ChartCard
+          title="Cobertura documental"
+          subtitle="Alcance del inventario"
+          icon={<FileStack className="size-4 text-primary-600" />}
+        >
+          <dl className="space-y-3 text-sm">
+            <div className="flex items-center justify-between">
+              <dt className="text-silver-600">Clientes</dt>
+              <dd className="font-semibold text-silver-900">{conSeparador(stats.total_clientes)}</dd>
+            </div>
+            <div className="flex items-center justify-between">
+              <dt className="text-silver-600">Actas de transferencia</dt>
+              <dd className="font-semibold text-silver-900">{conSeparador(stats.total_actas)}</dd>
+            </div>
+            {sedePrincipal && (
+              <div className="flex items-center justify-between border-t border-silver-100 pt-3">
+                <dt className="flex items-center gap-1.5 text-silver-600">
+                  <MapPin className="size-3.5" /> {sedePrincipal.sede}
+                </dt>
+                <dd className="font-semibold text-silver-900">{conSeparador(sedePrincipal.total)}</dd>
+              </div>
+            )}
+          </dl>
+        </ChartCard>
       </div>
 
       <DetallePorCliente personas={(stats?.digitadores ?? []).map((d) => d.nombre)} />
     </div>
   );
 }
+
+/** Las cajas heredadas pueden no tener acta relacionada, y también se ven. */
+const SIN_ACTA = 'Sin acta';
 
 /** Cifra suelta del panel del cliente. */
 function Cifra({ etiqueta, valor, detalle }: { etiqueta: string; valor: number | string; detalle?: string }) {
@@ -679,6 +677,26 @@ function PanelDelCliente({ cliente, estadoCaja }: { cliente: ClienteConDetalle; 
     return (caja.estado ?? '').toUpperCase() === estadoCaja;
   });
 
+  /*
+   * Las cajas repartidas en sus actas, con el avance de cada una. Un cliente
+   * entrega por actas, así que "cómo va el acta 122" tiene que leerse sin
+   * sumar filas a ojo.
+   */
+  const porActa = useMemo(() => {
+    const grupos = new Map<string, { acta: string; cajas: CajaDeCliente[]; registros: number; aprobados: number }>();
+    for (const caja of cajas) {
+      const acta = caja.acta?.trim() || SIN_ACTA;
+      const grupo = grupos.get(acta) ?? { acta, cajas: [], registros: 0, aprobados: 0 };
+      grupo.cajas.push(caja);
+      grupo.registros += caja.registros;
+      grupo.aprobados += caja.aprobados;
+      grupos.set(acta, grupo);
+    }
+    return [...grupos.values()].sort((uno, otro) =>
+      uno.acta.localeCompare(otro.acta, 'es', { numeric: true }),
+    );
+  }, [cajas]);
+
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
@@ -701,42 +719,64 @@ function PanelDelCliente({ cliente, estadoCaja }: { cliente: ClienteConDetalle; 
         />
       </div>
 
-      <div>
-        <h3 className="mb-2 text-sm font-semibold text-silver-700">Cajas ({cajas.length})</h3>
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[640px] text-sm">
-            <thead>
-              <tr className="border-b border-silver-200 text-left text-xs uppercase tracking-wide text-silver-500">
-                <th className="py-2 pr-3">Caja</th>
-                <th className="py-2 pr-3">Acta</th>
-                <th className="py-2 pr-3">Estado</th>
-                <th className="py-2 pr-3 text-right">Registros</th>
-                <th className="py-2 pr-3 text-right">Aprobados</th>
-                <th className="py-2 pr-3">Último registro</th>
-                <th className="py-2">Quién digita</th>
-              </tr>
-            </thead>
-            <tbody>
-              {cajas.map((caja) => (
-                <tr key={caja.caja} className="border-b border-silver-100 last:border-b-0">
-                  <td className="py-2 pr-3 font-medium text-silver-800">{caja.caja}</td>
-                  <td className="py-2 pr-3 text-silver-600">{caja.acta ?? '—'}</td>
-                  <td className="py-2 pr-3">
-                    <Badge color={caja.estado === 'FINALIZADO' ? 'green' : 'amber'}>
-                      {caja.estado ?? 'Sin estado'}
-                    </Badge>
-                  </td>
-                  <td className="py-2 pr-3 text-right font-medium text-silver-800">{caja.registros}</td>
-                  <td className="py-2 pr-3 text-right text-silver-600">{caja.aprobados}</td>
-                  <td className="py-2 pr-3 text-silver-600">{fecha(caja.ultimo_dia)}</td>
-                  <td className="py-2 text-silver-600">
-                    {caja.personas.length > 0 ? caja.personas.join(', ') : 'Sin digitar'}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+      {/*
+        Las cajas, agrupadas por su acta.
+        
+        Es el nivel que faltaba: un cliente entrega por actas, y "cómo va el
+        acta 122" era una pregunta que había que contestar sumando filas a ojo
+        en una tabla donde el número de acta se repetía en cada una. Cada grupo
+        lleva su propio avance, y dentro van sus cajas.
+      */}
+      <div className="space-y-4">
+        <h3 className="text-sm font-semibold text-silver-700">
+          Cajas ({cajas.length}) en {porActa.length} {porActa.length === 1 ? 'acta' : 'actas'}
+        </h3>
+        {porActa.map((grupo) => (
+          <div key={grupo.acta} className="rounded-lg border border-silver-200">
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-silver-100 bg-silver-50 px-3 py-2">
+              <span className="font-medium text-silver-800">
+                {grupo.acta === SIN_ACTA ? SIN_ACTA : `Acta ${grupo.acta}`}
+              </span>
+              <span className="text-sm text-silver-600">
+                {grupo.cajas.length} {grupo.cajas.length === 1 ? 'caja' : 'cajas'} ·{' '}
+                <strong className="text-silver-800">{grupo.registros}</strong> registros ·{' '}
+                {grupo.aprobados} aprobados
+              </span>
+            </div>
+            <div className="overflow-x-auto p-3">
+              <table className="w-full min-w-[560px] text-sm">
+                <thead>
+                  <tr className="border-b border-silver-200 text-left text-xs uppercase tracking-wide text-silver-500">
+                    <th className="py-2 pr-3">Caja</th>
+                    <th className="py-2 pr-3">Estado</th>
+                    <th className="py-2 pr-3 text-right">Registros</th>
+                    <th className="py-2 pr-3 text-right">Aprobados</th>
+                    <th className="py-2 pr-3">Último registro</th>
+                    <th className="py-2">Quién digita</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {grupo.cajas.map((caja) => (
+                    <tr key={caja.caja} className="border-b border-silver-100 last:border-b-0">
+                      <td className="py-2 pr-3 font-medium text-silver-800">{caja.caja}</td>
+                      <td className="py-2 pr-3">
+                        <Badge color={caja.estado === 'FINALIZADO' ? 'green' : 'amber'}>
+                          {caja.estado ?? 'Sin estado'}
+                        </Badge>
+                      </td>
+                      <td className="py-2 pr-3 text-right font-medium text-silver-800">{caja.registros}</td>
+                      <td className="py-2 pr-3 text-right text-silver-600">{caja.aprobados}</td>
+                      <td className="py-2 pr-3 text-silver-600">{fecha(caja.ultimo_dia)}</td>
+                      <td className="py-2 text-silver-600">
+                        {caja.personas.length > 0 ? caja.personas.join(', ') : 'Sin digitar'}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        ))}
       </div>
 
       {cliente.digitadores.length > 0 && (
