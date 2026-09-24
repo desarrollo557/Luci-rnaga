@@ -186,7 +186,13 @@ describe('ciclo de vida de la caja', () => {
     expect(jornadas).toEqual([{ fecha: LUNES, colaborador: ANA, resultado: 'TERMINADA', registros: 2 }]);
   });
 
-  it('reabrirla borra el arranque de UPD de las técnicas asignadas, para que lo indiquen de nuevo', async () => {
+  /*
+   * Reabrir no toca el consecutivo. Llegó a borrarse el arranque para que la
+   * digitación pidiera uno nuevo, y se quitó: muchas reaperturas son para
+   * corregir un registro, no para seguir digitando, y perder el consecutivo de
+   * quien solo venía a arreglar algo era un trámite de más.
+   */
+  it('reabrirla deja intacto el arranque de UPD: se retoma donde se dejó', async () => {
     const { rows } = await db.query<{ id: number }>('SELECT id FROM modulos_caja WHERE caja_modulo = $1', [caja(2406)]);
     await db.query(
       `INSERT INTO asignacion_caja_tecnica (modulo_id, usuario_id, upd_inicio, ultimo_upd)
@@ -201,7 +207,7 @@ describe('ciclo de vida de la caja', () => {
       'SELECT upd_inicio, ultimo_upd FROM asignacion_caja_tecnica WHERE modulo_id = $1',
       [rows[0].id],
     );
-    expect(asignaciones).toEqual([{ upd_inicio: null, ultimo_upd: null }]);
+    expect(asignaciones).toEqual([{ upd_inicio: 'UPD0001000', ultimo_upd: 'UPD0001003' }]);
   });
 
   it('no hace nada si falta la caja o el autor', async () => {
