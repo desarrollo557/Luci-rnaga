@@ -29,7 +29,13 @@ import { useLatidoDeEscritura } from '@/lib/latidoDeEscritura';
 import { retornoDeCaja } from '@/lib/navegacion';
 import { OPCIONES_FRECUENCIA, OPCIONES_OTRO, OPCIONES_SOPORTE } from '@/lib/catalogos';
 import { limiteDe } from '@/lib/limites';
-import { completarConSugerencia, pistaDeCompletado } from '@/lib/sugerencias';
+import {
+  completarConSugerencia,
+  filtrarPorInicio,
+  pistaDeCompletado,
+  sugerenciasDeLosRegistros,
+  TOPE_DE_LA_LISTA,
+} from '@/lib/sugerencias';
 import { fechaHoyLocal, formatearFechaHora } from '@/lib/fechas';
 import { CAJA_FINALIZADA, estadoDeCaja } from '@/lib/estadoCaja';
 import { CajaTerminada } from './cajas/CajaTerminada';
@@ -205,7 +211,6 @@ type CamposHeredados = Pick<
   | 'objeto'
   | 'nro_acta_transferible'
   | 'fecha_transferencia'
-  | 'asunto_2'
   | 'caja_interna'
 >;
 
@@ -224,7 +229,6 @@ type CamposHeredados = Pick<
  */
 function valoresHeredados(
   caja: ModuloCaja | null | undefined,
-  asuntoAutomatico = '',
   cajaInterna = '',
 ): CamposHeredados {
   return {
@@ -235,15 +239,13 @@ function valoresHeredados(
     objeto: sinNA(caja?.objeto_caja),
     nro_acta_transferible: caja?.acta_trans_caja ?? '',
     fecha_transferencia: caja?.fecha_trans_caja?.slice(0, 10) ?? '',
-    // El asunto automático del último registro de la caja. Una caja suele
-    // contener documentos del mismo asunto, así que se trae ya escrito y quien
-    // necesite otro lo cambia; volver a teclearlo en cada registro era el
-    // trabajo repetido más caro de la digitación.
-    //
-    // El asunto manual NO se hereda: describe el documento concreto, cambia de
-    // un registro al siguiente y arrastrarlo hacía que se guardara el del
-    // anterior cuando alguien pasaba de largo.
-    asunto_2: asuntoAutomatico,
+    // Ni el asunto automático ni el manual se heredan: los dos arrancan en
+    // blanco. El automático venía puesto con el del último registro de la
+    // caja, y se quitó el 24 de septiembre de 2026 a pedido de la operación —
+    // hay cajas con veintinueve asuntos distintos en treinta registros, donde
+    // el heredado casi nunca era el bueno y había que borrarlo antes de
+    // escribir. Ahora se teclean tres letras y Tab lo completa con lo que ya
+    // hay en la caja (`sugerencias.ts`), que cuesta menos que corregir.
     // La caja interna se hereda del **primer** registro de la caja. Es un dato
     // de la caja, no del documento: una vez fijado en el primero vale para
     // todos los que vengan detrás. Del primero y no del último —que es como se
@@ -258,12 +260,11 @@ function emptyFormFor(
   user: SessionUser | null,
   defaultNOrden: number,
   caja?: ModuloCaja | null,
-  asuntoAutomatico?: string,
   cajaInterna?: string,
 ): FuidFormValues {
   return {
     ...EMPTY_FORM,
-    ...valoresHeredados(caja, asuntoAutomatico, cajaInterna),
+    ...valoresHeredados(caja, cajaInterna),
     caja: cajaId,
     n_orden: String(defaultNOrden),
     // El tomo queda en blanco a propósito. Antes se sugería el siguiente de la
@@ -367,6 +368,10 @@ interface SuggestionInputProps {
   readOnly?: boolean;
   className?: string;
   error?: string;
+  /** Lo ya escrito en la caja para este campo, sacado de los registros en pantalla. */
+  deLaCaja?: readonly string[];
+  /** La lista de la caja llegó al tope, así que puede haber valores fuera de ella. */
+  puedeFaltarAlguna?: boolean;
 }
 
 function SuggestionInput({
@@ -379,7 +384,21 @@ function SuggestionInput({
   readOnly,
   className,
   error,
+  deLaCaja = [],
+  puedeFaltarAlguna = false,
 }: SuggestionInputProps) {
+  /*
+   * Lo que ya está en pantalla, filtrado aquí mismo: aparece con la tecla, sin
+   * esperar a nadie. Es el camino normal, porque la lista de la caja se trae
+   * entera y la caja más grande de la base lleva 247 registros.
+   */
+  const sugerenciasEnMano = filtrarPorInicio(deLaCaja, value);
+
+  /*
+   * Solo si la lista pudo quedarse corta —una caja que llegue al tope de 500—
+   * se le pregunta al servidor por lo que no está a la vista. Entonces sí hay
+   * espera, y por eso se le pone freno a las teclas.
+   */
   const debouncedQuery = useDebouncedValue(value, 300);
   const suggestionsQuery = useQuery({
     queryKey: ['fuiddatosreal', 'suggestions', caja, campo, debouncedQuery],
@@ -393,7 +412,7 @@ function SuggestionInput({
     //
     // No dispara una petición por tecla: el valor viene retrasado 300 ms y
     // React Query cachea cada término mientras dura la pantalla.
-    enabled: Boolean(caja && debouncedQuery.trim().length >= MINIMO_PARA_SUGERIR),
+    enabled: Boolean(puedeFaltarAlguna && caja && debouncedQuery.trim().length >= MINIMO_PARA_SUGERIR),
   });
 
   /*
@@ -401,7 +420,8 @@ function SuggestionInput({
    * tecleado. Se teclean dos o tres letras y el resto ya está escrito en algún
    * registro anterior de esta caja.
    */
-  const porCompletar = completarConSugerencia(value, suggestionsQuery.data);
+  const sugerencias = [...new Set([...sugerenciasEnMano, ...(suggestionsQuery.data ?? [])])];
+  const porCompletar = completarConSugerencia(value, sugerencias);
 
   /*
    * Tab completa y sigue de largo: no se corta el evento, así que el foco pasa
@@ -432,7 +452,7 @@ function SuggestionInput({
         maxLength={limiteDe(campo)}
       />
       <datalist id={`sug-${campo}`}>
-        {(suggestionsQuery.data ?? []).map((suggestion) => (
+        {sugerencias.map((suggestion) => (
           <option key={suggestion} value={suggestion} />
         ))}
       </datalist>
@@ -453,10 +473,12 @@ interface FormularioFuidProps {
   /** Registro que se corrige, o `null` para digitar uno nuevo. */
   editing: FuidDato | null;
   defaultNOrden: number;
-  /** Asunto automático del último registro de la caja, para no reescribirlo. */
-  asuntoAutomaticoDeLaCaja: string;
   /** Caja interna del primer registro de la caja: es la misma para toda ella. */
   cajaInternaDeLaCaja: string;
+  /** Lo ya escrito en la caja, campo por campo, para sugerir sin salir a la red. */
+  sugerenciasDeLaCaja: Record<string, string[]>;
+  /** La lista de registros llegó al tope, así que puede haber valores fuera de ella. */
+  listaIncompleta: boolean;
   /** Avisa del UPD recién guardado, para que la lista pueda señalar su fila. */
   onGuardado?: (upd: string) => void;
   caja?: ModuloCaja | null;
@@ -482,8 +504,9 @@ function FormularioFuid({
   cajaId,
   editing,
   defaultNOrden,
-  asuntoAutomaticoDeLaCaja,
   cajaInternaDeLaCaja,
+  sugerenciasDeLaCaja,
+  listaIncompleta,
   caja,
   onTerminar,
   onGuardado,
@@ -499,7 +522,7 @@ function FormularioFuid({
   const [form, setForm] = useState<FuidFormValues>(() =>
     editing
       ? formFromRecord(editing)
-      : emptyFormFor(cajaId, user, defaultNOrden, caja, asuntoAutomaticoDeLaCaja, cajaInternaDeLaCaja),
+      : emptyFormFor(cajaId, user, defaultNOrden, caja, cajaInternaDeLaCaja),
   );
   /** Registros guardados sin cerrar el formulario; remonta el formulario para volver a enfocar Asunto Manual. */
   const [racha, setRacha] = useState(0);
@@ -536,7 +559,7 @@ function FormularioFuid({
    */
   useEffect(() => {
     if (editing) return;
-    const heredados = valoresHeredados(caja, asuntoAutomaticoDeLaCaja, cajaInternaDeLaCaja);
+    const heredados = valoresHeredados(caja, cajaInternaDeLaCaja);
     setForm((prev) => {
       const pendientes = Object.entries(heredados).filter(
         ([campo, valor]) => valor !== '' && prev[campo as keyof FuidFormValues] === '',
@@ -544,7 +567,7 @@ function FormularioFuid({
       if (pendientes.length === 0) return prev;
       return { ...prev, ...Object.fromEntries(pendientes) };
     });
-  }, [caja, asuntoAutomaticoDeLaCaja, cajaInternaDeLaCaja, editing]);
+  }, [caja, cajaInternaDeLaCaja, editing]);
 
   const debouncedUpd = useDebouncedValue(form.upd.trim(), 500);
   const updExistsQuery = useQuery({
@@ -582,25 +605,18 @@ function FormularioFuid({
       // con el UPD consecutivo, el N° de orden y los datos de la caja
       // precargados; el cursor vuelve a Codigo.
       //
-      // Del registro que se acaba de guardar se arrastran el asunto automático
-      // y la caja interna: lo habitual es encadenar varios documentos del mismo
-      // asunto dentro de la misma caja interna, y volver a escribirlos cada vez
-      // cuesta más que corregirlos cuando cambian. Se toman de aquí y no de la
-      // lista para que el siguiente registro los tenga ya puestos, sin esperar
-      // a que la consulta se refresque. El asunto manual y las notas arrancan
-      // en blanco, porque describen el documento concreto y no se repiten de un
-      // registro al siguiente.
+      // Del registro que se acaba de guardar se arrastra la caja interna, que
+      // es un dato de la caja y no del documento. Se toma de aquí y no de la
+      // lista para que el siguiente registro la tenga ya puesta, sin esperar a
+      // que la consulta se refresque.
+      //
+      // El asunto automático ya no: arranca en blanco como el manual y las
+      // notas. Se teclean tres letras y Tab lo completa con lo que ya hay en la
+      // caja.
       const guardado = form.upd.trim().toUpperCase();
       const siguienteUpd = siguienteUpdLocal(guardado);
       setForm({
-        ...emptyFormFor(
-          cajaId,
-          user,
-          defaultNOrden + racha + 1,
-          caja,
-          form.asunto_2,
-          form.caja_interna,
-        ),
+        ...emptyFormFor(cajaId, user, defaultNOrden + racha + 1, caja, form.caja_interna),
         upd: siguienteUpd,
       });
       setRacha((r) => r + 1);
@@ -736,6 +752,8 @@ function FormularioFuid({
         <SuggestionInput
           caja={form.caja}
           campo="entidad_productora"
+          deLaCaja={sugerenciasDeLaCaja['entidad_productora']}
+          puedeFaltarAlguna={listaIncompleta}
           label="Entidad Productora"
           value={form.entidad_productora}
           onChange={updateField('entidad_productora')}
@@ -743,6 +761,8 @@ function FormularioFuid({
         <SuggestionInput
           caja={form.caja}
           campo="unidad_administrativa"
+          deLaCaja={sugerenciasDeLaCaja['unidad_administrativa']}
+          puedeFaltarAlguna={listaIncompleta}
           label="Unidad Administrativa"
           value={form.unidad_administrativa}
           onChange={updateField('unidad_administrativa')}
@@ -750,6 +770,8 @@ function FormularioFuid({
         <SuggestionInput
           caja={form.caja}
           campo="oficina_productora"
+          deLaCaja={sugerenciasDeLaCaja['oficina_productora']}
+          puedeFaltarAlguna={listaIncompleta}
           label="Oficina Productora"
           value={form.oficina_productora}
           onChange={updateField('oficina_productora')}
@@ -757,6 +779,8 @@ function FormularioFuid({
         <SuggestionInput
           caja={form.caja}
           campo="objeto"
+          deLaCaja={sugerenciasDeLaCaja['objeto']}
+          puedeFaltarAlguna={listaIncompleta}
           label="Objeto"
           value={form.objeto}
           onChange={updateField('objeto')}
@@ -772,6 +796,8 @@ function FormularioFuid({
         <SuggestionInput
           caja={form.caja}
           campo="codigo"
+          deLaCaja={sugerenciasDeLaCaja['codigo']}
+          puedeFaltarAlguna={listaIncompleta}
           label="Codigo"
           value={form.codigo}
           onChange={updateField('codigo')}
@@ -779,6 +805,8 @@ function FormularioFuid({
         <SuggestionInput
           caja={form.caja}
           campo="serie"
+          deLaCaja={sugerenciasDeLaCaja['serie']}
+          puedeFaltarAlguna={listaIncompleta}
           label="Serie"
           value={form.serie}
           onChange={updateField('serie')}
@@ -786,6 +814,8 @@ function FormularioFuid({
         <SuggestionInput
           caja={form.caja}
           campo="subserie"
+          deLaCaja={sugerenciasDeLaCaja['subserie']}
+          puedeFaltarAlguna={listaIncompleta}
           label="Subserie"
           value={form.subserie}
           onChange={updateField('subserie')}
@@ -801,6 +831,8 @@ function FormularioFuid({
         <SuggestionInput
           caja={form.caja}
           campo="asunto_2"
+          deLaCaja={sugerenciasDeLaCaja['asunto_2']}
+          puedeFaltarAlguna={listaIncompleta}
           label="Asunto Automático *"
           value={form.asunto_2}
           onChange={updateField('asunto_2')}
@@ -830,6 +862,8 @@ function FormularioFuid({
         <SuggestionInput
           caja={form.caja}
           campo="numero_doc"
+          deLaCaja={sugerenciasDeLaCaja['numero_doc']}
+          puedeFaltarAlguna={listaIncompleta}
           label="Nro. Documento Desde"
           value={form.numero_doc}
           onChange={updateField('numero_doc')}
@@ -837,6 +871,8 @@ function FormularioFuid({
         <SuggestionInput
           caja={form.caja}
           campo="numero_doc_hasta"
+          deLaCaja={sugerenciasDeLaCaja['numero_doc_hasta']}
+          puedeFaltarAlguna={listaIncompleta}
           label="Nro. Documento Hasta"
           value={form.numero_doc_hasta}
           onChange={updateField('numero_doc_hasta')}
@@ -881,6 +917,8 @@ function FormularioFuid({
         <SuggestionInput
           caja={form.caja}
           campo="caja_interna"
+          deLaCaja={sugerenciasDeLaCaja['caja_interna']}
+          puedeFaltarAlguna={listaIncompleta}
           label="Caja Interna"
           value={form.caja_interna}
           onChange={updateField('caja_interna')}
@@ -1242,6 +1280,22 @@ export default function DatosPage() {
 
   const cajaCerradaParaMi = !gestiona && cajaQuery.data?.estado_caja === CAJA_FINALIZADA;
 
+  /*
+   * Lo ya escrito en esta caja, campo por campo. Sale de los registros que ya
+   * están cargados para la tabla, así que sugerir no cuesta una petición ni una
+   * espera: se escribe, aparece y se tabula.
+   */
+  const sugerenciasDeLaCaja = useMemo(
+    () => sugerenciasDeLosRegistros(registros as unknown as Record<string, unknown>[], SUGGESTION_FIELDS),
+    [registros],
+  );
+
+  /*
+   * Si la caja llegó al tope de la lista, lo que se ve puede no ser todo, y
+   * entonces sí hay que preguntarle al servidor por lo que falta.
+   */
+  const listaIncompleta = registros.length >= TOPE_DE_LA_LISTA;
+
   const defaultNOrden = useMemo(() => {
     if (registros.length === 0) return 1;
     return Math.max(...registros.map((registro) => registro.n_orden ?? 0)) + 1;
@@ -1267,22 +1321,6 @@ export default function DatosPage() {
       null,
     );
     return sinNA(primero?.caja_interna);
-  }, [registros]);
-
-  /*
-   * Asunto automático con el que se abre un registro nuevo: el del último que se
-   * digitó en la caja. Se toma el de mayor número de orden, no el último que
-   * devuelva la consulta, porque el orden de las filas no está garantizado.
-   *
-   * El asunto manual no entra aquí a propósito: es el único texto que describe
-   * el documento concreto, así que cada registro lo escribe desde cero.
-   */
-  const asuntoAutomaticoDeLaCaja = useMemo<string>(() => {
-    const ultimo = registros.reduce<FuidDato | null>(
-      (mayor, registro) => ((registro.n_orden ?? 0) >= (mayor?.n_orden ?? -1) ? registro : mayor),
-      null,
-    );
-    return sinNA(ultimo?.asunto_2);
   }, [registros]);
 
 
@@ -1676,8 +1714,9 @@ export default function DatosPage() {
             cajaId={cajaCode}
             editing={null}
             defaultNOrden={defaultNOrden}
-            asuntoAutomaticoDeLaCaja={asuntoAutomaticoDeLaCaja}
             cajaInternaDeLaCaja={cajaInternaDeLaCaja}
+            sugerenciasDeLaCaja={sugerenciasDeLaCaja}
+            listaIncompleta={listaIncompleta}
             caja={cajaQuery.data}
             onGuardado={setUltimoGuardado}
           />
@@ -1792,8 +1831,9 @@ export default function DatosPage() {
             cajaId={cajaCode}
             editing={editing}
             defaultNOrden={defaultNOrden}
-            asuntoAutomaticoDeLaCaja={asuntoAutomaticoDeLaCaja}
             cajaInternaDeLaCaja={cajaInternaDeLaCaja}
+            sugerenciasDeLaCaja={sugerenciasDeLaCaja}
+            listaIncompleta={listaIncompleta}
             caja={cajaQuery.data}
             onTerminar={cerrarEdicion}
           />

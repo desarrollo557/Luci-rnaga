@@ -91,36 +91,34 @@ describe('el desplegable de catálogo', () => {
  * letras y se confirma con Enter.
  */
 describe('elegir del desplegable sin tocar el ratón', () => {
-  const ASUNTOS = [
-    'EXPEDIENTE ADQUISICION DE PREDIOS',
-    'INVERSIONES JMJ LA CANDELARIA SAS',
-    'SOPORTES DE PAGO Y SERVICIOS PUBLICOS',
-  ].map((a) => ({ value: a, label: a }));
+  /* Opciones inventadas: lo que se comprueba es cómo busca el teclado. */
+  const OPCIONES = ['ASUNTO DOS DE PRUEBA', 'ASUNTO UNO DE PRUEBA', 'MATERIAL DEL EDIFICIO'].map(
+    (a) => ({ value: a, label: a }),
+  );
 
   function montar(alElegir = vi.fn()) {
-    render(<Select label="Asunto Automático" options={ASUNTOS} value="" onChange={alElegir} />);
+    render(<Select label="Campo con lista" options={OPCIONES} value="" onChange={alElegir} />);
     return alElegir;
   }
 
   it('escribir las primeras letras y dar Enter elige esa opción', async () => {
     const alElegir = montar();
-    const campo = screen.getByRole('button');
-    campo.focus();
-    await userEvent.keyboard('sopo{Enter}');
-    expect(alElegir).toHaveBeenCalledWith('SOPORTES DE PAGO Y SERVICIOS PUBLICOS');
+    screen.getByRole('button').focus();
+    await userEvent.keyboard('mate{Enter}');
+    expect(alElegir).toHaveBeenCalledWith('MATERIAL DEL EDIFICIO');
   });
 
-  it('bastan cuatro letras aunque la opción sea larga', async () => {
+  it('afina a la opción correcta según se escribe', async () => {
     const alElegir = montar();
     screen.getByRole('button').focus();
-    await userEvent.keyboard('inve{Enter}');
-    expect(alElegir).toHaveBeenCalledWith('INVERSIONES JMJ LA CANDELARIA SAS');
+    await userEvent.keyboard('asunto uno{Enter}');
+    expect(alElegir).toHaveBeenCalledWith('ASUNTO UNO DE PRUEBA');
   });
 
   it('escribir abre el desplegable sin haberlo abierto antes', async () => {
     montar();
     screen.getByRole('button').focus();
-    await userEvent.keyboard('expe');
+    await userEvent.keyboard('asun');
     expect(screen.getByRole('listbox')).toBeInTheDocument();
     expect(screen.getByText(/Buscando/)).toBeInTheDocument();
   });
@@ -128,15 +126,16 @@ describe('elegir del desplegable sin tocar el ratón', () => {
   it('lo tecleado también busca dentro del texto, no solo al principio', async () => {
     const alElegir = montar();
     screen.getByRole('button').focus();
-    await userEvent.keyboard('candela{Enter}');
-    expect(alElegir).toHaveBeenCalledWith('INVERSIONES JMJ LA CANDELARIA SAS');
+    await userEvent.keyboard('edificio{Enter}');
+    expect(alElegir).toHaveBeenCalledWith('MATERIAL DEL EDIFICIO');
   });
 
   it('las flechas mueven la opción que se lleva el Enter', async () => {
     const alElegir = montar();
     screen.getByRole('button').focus();
+    // La primera flecha abre el desplegable; la segunda se para en la primera opción.
     await userEvent.keyboard('{ArrowDown}{ArrowDown}{Enter}');
-    expect(alElegir).toHaveBeenCalledWith('EXPEDIENTE ADQUISICION DE PREDIOS');
+    expect(alElegir).toHaveBeenCalledWith('ASUNTO DOS DE PRUEBA');
   });
 
   it('lo que no coincide con nada no elige nada al azar', async () => {
