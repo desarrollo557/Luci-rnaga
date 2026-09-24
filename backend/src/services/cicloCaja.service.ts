@@ -13,14 +13,19 @@
  * Así que el estado se mueve con dos cosas, y nada más:
  *
  * - **Guardar un registro en una caja la pone EN PROCESO** si estaba sin
- *   empezar. Eso sí se deduce, porque no es una decisión: digitar en una caja
- *   es trabajarla. A la técnica no le reabre una caja terminada
- *   (`fuiddatosreal.controller.ts` lo rechaza); al líder y al administrador
- *   sí, porque a ellos nadie tiene que autorizarlos.
+ *   empezar o terminada. Eso sí se deduce, porque no es una decisión: digitar
+ *   en una caja es trabajarla.
  * - **Terminarla es un acto de la persona**: "terminé esta caja" en la
  *   digitación (`declararJornadaDeCaja`), o el cambio de estado a mano desde
  *   la vista de la caja. Una caja que quedó abierta el viernes sigue abierta
- *   el lunes, y eso es lo esperado: se continúa sin pedir nada.
+ *   el lunes, y eso es lo esperado: se continúa sin pedir nada. **Cada cierre
+ *   queda anotado en `jornada_caja`**, con el día y la persona del último
+ *   registro: es lo que permite al seguimiento contar la caja como terminada
+ *   ese día aunque después se reabra y se vuelva a trabajar.
+ * - **Reabrirla también es un acto de la persona**, y la técnica lo hace por
+ *   sí misma en cualquier caja que tenga asignada. Al reabrir, las técnicas
+ *   asignadas pierden su arranque de UPD en esa caja y la digitación les pide
+ *   con qué UPD continúan: una caja que se retoma suele venir con lista nueva.
  *
  * **La fecha de cierre no es el día en que se cierra, sino el del último
  * registro de la caja.** Una caja terminada el viernes que se cierra el lunes
@@ -29,18 +34,17 @@
  * último registro, no a quien pulsa.
  *
  * **La reapertura por el líder abre además la corrección.** Cuando un líder o
- * administrador reabre una caja, a mano o aprobando la solicitud de la técnica
- * (`reaperturaCaja.service.ts`), queda escrito quién y qué día
+ * administrador reabre una caja, queda escrito quién y qué día
  * (`reabierta_por`, `reabierta_el`) y la técnica puede corregir sus registros
  * de días anteriores en esa caja mientras siga abierta. Todo cierre borra la
- * marca.
+ * marca. La reapertura de la propia técnica no la escribe.
  *
  * **Para qué sirve este estado y para qué no.** Sirve para la pantalla: saber en
  * qué caja va cada quien, avisar de que una viene de días anteriores y ofrecer
  * retomarla. **No** sirve para contar producción, y el seguimiento de inventario
- * no lo usa: ese deduce a qué jornada pertenece cada caja del último registro de
- * la caja, porque así también cuenta bien todo lo que se digitó antes de que
- * este estado existiera. Fiarlo al estado guardado dejaba el histórico en cero.
+ * no lo usa: ese cuenta los cierres anotados en `jornada_caja` y, para lo
+ * digitado antes de que existieran, deduce la jornada del último registro de
+ * la caja. Fiarlo al estado guardado dejaba el histórico en cero.
  *
  * **Coste en el camino de digitación.** Guardar un registro es la operación más
  * repetida del software, así que aquí se hace lo mínimo: una actualización por
@@ -102,6 +106,41 @@ export const SQL_CERRAR_CAJA = `
    WHERE mc.id = objetivo.id
      AND objetivo.id = ?`;
 
+/**
+ * Deja el cierre anotado en `jornada_caja`, atribuido a la jornada y a la
+ * persona del último registro de la caja, con cuántos registros llevaba esa
+ * persona ese día. Es lo que permite al seguimiento contar la caja como
+ * terminada ese día aunque después se reabra y se vuelva a trabajar: cada
+ * cierre cuenta en su jornada. Una caja sin registros no tiene jornada que
+ * anotar. Si ese día ya estaba declarado, se actualiza la cifra.
+ */
+export const SQL_ANOTAR_CIERRE = `
+  INSERT INTO jornada_caja (caja_modulo, fecha, colaborador, resultado, registros)
+  SELECT mc.caja_modulo, ultimo.fecha_del_dato, ultimo.elaborado_por, 'TERMINADA',
+         (SELECT COUNT(*) FROM fuiddatosreal f2
+           WHERE f2.caja = mc.caja_modulo
+             AND f2.fecha_del_dato = ultimo.fecha_del_dato
+             AND f2.elaborado_por = ultimo.elaborado_por)
+    FROM modulos_caja mc
+    CROSS JOIN LATERAL (${ULTIMO_REGISTRO.replace('$CAJA$', 'mc.caja_modulo')}) ultimo
+   WHERE mc.id = ?
+     AND ultimo.fecha_del_dato IS NOT NULL
+     AND ultimo.elaborado_por IS NOT NULL
+  ON CONFLICT (caja_modulo, fecha, colaborador)
+  DO UPDATE SET resultado = EXCLUDED.resultado,
+                registros = EXCLUDED.registros,
+                declarada_en = now()`;
+
+/**
+ * Al reabrir una caja, las técnicas asignadas vuelven a indicar con qué UPD
+ * continúan: se les borra el arranque y el último usado en esa caja, y la
+ * digitación les pide el número al entrar (`getNextUpdByCaja`).
+ */
+export const SQL_REINICIAR_ARRANQUE_UPD = `
+  UPDATE asignacion_caja_tecnica
+     SET upd_inicio = NULL, ultimo_upd = NULL
+   WHERE modulo_id = ?`;
+
 /** Reapertura sin firma: la caja vuelve a estar en proceso y pierde su cierre. */
 export const SQL_REABRIR_CAJA = `
   UPDATE modulos_caja
@@ -153,8 +192,11 @@ export interface Reapertura {
 /**
  * Cambio de estado decidido por una persona: terminar la caja, o reabrirla.
  *
- * Con `reapertura`, la apertura queda firmada por el líder y autoriza la
- * corrección de registros anteriores; sin ella es la apertura corriente.
+ * Terminarla cierra la caja y deja el cierre anotado en la jornada. Reabrirla
+ * la deja en proceso y borra el arranque de UPD de las técnicas asignadas. Con
+ * `reapertura`, la apertura queda además firmada por el líder y autoriza la
+ * corrección de registros anteriores; sin ella es la apertura corriente, la
+ * de la propia técnica.
  */
 export async function cambiarEstadoCaja(
   ejecutar: EjecutarSql,
@@ -164,11 +206,13 @@ export async function cambiarEstadoCaja(
 ): Promise<void> {
   if (estado === CAJA_FINALIZADA) {
     await ejecutar(SQL_CERRAR_CAJA, [cajaId]);
+    await ejecutar(SQL_ANOTAR_CIERRE, [cajaId]);
     return;
   }
   if (reapertura) {
     await ejecutar(SQL_REABRIR_CAJA_LIDER, [reapertura.por, reapertura.el, cajaId]);
-    return;
+  } else {
+    await ejecutar(SQL_REABRIR_CAJA, [cajaId]);
   }
-  await ejecutar(SQL_REABRIR_CAJA, [cajaId]);
+  await ejecutar(SQL_REINICIAR_ARRANQUE_UPD, [cajaId]);
 }

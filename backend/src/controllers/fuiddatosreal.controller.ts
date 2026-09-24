@@ -7,12 +7,7 @@ import { fuidValues, isSuggestionField, sqlOrdenEnCaja } from '../services/fuid.
 import { audit } from '../services/audit.service.js';
 import { fechaHoyLocal } from '../utils/format.js';
 import { validarOrdenDeFechasParcial } from '../validators/fuiddatosreal.validator.js';
-import { CAJA_FINALIZADA, registrarDigitacion } from '../services/cicloCaja.service.js';
-import {
-  MENSAJE_REAPERTURA_REQUIERE_LIDER,
-  REAPERTURA_REQUIERE_LIDER,
-} from '../services/reaperturaCaja.service.js';
-import { tieneAlgunRol } from '../utils/roles.js';
+import { registrarDigitacion } from '../services/cicloCaja.service.js';
 
 // La fecha del dato la fija el navegador en hora local; aquí se compara con la
 // fecha local de Colombia para que "hoy" coincida también después de las 7 p. m.
@@ -180,9 +175,8 @@ export async function createFuid(req: Request, res: Response): Promise<void> {
    * ese tipo no vuelva a poder escribirse nunca.
    */
   const cajaDelRegistro = body.caja;
-  const cajaDestino = await queryOne<{ id: number; asignada: boolean; estado_caja: string | null }>(
+  const cajaDestino = await queryOne<{ id: number; asignada: boolean }>(
     `SELECT mc.id,
-            mc.estado_caja,
             EXISTS (
               SELECT 1 FROM asignacion_caja_tecnica act
                WHERE act.modulo_id = mc.id AND act.usuario_id = ?
@@ -208,19 +202,6 @@ export async function createFuid(req: Request, res: Response): Promise<void> {
     res.status(403).json({
       error: `La caja ${cajaDelRegistro} no está asignada a usted. Pídale a su líder que se la asigne para poder digitar en ella.`,
     });
-    return;
-  }
-
-  /*
-   * Una caja terminada no se le reabre a la técnica digitando en ella. Antes
-   * sí: guardar un registro la volvía a abrir. Ahora reabrirla es del líder, y
-   * la técnica lo pide desde la caja (`reaperturaCaja.service.ts`). El código
-   * es lo que permite a la pantalla ofrecer justo eso en lugar de un error
-   * seco. El líder y el administrador siguen reabriendo al digitar, porque a
-   * ellos nadie tiene que autorizarlos.
-   */
-  if (!tieneAlgunRol(user, ['LIDER', 'ADMIN']) && cajaDestino.estado_caja === CAJA_FINALIZADA) {
-    res.status(403).json({ error: MENSAJE_REAPERTURA_REQUIERE_LIDER, code: REAPERTURA_REQUIERE_LIDER });
     return;
   }
 

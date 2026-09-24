@@ -703,22 +703,23 @@ export async function produccionDetallada(req: Request, res: Response): Promise<
  * sigue abierta aparece como caja final de un día y como caja inicial del
  * siguiente. Cuándo se cierra una caja y por qué está en `cicloCaja.service.ts`.
  *
- * **Una caja pertenece a la jornada de su último registro**, y eso se deduce de
- * los propios registros, no de ningún estado guardado en la caja. Es una
- * decisión deliberada y costó un fallo aprenderla: contar con el estado dejaba
- * fuera todo lo digitado antes de que ese estado existiera, y el informe salía
- * con cero cajas terminadas en jornadas en las que se habían terminado varias.
- * Deducirlo de los registros vale para todo el histórico sin tocar un solo dato,
- * y no le pide a nadie que marque nada.
+ * **Una caja cuenta como terminada en cada jornada en que se dio por
+ * terminada.** Cada cierre queda anotado en `jornada_caja` con el día y la
+ * persona del último registro (`SQL_ANOTAR_CIERRE`), y eso es lo que se
+ * cuenta: si la técnica cerró la caja el lunes, la reabrió el martes, siguió y
+ * la volvió a cerrar, la caja cuenta el lunes y el martes. Antes la caja
+ * "pertenecía" a la jornada de su último registro y se movía de un día a otro
+ * al retomarla, y el lunes se quedaba sin la caja que de verdad se había
+ * terminado ese día.
  *
- * El cierre cae en una sola jornada porque se exigen las dos cosas a la vez: el
- * día del último registro y su autor. Si dos técnicas tocaron la misma caja el
- * mismo día, la caja cuenta para quien digitó el último registro, no para las dos.
+ * Para lo digitado antes de que existieran esas anotaciones —todo el
+ * histórico— se conserva la deducción anterior: una caja sin ningún cierre
+ * anotado pertenece a la jornada de su último registro. Así el pasado no queda
+ * en cero, que fue el fallo que costó aprender esto: contar con el estado de la
+ * caja dejaba fuera todo lo digitado antes de que ese estado existiera.
  *
- * La contrapartida: una caja que queda a medias al acabar el día cuenta ese día
- * y se mueve al siguiente en cuanto se retoma. El total de un periodo ya cerrado
- * siempre es exacto; solo el día en curso puede ir por delante, y como mucho por
- * la caja que se está trabajando.
+ * Si dos técnicas tocaron la misma caja el mismo día, cuenta para quien la dio
+ * por terminada; en la deducción, para quien digitó el último registro.
  *
  * **Los JOIN son LEFT a propósito.** Con JOIN interno, un registro cuya caja no
  * tenga fila en `modulos_caja` —cosa corriente entre los registros heredados de
@@ -783,12 +784,21 @@ export function consultaSeguimiento(where: string): string {
            ${NUMERO_DE_CAJA} AS num_caja,
            ${NUMERO_DE_UPD}  AS num_upd,
            /*
-            * Este registro es el último de su caja, es decir, el que la da por
-            * terminada. Se marca por identificador y no por fecha y autor: así
-            * queda marcado exactamente uno por caja, y la caja cuenta en una
-            * sola fila del informe aunque la jornada se parta en varios tramos.
+            * Este registro es el que hace contar la caja como terminada en esta
+            * jornada: el último de esta persona en la caja ese día, cuando ese
+            * día quedó anotado su cierre. Sin ningún cierre anotado en la caja
+            * (lo digitado antes de que existieran), vale el último registro de
+            * la caja. Se marca exactamente un registro por caja y jornada, para
+            * que la caja cuente en una sola fila aunque el día se parta en tramos.
             */
-           (f.id = cierre.id_cierre) AS cierra_la_caja
+           (ROW_NUMBER() OVER (
+              PARTITION BY f.caja, f.fecha_del_dato, f.elaborado_por
+              ORDER BY f.created_at DESC NULLS LAST, f.id DESC
+            ) = 1
+            AND (
+              EXISTS (SELECT 1 FROM jornada_caja j WHERE j.caja_modulo = f.caja AND j.fecha = f.fecha_del_dato AND j.colaborador = f.elaborado_por AND j.resultado = 'TERMINADA')
+              OR (f.id = cierre.id_cierre AND NOT EXISTS (SELECT 1 FROM jornada_caja j WHERE j.caja_modulo = f.caja AND j.resultado = 'TERMINADA'))
+            )) AS cierra_la_caja
     FROM fuiddatosreal f
     LEFT JOIN modulos_caja mc ON mc.caja_modulo = f.caja
     LEFT JOIN moduloscliente mcl ON mcl.id = mc.id_modulo_caja
