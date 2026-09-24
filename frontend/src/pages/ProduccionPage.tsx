@@ -335,7 +335,13 @@ export default function ProduccionPage() {
         open={eligiendoPeriodo}
         onClose={() => setEligiendoPeriodo(false)}
         title="Descargar seguimiento de inventario"
-        size="sm"
+        /*
+          Ancho medio, no estrecho: los filtros son cinco y el del cliente lleva
+          el código y el nombre de la entidad —"051 — CENTRO DE INVESTIGACIÓN…"—,
+          que en un diálogo angosto se corta antes de poder distinguir uno de
+          otro.
+        */
+        size="md"
         footer={
           <>
             <Button variant="ghost" onClick={() => setEligiendoPeriodo(false)}>
@@ -386,7 +392,6 @@ export default function ProduccionPage() {
               onChange={setSegPersona}
               disabled={seguimiento.descargando}
             />
-            <div />
             <DatePicker label="Desde" value={segDesde} onChange={setSegDesde} max={segHasta || undefined} disabled={seguimiento.descargando} />
             <DatePicker label="Hasta" value={segHasta} onChange={setSegHasta} min={segDesde || undefined} disabled={seguimiento.descargando} />
           </div>
