@@ -18,6 +18,7 @@ import { descargarBlob } from '@/lib/utils';
 import { CAJA_EN_PROCESO, estadoDeCaja } from '@/lib/estadoCaja';
 import { fechaHoyLocal } from '@/lib/fechas';
 import { useAuthStore } from '@/stores/authStore';
+import { MiSeguimiento } from './tecnica/MiSeguimiento';
 
 interface TecnicaStats {
   usuario: { id: number; nombre: string; cc: string };
@@ -197,6 +198,13 @@ export default function TecnicaDashboardPage() {
           </div>
         }
       />
+
+      {/*
+        El seguimiento propio va arriba del todo pero después de la cabecera:
+        se saca al cerrar el día o cuando lo pide el líder, no es lo que se
+        mira al entrar, pero tampoco algo que haya que ir a buscar.
+      */}
+      <MiSeguimiento />
 
       {/*
         Lo primero: la caja que quedó a medias. Es el trabajo que hay que
