@@ -298,7 +298,7 @@ export default function ActasPage() {
   /*
    * Reabrir una caja terminada. Es del líder: además de abrirla, autoriza a la
    * técnica a corregir sus registros de días anteriores mientras siga abierta.
-   * Al reabrir, las técnicas vuelven a indicar el UPD con el que continúan.
+   * El consecutivo de UPD no se toca: se sigue donde se dejó.
    */
   const reabrirMutation = useMutation({
     mutationFn: (cajaId: number) => modulosCajaApi.cambiarEstado(cajaId, 'EN PROCESO'),

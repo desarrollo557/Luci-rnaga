@@ -23,9 +23,13 @@
  *   registro: es lo que permite al seguimiento contar la caja como terminada
  *   ese día aunque después se reabra y se vuelva a trabajar.
  * - **Reabrirla también es un acto de la persona**, y la técnica lo hace por
- *   sí misma en cualquier caja que tenga asignada. Al reabrir, las técnicas
- *   asignadas pierden su arranque de UPD en esa caja y la digitación les pide
- *   con qué UPD continúan: una caja que se retoma suele venir con lista nueva.
+ *   sí misma en cualquier caja que tenga asignada. **Reabrir no toca el
+ *   consecutivo de UPD**: se retoma donde se dejó. Llegó a borrarse el arranque
+ *   para que la digitación pidiera uno nuevo, y se quitó el 24 de septiembre de
+ *   2026: muchas reaperturas son para corregir un registro, no para seguir
+ *   digitando, y entonces pedir un UPD de arranque era un trámite que además
+ *   perdía el consecutivo de quien solo venía a arreglar algo. Quien sí
+ *   necesite otro número lo escribe en el campo, que tiene su candado.
  *
  * **La fecha de cierre no es el día en que se cierra, sino el del último
  * registro de la caja.** Una caja terminada el viernes que se cierra el lunes
@@ -131,16 +135,6 @@ export const SQL_ANOTAR_CIERRE = `
                 registros = EXCLUDED.registros,
                 declarada_en = now()`;
 
-/**
- * Al reabrir una caja, las técnicas asignadas vuelven a indicar con qué UPD
- * continúan: se les borra el arranque y el último usado en esa caja, y la
- * digitación les pide el número al entrar (`getNextUpdByCaja`).
- */
-export const SQL_REINICIAR_ARRANQUE_UPD = `
-  UPDATE asignacion_caja_tecnica
-     SET upd_inicio = NULL, ultimo_upd = NULL
-   WHERE modulo_id = ?`;
-
 /** Reapertura sin firma: la caja vuelve a estar en proceso y pierde su cierre. */
 export const SQL_REABRIR_CAJA = `
   UPDATE modulos_caja
@@ -214,5 +208,4 @@ export async function cambiarEstadoCaja(
   } else {
     await ejecutar(SQL_REABRIR_CAJA, [cajaId]);
   }
-  await ejecutar(SQL_REINICIAR_ARRANQUE_UPD, [cajaId]);
 }

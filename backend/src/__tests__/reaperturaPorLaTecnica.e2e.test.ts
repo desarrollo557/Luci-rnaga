@@ -14,8 +14,8 @@ import { fechaHoyLocal, fechaLocal } from '../utils/format.js';
  * comprueba, con la aplicación Express tal como se despliega:
  *
  * - que reabrir es suyo y no del líder;
- * - que al reabrir se le vuelve a pedir el UPD con el que continúa, y que el
- *   siguiente UPD parte del número que él indique;
+ * - que reabrir no le pide el UPD: sigue con su mismo consecutivo, porque la
+ *   reapertura puede ser solo para corregir un registro ya escrito;
  * - que el seguimiento cuenta lo de cada día: los registros del día anterior y
  *   la caja terminada ese día, y los registros y el cierre del día en que la
  *   reabrió;
@@ -116,7 +116,7 @@ afterAll(async () => {
 });
 
 describe('la técnica cierra su caja, la reabre al día siguiente y sigue', () => {
-  it('reabre por sí misma, vuelve a indicar el UPD, y el seguimiento cuenta los dos días', async () => {
+  it('reabre por sí misma, sigue con su mismo UPD, y el seguimiento cuenta los dos días', async () => {
     const lider = sesion();
     await json(lider, 'POST', '/login', { cc: LIDER.cc, contrasena: LIDER.contrasena });
     const tec = sesion();
@@ -191,20 +191,21 @@ describe('la técnica cierra su caja, la reabre al día siguiente y sigue', () =
     const reabierta = await json<{ message: string }>(tec, 'PATCH', `/modulos_caja/${cajaId}/cambiarEstado`, {
       estado_caja: 'EN PROCESO',
     });
-    expect(reabierta.message).toContain('UPD');
     // Sin firma: la reapertura de la propia técnica no autoriza corregir días anteriores.
     expect(await estadoDeLaCaja()).toEqual({ estado_caja: 'EN PROCESO', reabierta_por: null });
 
-    // Y en ese momento, no antes, se le vuelve a pedir el UPD con el que sigue.
+    /*
+     * Reabrir no le pide nada: sigue con su consecutivo donde lo dejó. Antes se
+     * le borraba el arranque y tenía que indicar uno nuevo, y se quitó porque
+     * muchas reaperturas son para corregir un registro, no para seguir
+     * digitando. Quien sí necesite otro número lo escribe en el campo.
+     */
     const trasReabrir = await siguienteUpd();
-    expect(trasReabrir.requiere_inicio, 'al reabrir se pide el arranque de nuevo').toBe(true);
-    expect(trasReabrir.message).toContain('reabrió');
+    expect(trasReabrir.requiere_inicio, 'al reabrir no se pide arranque').toBeFalsy();
+    expect(trasReabrir.upd, 'sigue por donde iba').toBe('UPD5000003');
 
-    // Indica una lista nueva, y el siguiente UPD parte de ahí, no del último de ayer.
-    await json(tec, 'PUT', `/modulos_caja/${CAJA}/upd-inicio`, { numero: '6000001' });
-    expect((await siguienteUpd())).toMatchObject({ upd: 'UPD6000001', requiere_inicio: false });
-    await json(tec, 'POST', '/fuiddatosreal', registro('UPD6000001', HOY, 'CONTRATO 3'));
-    expect((await siguienteUpd()).upd).toBe('UPD6000002');
+    await json(tec, 'POST', '/fuiddatosreal', registro('UPD5000003', HOY, 'CONTRATO 3'));
+    expect((await siguienteUpd()).upd).toBe('UPD5000004');
 
     // Termina la jornada de hoy desde la digitación.
     await json(tec, 'POST', `/modulos_caja/${cajaId}/jornada`, { resultado: 'TERMINADA' });
@@ -237,7 +238,7 @@ describe('la técnica cierra su caja, la reabre al día siguiente y sigue', () =
       })),
     ).toEqual([
       { fecha: AYER, cajas: 1, registros: 2, upd: [5000001, 5000002] },
-      { fecha: HOY, cajas: 1, registros: 1, upd: [6000001, 6000001] },
+      { fecha: HOY, cajas: 1, registros: 1, upd: [5000003, 5000003] },
     ]);
     expect(seguimiento[0].acta).toMatch(/^ACTA 122-\d{4}$/);
 
@@ -257,7 +258,7 @@ describe('la técnica cierra su caja, la reabre al día siguiente y sigue', () =
     await libro.xlsx.load(Buffer.from(await descarga.arrayBuffer()));
     const hoja = libro.getWorksheet('F-PSD-001')!;
     const upds = [8, 9, 10].map((fila) => hoja.getRow(fila).getCell(16).value);
-    expect(upds, 'sus tres registros, en el orden de la caja').toEqual(['UPD5000001', 'UPD5000002', 'UPD6000001']);
+    expect(upds, 'sus tres registros, en el orden de la caja').toEqual(['UPD5000001', 'UPD5000002', 'UPD5000003']);
     expect(hoja.getRow(11).getCell(1).value, 'y ninguno más').toBeNull();
 
     // Acotado a hoy, solo lo de hoy.
@@ -266,7 +267,7 @@ describe('la técnica cierra su caja, la reabre al día siguiente y sigue', () =
     const libroDeHoy = new ExcelJS.Workbook();
     await libroDeHoy.xlsx.load(Buffer.from(await deHoy.arrayBuffer()));
     const hojaDeHoy = libroDeHoy.getWorksheet('F-PSD-001')!;
-    expect(hojaDeHoy.getRow(8).getCell(16).value).toBe('UPD6000001');
+    expect(hojaDeHoy.getRow(8).getCell(16).value).toBe('UPD5000003');
     expect(hojaDeHoy.getRow(9).getCell(1).value).toBeNull();
 
     // Quien no ha digitado nada recibe un motivo, no un archivo vacío.
