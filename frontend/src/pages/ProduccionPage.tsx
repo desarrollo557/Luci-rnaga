@@ -224,8 +224,11 @@ export default function ProduccionPage() {
    * semana concreta, qué jornadas rindieron y cuáles se cayeron. Un mes es el
    * promedio de veinte jornadas y esconde justo eso, así que la curva se mira
    * de las dos maneras y el botón decide cuál.
+   *
+   * Se abre por día, que es como se sigue el trabajo: quien entra a Producción
+   * quiere saber cómo va la semana, no la tendencia del año.
    */
-  const [granularidad, setGranularidad] = useState<'dia' | 'mes'>('mes');
+  const [granularidad, setGranularidad] = useState<'dia' | 'mes'>('dia');
 
   const serieDigitacion = useMemo(
     () =>
