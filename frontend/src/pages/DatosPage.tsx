@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent, type KeyboardEvent } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { CheckCircle2, Pencil, Search, Trash2, X } from 'lucide-react';
@@ -29,6 +29,7 @@ import { useLatidoDeEscritura } from '@/lib/latidoDeEscritura';
 import { retornoDeCaja } from '@/lib/navegacion';
 import { OPCIONES_FRECUENCIA, OPCIONES_OTRO, OPCIONES_SOPORTE } from '@/lib/catalogos';
 import { limiteDe } from '@/lib/limites';
+import { completarConSugerencia, pistaDeCompletado } from '@/lib/sugerencias';
 import { fechaHoyLocal, formatearFechaHora } from '@/lib/fechas';
 import { CAJA_FINALIZADA, estadoDeCaja } from '@/lib/estadoCaja';
 import { CajaTerminada } from './cajas/CajaTerminada';
@@ -395,12 +396,33 @@ function SuggestionInput({
     enabled: Boolean(caja && debouncedQuery.trim().length >= MINIMO_PARA_SUGERIR),
   });
 
+  /*
+   * Lo que Tab pondría en el campo: la primera sugerencia que empieza por lo
+   * tecleado. Se teclean dos o tres letras y el resto ya está escrito en algún
+   * registro anterior de esta caja.
+   */
+  const porCompletar = completarConSugerencia(value, suggestionsQuery.data);
+
+  /*
+   * Tab completa y sigue de largo: no se corta el evento, así que el foco pasa
+   * a la casilla siguiente como siempre. Ese es el gesto de quien digita de
+   * corrido, y si no hay nada que completar Tab hace lo de toda la vida.
+   *
+   * Shift+Tab no completa: va hacia atrás, a revisar, no a llenar.
+   */
+  const completarConTab = (evento: KeyboardEvent<HTMLInputElement>) => {
+    if (evento.key !== 'Tab' || evento.shiftKey || !porCompletar) return;
+    onChange(porCompletar);
+  };
+
   return (
     <div className={cn('w-full', className)}>
       <Input
         label={label}
         value={value}
         onChange={(event) => onChange(event.target.value)}
+        onKeyDown={completarConTab}
+        hint={pistaDeCompletado(porCompletar)}
         list={`sug-${campo}`}
         disabled={disabled}
         readOnly={readOnly}
