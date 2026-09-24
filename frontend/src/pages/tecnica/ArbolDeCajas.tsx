@@ -36,6 +36,8 @@ export interface CajaDelPanel {
   estado_caja: string | null;
   fecha_finalizacion: string | null;
   fuid_creados: number;
+  /** De esos registros, los digitados hoy. */
+  fuid_hoy: number;
   ultimo_upd_caja: string | null;
   rango_inicio: string | null;
   rango_ultimo: string | null;
@@ -85,11 +87,29 @@ function agrupar(cajas: readonly CajaDelPanel[]): Grupo[] {
 const sinTerminar = (cajas: readonly CajaDelPanel[]) =>
   cajas.filter((c) => c.estado_caja === CAJA_EN_PROCESO).length;
 
-/** "3 cajas · 1 sin terminar", que es lo que hace falta para decidir si abrir. */
+const sumar = (cajas: readonly CajaDelPanel[], campo: 'fuid_creados' | 'fuid_hoy') =>
+  cajas.reduce((total, caja) => total + (caja[campo] ?? 0), 0);
+
+const conSeparador = (n: number) => n.toLocaleString('es-CO');
+
+/**
+ * Lo producido en ese nivel: "1.098 registros · 24 hoy · 8 cajas · 2 sin terminar".
+ *
+ * Los registros van delante porque son la pregunta —cuánto llevo en este
+ * cliente, en esta acta—, y las cajas detrás, que son el continente.
+ *
+ * Lo de hoy solo aparece cuando hay algo hoy: un "· 0 hoy" en cada línea del
+ * árbol sería ruido repetido tantas veces como clientes haya.
+ */
 function resumen(cajas: readonly CajaDelPanel[]): string {
+  const registros = sumar(cajas, 'fuid_creados');
+  const hoy = sumar(cajas, 'fuid_hoy');
   const abiertas = sinTerminar(cajas);
-  const cuantas = `${cajas.length} ${cajas.length === 1 ? 'caja' : 'cajas'}`;
-  return abiertas > 0 ? `${cuantas} · ${abiertas} sin terminar` : cuantas;
+  const partes = [`${conSeparador(registros)} ${registros === 1 ? 'registro' : 'registros'}`];
+  if (hoy > 0) partes.push(`${conSeparador(hoy)} hoy`);
+  partes.push(`${cajas.length} ${cajas.length === 1 ? 'caja' : 'cajas'}`);
+  if (abiertas > 0) partes.push(`${abiertas} sin terminar`);
+  return partes.join(' · ');
 }
 
 interface Props {
@@ -193,7 +213,13 @@ export function ArbolDeCajas({ cajas }: Props) {
                                 </span>
                                 <Badge color={estado.color}>{estado.etiqueta}</Badge>
                                 <span className="text-sm text-silver-600">
-                                  <strong className="text-silver-800">{caja.fuid_creados}</strong> registros míos
+                                  <strong className="text-silver-800">{conSeparador(caja.fuid_creados)}</strong>{' '}
+                                  {caja.fuid_creados === 1 ? 'registro' : 'registros'}
+                                  {caja.fuid_hoy > 0 && (
+                                    <span className="ml-1 font-medium text-primary-700">
+                                      · {conSeparador(caja.fuid_hoy)} hoy
+                                    </span>
+                                  )}
                                 </span>
                                 {(caja.rango_inicio || caja.ultimo_upd_caja) && (
                                   <span className="font-mono text-xs text-silver-500">

@@ -1013,7 +1013,7 @@ export async function getTecnicaStats(req: Request, res: Response): Promise<void
   const cajaModulos = cajasAsignadas.map((c) => c.caja_modulo);
 
   let fuidStats: { total: number; hoy: number; ultimo_upd: string | null } = { total: 0, hoy: 0, ultimo_upd: null };
-  let updPorCaja: Record<string, { count: number; ultimo_upd: string | null }> = {};
+  let updPorCaja: Record<string, { count: number; hoy: number; ultimo_upd: string | null }> = {};
 
   if (cajaModulos.length > 0) {
     // Total FUIDs creados por este técnico en sus cajas
@@ -1039,15 +1039,26 @@ export async function getTecnicaStats(req: Request, res: Response): Promise<void
     );
     fuidStats = fuidResult[0] || { total: 0, hoy: 0, ultimo_upd: null };
 
-    // UPDs por caja para este técnico
-    const updRows = await query<{ caja: string; count: number; ultimo_upd: string | null }>(
-      `SELECT caja, COUNT(*) as count, MAX(upd) as ultimo_upd
+    /*
+     * Lo suyo caja por caja: cuántos registros lleva en cada una, cuántos de
+     * hoy y hasta qué UPD llegó.
+     *
+     * Con esto el panel puede sumar por acta y por cliente sin pedir nada más:
+     * cada caja ya sabe de qué acta y de qué cliente es.
+     */
+    const updRows = await query<{ caja: string; count: number; hoy: number; ultimo_upd: string | null }>(
+      `SELECT caja,
+              COUNT(*) as count,
+              COUNT(*) FILTER (WHERE fecha_del_dato = ?) as hoy,
+              MAX(upd) as ultimo_upd
        FROM fuiddatosreal
        WHERE caja IN (${placeholders}) AND elaborado_por = ?
        GROUP BY caja`,
-      [...cajaModulos, autor],
+      [fechaHoyLocal(), ...cajaModulos, autor],
     );
-    updPorCaja = Object.fromEntries(updRows.map((r) => [r.caja, { count: r.count, ultimo_upd: r.ultimo_upd }]));
+    updPorCaja = Object.fromEntries(
+      updRows.map((r) => [r.caja, { count: Number(r.count ?? 0), hoy: Number(r.hoy ?? 0), ultimo_upd: r.ultimo_upd }]),
+    );
   }
 
   // Rango UPD actual del técnico en cada caja (desde asignacion_caja_tecnica)
@@ -1080,6 +1091,7 @@ export async function getTecnicaStats(req: Request, res: Response): Promise<void
       estado_caja: c.estado_caja,
       fecha_finalizacion: c.fecha_finalizacion,
       fuid_creados: updPorCaja[c.caja_modulo]?.count ?? 0,
+      fuid_hoy: updPorCaja[c.caja_modulo]?.hoy ?? 0,
       ultimo_upd_caja: updPorCaja[c.caja_modulo]?.ultimo_upd ?? null,
       rango_inicio: rangosMap[c.id]?.inicio ?? null,
       rango_ultimo: rangosMap[c.id]?.ultimo ?? null,

@@ -35,6 +35,7 @@ interface TecnicaStats {
     estado_caja: string | null;
     fecha_finalizacion: string | null;
     fuid_creados: number;
+    fuid_hoy: number;
     ultimo_upd_caja: string | null;
     rango_inicio: string | null;
     rango_ultimo: string | null;
@@ -235,7 +236,12 @@ export default function TecnicaDashboardPage() {
       <Card>
         <div className="flex items-center gap-2 border-b border-silver-200 p-4">
           <Users className="size-5 text-silver-600" />
-          <h3 className="text-lg font-semibold text-silver-800">Mis cajas</h3>
+          <div>
+            <h3 className="text-lg font-semibold text-silver-800">Mis cajas</h3>
+            <p className="text-sm text-silver-500">
+              Cuánto llevas digitado en cada cliente, en cada acta y en cada caja
+            </p>
+          </div>
         </div>
         <ArbolDeCajas cajas={s.detalle_cajas} />
       </Card>

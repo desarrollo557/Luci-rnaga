@@ -318,6 +318,8 @@ export const modulosCajaApi = {
       estado_caja: string | null;
       fecha_finalizacion: string | null;
       fuid_creados: number;
+      /** De esos registros, los digitados hoy. */
+      fuid_hoy: number;
       ultimo_upd_caja: string | null;
       rango_inicio: string | null;
       rango_ultimo: string | null;
