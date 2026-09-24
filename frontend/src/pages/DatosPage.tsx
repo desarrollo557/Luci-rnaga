@@ -348,6 +348,14 @@ function buildPayload(form: FuidFormValues, editing: FuidDato | null): DataRow {
   return payload;
 }
 
+/**
+ * Cuántas letras hacen falta para que aparezcan las sugerencias de la caja.
+ *
+ * Una: son las iniciales de algo que ya está escrito en esta caja, no una
+ * búsqueda en toda la base, y el servidor devuelve ocho como mucho.
+ */
+const MINIMO_PARA_SUGERIR = 1;
+
 interface SuggestionInputProps {
   caja: string;
   campo: SuggestionField;
@@ -376,7 +384,15 @@ function SuggestionInput({
     queryKey: ['fuiddatosreal', 'suggestions', caja, campo, debouncedQuery],
     queryFn: () =>
       fuidApi.suggestions(caja, campo, debouncedQuery).then((res) => res.data as unknown as string[]),
-    enabled: Boolean(caja && debouncedQuery.trim().length >= 3),
+    // Desde la primera letra, que es lo que pide una caja con varios valores
+    // distintos en el mismo campo: hay cajas con veintinueve asuntos
+    // automáticos en treinta registros, y ahí lo que se busca es reconocer el
+    // que ya está escrito, no teclearlo entero. Con tres letras, que era el
+    // umbral anterior, media palabra ya iba escrita antes de ver la lista.
+    //
+    // No dispara una petición por tecla: el valor viene retrasado 300 ms y
+    // React Query cachea cada término mientras dura la pantalla.
+    enabled: Boolean(caja && debouncedQuery.trim().length >= MINIMO_PARA_SUGERIR),
   });
 
   return (
