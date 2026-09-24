@@ -58,13 +58,13 @@ function respuesta() {
 /**
  * La condición WHERE de los filtros, para comparar dos consultas.
  *
- * El filtro de la petición vive dentro del primer bloque de la consulta, que
- * termina en `),`. Buscarlo así lo distingue de los otros `WHERE` que lleva el
- * SQL —los de `FILTER (WHERE …)`— que no son filtros de la petición sino parte
- * del recuento de cajas terminadas.
+ * El filtro de la petición va en una sola línea, al final del primer bloque de
+ * la consulta, justo antes de `),`. Buscarlo así lo distingue de los otros
+ * `WHERE` que lleva el SQL —los de `FILTER (WHERE …)` y los de las subconsultas
+ * que miran los cierres anotados— que no son filtros de la petición.
  */
 const condicionDe = (sql: string) =>
-  /\sWHERE\s+([\s\S]*?)\n\s*\),/.exec(sql)?.[1].replace(/\s+/g, ' ').trim();
+  /\sWHERE\s+([^\n]*)\n\s*\),/.exec(sql)?.[1].replace(/\s+/g, ' ').trim();
 
 const jornada = (n: number) => ({
   fecha: `2026-09-${String(n).padStart(2, '0')}`,

@@ -1,8 +1,9 @@
 import { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { FileText, Package, PackageOpen, TrendingUp, Users } from 'lucide-react';
+import { Download, FileText, Package, PackageOpen, TrendingUp, Users } from 'lucide-react';
 import { toast } from 'sonner';
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery } from '@tanstack/react-query';
+import axios from 'axios';
 import {
   Badge,
   Button,
@@ -12,7 +13,8 @@ import {
   Table,
   type Column,
 } from '@/components/ui';
-import { modulosCajaApi } from '@/lib/api';
+import { getApiErrorMessage, inventarioApi, modulosCajaApi } from '@/lib/api';
+import { descargarBlob } from '@/lib/utils';
 import { CAJA_EN_PROCESO, estadoDeCaja } from '@/lib/estadoCaja';
 import { fechaHoyLocal } from '@/lib/fechas';
 import { useAuthStore } from '@/stores/authStore';
@@ -62,6 +64,34 @@ export default function TecnicaDashboardPage() {
     queryKey: ['modulos-caja', 'tecnica-stats'],
     queryFn: () => modulosCajaApi.getTecnicaStats().then((res) => res.data),
     enabled: rol === 'TECNICA',
+  });
+
+  /*
+   * El inventario general propio: todo lo que esta persona ha digitado, en el
+   * formato FUID, sin pasar por el líder. La respuesta es un archivo, así que
+   * un error llega también como archivo y hay que leerlo para dar el motivo.
+   */
+  const descargarInventario = useMutation({
+    mutationFn: () => inventarioApi.descargarMiInventario().then((res) => res.data as Blob),
+    onSuccess: (blob) => {
+      descargarBlob(blob, `Inventario_FUID_${(user?.nombre ?? 'mio').replace(/\s+/g, '_')}_${fechaHoyLocal()}.xlsx`);
+      toast.success('Inventario descargado');
+    },
+    onError: async (err: unknown) => {
+      const datos = axios.isAxiosError(err) ? err.response?.data : undefined;
+      if (datos instanceof Blob) {
+        try {
+          const cuerpo = JSON.parse(await datos.text()) as { error?: string };
+          if (cuerpo.error) {
+            toast.error(cuerpo.error);
+            return;
+          }
+        } catch {
+          // Sigue con el mensaje genérico.
+        }
+      }
+      toast.error(getApiErrorMessage(err));
+    },
   });
 
   const columns: Column<NonNullable<TecnicaStats['detalle_cajas']>[0]>[] = [
@@ -157,9 +187,14 @@ export default function TecnicaDashboardPage() {
         title="Mi Panel Técnico"
         description={`Bienvenido, ${user.nombre} (CC: ${user.cc}) — Resumen de tus cajas, UPDs y progreso`}
         actions={
-          <Button variant="secondary" onClick={() => refetch()}>
-            <TrendingUp className="size-4" /> Actualizar
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <Button variant="secondary" onClick={() => refetch()}>
+              <TrendingUp className="size-4" /> Actualizar
+            </Button>
+            <Button onClick={() => descargarInventario.mutate()} loading={descargarInventario.isPending}>
+              <Download className="size-4" /> Descargar mi inventario
+            </Button>
+          </div>
         }
       />
 
@@ -181,7 +216,7 @@ export default function TecnicaDashboardPage() {
                     : `Tienes ${cajasSinTerminar.length} cajas sin terminar`}
                 </p>
                 <p className="text-sm text-silver-600">
-                  Continúa donde la dejaste. La caja sigue abierta hasta que la des por terminada desde la digitación; si ya la cerraste y necesitas volver, pídele al líder que la reabra desde la caja.
+                  Continúa donde la dejaste. La caja sigue abierta hasta que la des por terminada desde la digitación; si ya la cerraste y necesitas volver, reábrela desde la caja y te pediremos el UPD con el que continúas.
                 </p>
               </div>
               <div className="flex flex-wrap gap-2">

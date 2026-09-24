@@ -185,12 +185,20 @@ escribe: el formulario no lo pide y lo que mande se ignora.
 **La caja la cierra quien la trabaja, nunca el servidor.** Guardar un registro
 en una caja la abre. Cerrarla es siempre una decisión de la técnica: "Terminé
 esta caja" en la digitación (o el cambio de estado desde la vista de la caja),
-que la cierra atribuida a la fecha de su último registro y deja la jornada
-anotada. Ninguna caja se cierra sola: ni al pasar a otra caja ni al cambiar de
-día. Una caja que quedó abierta el viernes sigue abierta el lunes y se continúa
-sin pedir nada. Hubo una versión que deducía el cierre y se retiró porque
-cerraba cajas a medias. La lógica está en
-`backend/src/services/cicloCaja.service.ts`.
+que la cierra atribuida a la fecha de su último registro y deja ese cierre
+anotado en `jornada_caja` con el día y la persona. Ninguna caja se cierra sola:
+ni al pasar a otra caja ni al cambiar de día. Una caja que quedó abierta el
+viernes sigue abierta el lunes y se continúa sin pedir nada. Hubo una versión
+que deducía el cierre y se retiró porque cerraba cajas a medias. La lógica está
+en `backend/src/services/cicloCaja.service.ts`.
+
+**El seguimiento cuenta la caja en cada jornada en que se dio por terminada.**
+Si la técnica cerró la caja el lunes, la reabrió el martes, siguió digitando y
+la volvió a cerrar, la caja cuenta como terminada el lunes y el martes, y cada
+día lleva sus registros y su rango de UPD. Lo digitado antes de que existieran
+los cierres anotados sigue contando por la jornada del último registro de la
+caja, para que el histórico no quede en cero (`consultaSeguimiento` en
+`backend/src/controllers/reportes.controller.ts`).
 
 **Las técnicas se asignan por caja.** Solo existe `asignacion_caja_tecnica`. La
 asignación por acta de la versión anterior se retiró porque obligaba a asignar
@@ -205,15 +213,17 @@ reapertura; reabrirla digitando en ella no cuenta. Cada versión anterior queda
 copiada en `historial` por un trigger, así que levantar la restricción no borra
 el rastro.
 
-**Reabrir una caja terminada se pide al líder.** La técnica no reabre por su
-cuenta: ni cambiando el estado ni digitando un registro nuevo en una caja
-terminada. Desde la caja envía la solicitud; los líderes de la sede la reciben
-al instante en la campana de notificaciones (una conexión abierta por eventos
-del servidor, `backend/src/services/notificaciones.service.ts`, además de la
-lista guardada en la tabla `notificacion`) y la aprueban o rechazan con un
-clic. Aprobar es reabrir, firmada por el líder como cualquier reapertura a
-mano, y la técnica recibe a su vez el aviso de que la caja ya está disponible.
-La lógica está en `backend/src/services/reaperturaCaja.service.ts`.
+**La técnica reabre sus propias cajas.** Una caja terminada se reabre desde la
+digitación o desde la vista de la caja, en un clic y sin pedir permiso a
+nadie. Al reabrirla, las técnicas asignadas pierden su arranque de UPD en esa
+caja y la digitación les pide de nuevo el número con el que continúan, en el
+momento en que la caja vuelve a estar abierta. La reapertura del líder o el
+administrador es la única que queda firmada y autoriza a corregir registros de
+días anteriores.
+
+**Cada técnico descarga su propio inventario general.** Desde "Mi Panel", el
+Excel FUID (formato F-PSD-001) con todos los registros que ha digitado
+(`GET /inventario/mio/excel`, con `desde` y `hasta` opcionales).
 
 **Eliminar respeta la jerarquía y deja huella.** Un cliente no se borra si
 tiene actas, ni un acta si tiene cajas. Borrar una caja arrastra, en una

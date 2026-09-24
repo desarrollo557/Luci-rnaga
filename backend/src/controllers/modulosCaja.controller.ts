@@ -7,11 +7,6 @@ import { asignarUsuariosACajas, validarUsuariosDeRol } from './asignacionesCaja.
 import { audit } from '../services/audit.service.js';
 import { fueraDeSuSede, sedeDeActa, sedeDeCaja, tieneCajaAsignada } from '../services/jerarquia.service.js';
 import { CAJA_EN_PROCESO, cambiarEstadoCaja } from '../services/cicloCaja.service.js';
-import {
-  MENSAJE_REAPERTURA_REQUIERE_LIDER,
-  REAPERTURA_REQUIERE_LIDER,
-  reabrirCajaPorLider,
-} from '../services/reaperturaCaja.service.js';
 import { fechaHoyLocal } from '../utils/format.js';
 import { tieneAlgunRol } from '../utils/roles.js';
 
@@ -171,8 +166,9 @@ export const JORNADA_TERMINADA = 'TERMINADA';
  * registro, la cuenta viva cambia pero lo que se declaró aquel día no.
  *
  * Declarar dos veces el mismo día no duplica nada: se actualiza la cifra. Y
- * una vez terminada, la técnica no la reabre por su cuenta: si sigue haciendo
- * falta, pide la reapertura al líder desde la caja.
+ * una vez terminada, si hace falta volver a ella, la técnica la reabre desde
+ * la caja (`changeEstadoCaja`); al reabrirla vuelve a indicar el UPD con el
+ * que continúa.
  */
 export async function declararJornadaDeCaja(req: Request, res: Response): Promise<void> {
   const { id } = req.params;
@@ -325,48 +321,55 @@ export async function getNextUpdByCaja(req: Request, res: Response): Promise<voi
   //   1) Con historial (ultimo_upd) -> el siguiente del suyo.
   //   2) Sin historial pero con upd_inicio -> ese mismo, que es el primero a usar.
   //   3) Sin ninguno -> requiere_inicio: la interfaz le pide el número de arranque.
+  //      Pasa la primera vez en la caja y cada vez que la caja se reabre: al
+  //      reabrirla se borra el arranque para que indique con qué UPD continúa
+  //      (`SQL_REINICIAR_ARRANQUE_UPD`).
   // NO cae al fallback genérico/cliente para evitar conflictos entre técnicos.
   if (user?.rol === 'TECNICA') {
     const caja = await queryOne<{ id: number | null }>('SELECT id FROM modulos_caja WHERE caja_modulo = ?', [cajaModulo]);
-    if (caja?.id) {
-      const asignacion = await queryOne<{ upd_inicio: string | null; ultimo_upd: string | null }>(
-        'SELECT upd_inicio, ultimo_upd FROM asignacion_caja_tecnica WHERE modulo_id = ? AND usuario_id = ?',
-        [caja.id, user.id],
-      );
+    const asignacion = caja?.id
+      ? await queryOne<{ upd_inicio: string | null; ultimo_upd: string | null }>(
+          'SELECT upd_inicio, ultimo_upd FROM asignacion_caja_tecnica WHERE modulo_id = ? AND usuario_id = ?',
+          [caja.id, user.id],
+        )
+      : undefined;
 
-      const ultimoUsado = await queryOne<{ upd: string | null }>(
-        `SELECT upd FROM fuiddatosreal
-         WHERE caja = ? AND upd IS NOT NULL AND upd <> ''
-         ORDER BY CAST(SUBSTRING(upd FROM 4) AS INTEGER) DESC
-         LIMIT 1`,
-        [cajaModulo],
-      );
-
-      const base = ultimoUsado?.upd ?? asignacion?.ultimo_upd ?? null;
-      if (base) {
-        const siguiente = await siguienteUpdDespuesDe(base);
-        if (siguiente) {
-          res.json({ upd: siguiente, requiere_inicio: false });
-          return;
-        }
-        // Se llegó a UPD9999999: no hay siguiente de 7 dígitos, el técnico fija un nuevo arranque.
-        res.json({ upd: null, requiere_inicio: true, limite_alcanzado: true, message: UPD_LIMITE_MENSAJE });
+    if (asignacion?.ultimo_upd) {
+      const siguiente = await siguienteUpdDespuesDe(asignacion.ultimo_upd);
+      if (siguiente) {
+        res.json({ upd: siguiente, requiere_inicio: false });
         return;
       }
-      if (asignacion?.upd_inicio) {
-        // El arranque se validó como libre al fijarlo; si entre tanto alguien lo usó,
-        // se ofrece el primer libre a partir de él.
-        const inicio = normalizeUpd(asignacion.upd_inicio);
-        const libre = isUpdValid(inicio) ? await siguienteUpdLibre(toNumeric(inicio)) : null;
-        if (libre) {
-          res.json({ upd: libre, requiere_inicio: false });
-          return;
-        }
-        res.json({ upd: null, requiere_inicio: true, limite_alcanzado: true, message: UPD_LIMITE_MENSAJE });
-        return;
-      }
+      // Se llegó a UPD9999999: no hay siguiente de 7 dígitos, el técnico fija un nuevo arranque.
+      res.json({ upd: null, requiere_inicio: true, limite_alcanzado: true, message: UPD_LIMITE_MENSAJE });
+      return;
     }
-    res.json({ upd: null, requiere_inicio: true });
+    if (asignacion?.upd_inicio) {
+      // El arranque se validó como libre al fijarlo; si entre tanto alguien lo usó,
+      // se ofrece el primer libre a partir de él.
+      const inicio = normalizeUpd(asignacion.upd_inicio);
+      const libre = isUpdValid(inicio) ? await siguienteUpdLibre(toNumeric(inicio)) : null;
+      if (libre) {
+        res.json({ upd: libre, requiere_inicio: false });
+        return;
+      }
+      res.json({ upd: null, requiere_inicio: true, limite_alcanzado: true, message: UPD_LIMITE_MENSAJE });
+      return;
+    }
+    // Sin arranque. Si ya había digitado en esta caja es que se reabrió, y se
+    // le dice para que sepa por qué se lo vuelven a pedir.
+    const yaDigito = await queryOne<{ n: number | string }>(
+      'SELECT COUNT(*) AS n FROM fuiddatosreal WHERE caja = ? AND elaborado_por = ?',
+      [cajaModulo, `${user.nombre.toUpperCase()} (${user.cc})`],
+    );
+    res.json({
+      upd: null,
+      requiere_inicio: true,
+      message:
+        Number(yaDigito?.n ?? 0) > 0
+          ? 'La caja se reabrió: indica el número del UPD con el que continúas.'
+          : undefined,
+    });
     return;
   }
 
@@ -881,10 +884,9 @@ export async function changeEstadoCaja(req: Request, res: Response): Promise<voi
   }
 
   /*
-   * El líder cambia el estado de las cajas de su sede; el administrador, el de
-   * cualquiera. La técnica solo puede **terminar** sus cajas: reabrirlas es
-   * del líder, y si lo intenta se le dice cómo pedirlo. El código es lo que
-   * permite a la pantalla ofrecer la solicitud en lugar de un error seco.
+   * La técnica cambia el estado de sus cajas en los dos sentidos: las termina
+   * y las reabre sin pedir permiso a nadie. El líder cambia las de su sede y
+   * el administrador cualquiera.
    */
   const gestiona = tieneAlgunRol(user, ['LIDER', 'ADMIN']);
   if (gestiona) {
@@ -893,66 +895,50 @@ export async function changeEstadoCaja(req: Request, res: Response): Promise<voi
       res.status(403).json({ message: 'Solo puede cambiar el estado de las cajas de su sede' });
       return;
     }
-  } else {
-    if (!(await tieneCajaAsignada(user, id))) {
-      res.status(403).json({ message: 'Solo puede cambiar el estado de las cajas que tiene asignadas' });
-      return;
-    }
-    if (estado_caja === CAJA_EN_PROCESO) {
-      res.status(403).json({ error: MENSAJE_REAPERTURA_REQUIERE_LIDER, code: REAPERTURA_REQUIERE_LIDER });
-      return;
-    }
-  }
-
-  /*
-   * Reabrir es del líder o el administrador: la reapertura queda firmada y la
-   * técnica puede corregir sus registros de días anteriores en esa caja
-   * mientras siga abierta. Si había solicitudes pendientes sobre la caja,
-   * quedan aprobadas y avisadas en el mismo paso, porque es lo que pedían.
-   */
-  if (estado_caja === CAJA_EN_PROCESO) {
-    const aprobadas = await reabrirCajaPorLider(user, id);
-    const solicitantes = aprobadas.map((s) => s.solicitante).join(', ');
-    void audit({
-      entidad: 'modulos_caja',
-      entidadId: id,
-      accion: 'CAMBIAR_ESTADO',
-      detalle:
-        aprobadas.length > 0
-          ? `Caja ${caja.caja_modulo} reabierta a petición de ${solicitantes}`
-          : `Caja ${caja.caja_modulo} reabierta para corregir registros`,
-      usuario: user,
-    });
-    res.json({
-      message:
-        aprobadas.length > 0
-          ? `Caja reabierta: se avisó a ${solicitantes} de que ya puede editarla`
-          : 'Caja reabierta: la técnica puede corregir sus registros mientras siga abierta',
-    });
+  } else if (!(await tieneCajaAsignada(user, id))) {
+    res.status(403).json({ message: 'Solo puede cambiar el estado de las cajas que tiene asignadas' });
     return;
   }
 
   /*
-   * Terminar a mano, para los casos que la deducción no cubre. La jornada y la
-   * persona salen del último registro de la caja, no de quien pulsa ni del día
-   * en que pulsa, para que el seguimiento atribuya la caja al día en que se
-   * trabajó de verdad.
+   * Terminar la caja la cierra atribuida a la jornada de su último registro,
+   * no a quien pulsa ni al día en que pulsa, y deja ese cierre anotado en
+   * `jornada_caja` para que el seguimiento lo cuente ese día.
+   *
+   * Reabrirla la deja en proceso y borra el arranque de UPD de las técnicas
+   * asignadas, para que al volver a digitar indiquen con qué UPD continúan.
+   * Si quien reabre es el líder o el administrador, la reapertura queda además
+   * firmada y la técnica puede corregir sus registros de días anteriores
+   * mientras siga abierta; la reapertura de la propia técnica no firma nada.
    */
+  const reapertura =
+    gestiona && estado_caja === CAJA_EN_PROCESO
+      ? { por: `${user.nombre.toUpperCase()} (${user.cc})`, el: fechaHoyLocal() }
+      : undefined;
   await cambiarEstadoCaja(
     async (sql, params) => (await queryResult(sql, params)).affectedRows,
     id,
     estado_caja,
+    reapertura,
   );
 
   void audit({
     entidad: 'modulos_caja',
     entidadId: id,
     accion: 'CAMBIAR_ESTADO',
-    detalle: `Caja ${caja.caja_modulo}: estado cambiado a ${estado_caja} a mano`,
+    detalle: reapertura
+      ? `Caja ${caja.caja_modulo} reabierta por el líder para corregir registros`
+      : `Caja ${caja.caja_modulo}: estado cambiado a ${estado_caja} a mano`,
     usuario: user,
   });
 
-  res.json({ message: `Estado cambiado a ${estado_caja} correctamente` });
+  res.json({
+    message: reapertura
+      ? 'Caja reabierta: la técnica puede corregir sus registros mientras siga abierta'
+      : estado_caja === CAJA_EN_PROCESO
+        ? 'Caja reabierta: indica el UPD con el que continúas'
+        : `Estado cambiado a ${estado_caja} correctamente`,
+  });
 }
 
 export async function countFuidByCaja(req: Request, res: Response): Promise<void> {

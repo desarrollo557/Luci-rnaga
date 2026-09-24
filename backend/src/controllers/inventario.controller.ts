@@ -814,6 +814,70 @@ export async function descargarFuidDeCliente(req: Request, res: Response): Promi
 }
 
 /**
+ * `GET /inventario/mio/excel?desde=&hasta=`
+ *
+ * El inventario general de quien digita: sus propios registros, de todas las
+ * cajas, en el formato F-PSD-001. Lo pidió la operación para que cada técnico
+ * pueda bajar lo que ha digitado sin pasar por el líder. Se cruza por la
+ * cédula que va en `elaborado_por` ("NOMBRE (CC)") y no por el nombre, que
+ * puede cambiar. Con `desde` y `hasta` se acota por la fecha del dato.
+ */
+export async function descargarMiInventario(req: Request, res: Response): Promise<void> {
+  const user = req.session.user;
+  if (!user) {
+    res.status(401).json({ error: 'No autenticado' });
+    return;
+  }
+  const fecha = (nombre: string) => (typeof req.query[nombre] === 'string' ? String(req.query[nombre]).trim() : '');
+  const desde = fecha('desde');
+  const hasta = fecha('hasta');
+  for (const valor of [desde, hasta]) {
+    if (valor && !/^\d{4}-\d{2}-\d{2}$/.test(valor)) {
+      res.status(400).json({ error: 'Las fechas deben tener el formato AAAA-MM-DD' });
+      return;
+    }
+  }
+
+  const condiciones = [`substring(f.elaborado_por from '[(]([^)]*)[)]') = ?`];
+  const params: unknown[] = [user.cc];
+  if (desde) {
+    condiciones.push('f.fecha_del_dato >= ?');
+    params.push(desde);
+  }
+  if (hasta) {
+    condiciones.push('f.fecha_del_dato <= ?');
+    params.push(hasta);
+  }
+
+  const filas = await query<FuidConEstadoRow>(
+    `SELECT f.*, o.n_orden_caja, mc.estado_caja
+       FROM fuiddatosreal f
+       JOIN ${sqlOrdenEnCaja()} o ON o.id = f.id
+       LEFT JOIN modulos_caja mc ON mc.caja_modulo = f.caja
+      WHERE ${condiciones.join(' AND ')}
+      ORDER BY f.caja, o.n_orden_caja`,
+    params,
+  );
+  if (filas.length === 0) {
+    res.status(404).json({
+      error: desde || hasta ? 'No tienes registros digitados en ese periodo' : 'Todavía no tienes registros digitados',
+    });
+    return;
+  }
+
+  const buffer = await buildInventarioFuidExcel(filas);
+  enviarExcel(res, buffer, inventarioFuidFilename(user.nombre, user.cc, null));
+
+  void audit({
+    entidad: 'inventario',
+    entidadId: user.cc,
+    accion: 'DESCARGAR',
+    detalle: `Descarga del inventario propio de ${user.nombre} (${filas.length} registros)`,
+    usuario: user,
+  });
+}
+
+/**
  * Crea el inventario de un cliente, o lo actualiza si ya lo tenía.
  *
  * Solo hace falta el cliente. Todo lo que la base puede contar —cajas, cajas

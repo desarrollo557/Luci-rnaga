@@ -14,12 +14,6 @@
  * cuesta nada a nadie. Si algún día el servicio pasa a un plan de pago y hace
  * falta que sea instantáneo, este es el sitio por donde empezar.
  *
- * La excepción son las notificaciones (`useNotificaciones.ts`): una solicitud
- * de reapertura y su respuesta tienen que llegar al instante, y para eso sí
- * hay una conexión abierta por eventos del servidor. La pestaña la cierra
- * cuando no está en primer plano, igual que estas consultas se detienen, así
- * que no mantiene despierto el servicio más de lo que ya lo hace el sondeo.
- *
  * Las consultas periódicas **se detienen cuando la pestaña no está en primer
  * plano**: es el comportamiento por defecto de TanStack Query, y es lo que evita
  * que una pestaña olvidada siga pidiendo datos toda la tarde. Al volver a ella,
