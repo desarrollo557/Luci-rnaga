@@ -21,10 +21,10 @@ import { invalidateDomain } from '@/lib/queryInvalidation';
  * propia. Hubo un segundo botón, "la continúo otro día", y también se retiró:
  * sin cierre automático no hace falta declarar que se sigue.
  *
- * Una vez terminada, la técnica no la reabre por su cuenta: lo pide al líder
- * desde la propia caja (`CajaTerminada`). Por eso esto es un solo botón y no
- * un diálogo de confirmación: es una decisión de un clic, y si hace falta
- * volver, la reapertura tiene su camino.
+ * Una vez terminada, la propia técnica la reabre desde la caja, sin pedirle
+ * permiso a nadie (`CajaTerminada`). Por eso esto es un solo botón y no un
+ * diálogo de confirmación: es una decisión de un clic y tiene vuelta atrás en
+ * otro clic, así que confirmar sobraría.
  */
 
 interface Props {
