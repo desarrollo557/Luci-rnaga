@@ -258,64 +258,6 @@ export interface JornadaDeCaja {
   registros_declarados: number | null;
 }
 
-/** Estado de una solicitud de reapertura de caja. */
-export type EstadoDeSolicitud = 'PENDIENTE' | 'APROBADA' | 'RECHAZADA';
-
-/** La técnica pide reabrir una caja terminada; el líder la atiende. */
-export interface SolicitudReapertura {
-  id: number;
-  caja_id: number;
-  caja_modulo: string;
-  solicitante_id: number;
-  /** "NOMBRE (CC)" de quien pide. */
-  solicitante: string;
-  sede: string | null;
-  estado: EstadoDeSolicitud;
-  creada_en: string;
-  resuelta_en: string | null;
-  resuelta_por: string | null;
-}
-
-export const solicitudesReaperturaApi = {
-  /** La técnica pide reabrir una caja suya que está terminada. */
-  solicitar: (cajaId: string | number) =>
-    api.post<{ message: string; solicitud: SolicitudReapertura; nueva: boolean }>(
-      `/modulos_caja/${cajaId}/solicitar-reapertura`,
-    ),
-  /** Las que puede ver quien pregunta: el líder las de su sede, la técnica las suyas. */
-  list: (params?: { estado?: EstadoDeSolicitud; caja_id?: string | number }) =>
-    api.get<SolicitudReapertura[]>('/solicitudes_reapertura', { params }),
-  aprobar: (id: number) =>
-    api.post<{ message: string; solicitud: SolicitudReapertura }>(`/solicitudes_reapertura/${id}/aprobar`),
-  rechazar: (id: number) =>
-    api.post<{ message: string; solicitud: SolicitudReapertura }>(`/solicitudes_reapertura/${id}/rechazar`),
-};
-
-export type TipoDeNotificacion = 'SOLICITUD_REAPERTURA' | 'REAPERTURA_APROBADA' | 'REAPERTURA_RECHAZADA';
-
-/** Un aviso para la persona con sesión. */
-export interface Notificacion {
-  id: number;
-  tipo: TipoDeNotificacion;
-  mensaje: string;
-  caja_id: number | null;
-  caja_modulo: string | null;
-  solicitud_id: number | null;
-  creada_en: string;
-  leida_en: string | null;
-}
-
-export const notificacionesApi = {
-  list: () => api.get<{ notificaciones: Notificacion[]; sin_leer: number }>('/notificaciones'),
-  /** Sin ids marca todos los de la persona. */
-  marcarLeidas: (ids?: number[]) => api.post<{ leidas: number }>('/notificaciones/leidas', ids ? { ids } : {}),
-  /**
-   * La conexión abierta por la que llegan los avisos al instante. Es una URL
-   * y no una llamada porque la abre `EventSource`, no axios.
-   */
-  streamUrl: '/api/notificaciones/stream',
-};
-
 export const modulosCajaApi = {
   list: (
     idModuloCaja: string | number,
@@ -506,6 +448,9 @@ export const inventarioApi = {
       responseType: 'blob',
       params: acta ? { acta } : undefined,
     }),
+  /** El inventario general de quien digita: sus propios registros, en el formato FUID. */
+  descargarMiInventario: (params?: { desde?: string; hasta?: string }) =>
+    api.get('/inventario/mio/excel', { responseType: 'blob', params }),
   clientesParaInventario: () =>
     api.get<Array<Pick<ClienteParaInventario, 'codigo' | 'entidad_remitente'>>>('/inventario/clientes'),
   clienteParaInventario: (codigo: string) =>

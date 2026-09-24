@@ -33,7 +33,6 @@ import {
   assignCajaTecnica,
   removeCajaTecnica,
 } from '../controllers/asignacionesCaja.controller.js';
-import { solicitarReapertura } from '../controllers/solicitudesReapertura.controller.js';
 
 const router = Router();
 router.param('id', idNumerico);
@@ -64,19 +63,11 @@ router.put(
   asyncHandler(updateModuloCaja),
 );
 router.delete('/modulos_caja/:id', isAuthenticated, isLiderOrAdmin, asyncHandler(deleteModuloCaja));
-// Quién puede cambiar el estado lo decide el controlador: la técnica solo
-// termina sus cajas (reabrirlas es del líder), el líder cambia las de su sede,
-// el administrador todas. La reapertura por el líder es la que deja a la
+// Quién puede cambiar el estado lo decide el controlador: la técnica en sus
+// cajas (las termina y las reabre ella misma), el líder en las de su sede, el
+// administrador en todas. La reapertura por el líder es la que deja a la
 // técnica corregir sus registros anteriores.
 router.patch('/modulos_caja/:id/cambiarEstado', isAuthenticated, asyncHandler(changeEstadoCaja));
-// La técnica pide reabrir una caja terminada que tiene asignada; el líder de la
-// sede recibe el aviso al instante y la atiende desde `notificaciones.routes.ts`.
-router.post(
-  '/modulos_caja/:id/solicitar-reapertura',
-  isAuthenticated,
-  isTecnicaOnly,
-  asyncHandler(solicitarReapertura),
-);
 
 router.get('/modulos_caja/count_fuiddatosreal', isAuthenticated, asyncHandler(countFuidByCaja));
 router.get('/modulos_caja/next/:prefijo', isAuthenticated, isLiderOrAdmin, asyncHandler(getNextCajaNumero));

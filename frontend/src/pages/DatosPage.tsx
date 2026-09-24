@@ -577,14 +577,6 @@ function FormularioFuid({
       });
     },
     onError: (error) => {
-      if (getApiErrorCode(error) === 'REAPERTURA_REQUIERE_LIDER') {
-        // La caja se cerró mientras el formulario estaba abierto. Al refrescar
-        // la caja, el formulario da paso a la pantalla que ofrece pedir la
-        // reapertura al líder.
-        toast.error(getApiErrorMessage(error));
-        void invalidateDomain(queryClient, 'modulos-caja');
-        return;
-      }
       if (getApiErrorCode(error) === 'UPD_YA_USADO') {
         toast.error('El UPD ya fue usado por otro registro. Se asignará el siguiente disponible.');
         void nextUpdQuery.refetch().then((result) => {
@@ -1033,8 +1025,9 @@ export default function DatosPage() {
   // autor y de fecha las aplica el backend.
   const canCrear = true;
   const canEliminar = true;
-  // Reabrir una caja terminada es del líder; a la técnica se le ofrece pedirlo.
-  const puedeReabrir = tieneAlgunRol(user, ['LIDER', 'ADMIN']);
+  // El líder y el administrador reabren una caja terminada con solo digitar en
+  // ella; a la técnica se le muestra la caja cerrada con el botón de reabrir.
+  const gestiona = tieneAlgunRol(user, ['LIDER', 'ADMIN']);
   // El retorno se resuelve más abajo, cuando ya se conoce la caja: necesita
   // saber de qué acta cuelga para poder subir un nivel sin depender del
   // historial de navegación.
@@ -1201,7 +1194,7 @@ export default function DatosPage() {
     );
   }, [cajaQuery.data?.estado_caja, cajaQuery.data?.fecha_finalizacion, cajaQuery.data?.reabierta_por, registros]);
 
-  const cajaCerradaParaMi = !puedeReabrir && cajaQuery.data?.estado_caja === CAJA_FINALIZADA;
+  const cajaCerradaParaMi = !gestiona && cajaQuery.data?.estado_caja === CAJA_FINALIZADA;
 
   const defaultNOrden = useMemo(() => {
     if (registros.length === 0) return 1;
@@ -1550,7 +1543,12 @@ export default function DatosPage() {
 
   return (
     <div className="space-y-6">
-      {requiereUpdInicio && (
+      {/*
+        El UPD inicial se pide solo con la caja abierta. Tras reabrirla, la caja
+        y el siguiente UPD se refrescan a la vez: el diálogo aparece en cuanto
+        la caja vuelve a estar en proceso, nunca sobre la caja cerrada.
+      */}
+      {requiereUpdInicio && !cajaCerradaParaMi && (
         <UpdInicioDialog
           open
           cajaCode={cajaCode}
@@ -1611,9 +1609,10 @@ export default function DatosPage() {
       )}
 
       {/*
-        Una caja terminada no se le reabre a la técnica digitando en ella: en
-        lugar del formulario ve cómo pedir la reapertura al líder, y en cuanto
-        la autorice el aviso llega y el formulario vuelve solo.
+        Una caja terminada se reabre a propósito, no digitando por encima: en
+        lugar del formulario, la técnica ve el estado de la caja y el botón de
+        reabrirla. Al reabrirla se le pide el UPD con el que continúa y el
+        formulario vuelve.
       */}
       {canCrear && cajaCode && cajaCerradaParaMi && cajaQuery.data && <CajaTerminada caja={cajaQuery.data} />}
 
