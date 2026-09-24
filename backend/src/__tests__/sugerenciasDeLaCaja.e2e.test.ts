@@ -13,7 +13,7 @@ import { baseViva, moduloPgFalso, reiniciarBase } from './apoyo/baseEnMemoria.js
  * Y de un fallo que nadie veía: los valores se guardan en mayúsculas, pero lo
  * que se teclea viaja tal cual —el campo se ve en mayúsculas por la hoja de
  * estilos, no porque el valor lo esté—, así que con `LIKE` un "sopor" en
- * minúscula no encontraba "SOPORTES DE PAGO" y las sugerencias parecían no
+ * minúscula no encontraba "ASUNTO DE PRUEBA LARGO" y las sugerencias parecían no
  * existir.
  *
  * Recorre la aplicación Express tal como se despliega; lo único sustituido es
@@ -25,11 +25,12 @@ vi.mock('pg', () => moduloPgFalso());
 const LIDER = { cc: '8810001', nombre: 'LIDER SUGERENCIAS', contrasena: 'Clave.Lider1' };
 const CAJA = '091C000001';
 const OTRA_CAJA = '091C000002';
+/* Valores inventados: lo que se comprueba es cómo busca, no qué archiva nadie. */
 const ASUNTOS = [
-  'SOPORTES DE PAGO Y SERVICIOS PUBLICOS',
-  'SOPORTES CONTABLES',
-  'EXPEDIENTE ADQUISICION DE PREDIOS',
-  'INVERSIONES JMJ LA CANDELARIA SAS',
+  'ASUNTO UNO DE PRUEBA',
+  'ASUNTO DOS DE PRUEBA',
+  'MATERIAL DE PRUEBA',
+  'PLANOS DE PRUEBA',
 ];
 
 let servidor: Server;
@@ -84,7 +85,7 @@ beforeAll(async () => {
   );
   await baseViva().query(
     'INSERT INTO fuiddatosreal (caja, n_orden, asunto_2, elaborado_por) VALUES ($1, $2, $3, $4)',
-    [OTRA_CAJA, 1, 'SOPORTES DE OTRA CAJA', LIDER.nombre],
+    [OTRA_CAJA, 1, 'ASUNTO DE OTRA CAJA', LIDER.nombre],
   );
 
   const { app } = await import('../app.js');
@@ -105,28 +106,20 @@ afterAll(async () => {
 
 describe('sugerencias del asunto automático en una caja con varios', () => {
   it('con una sola inicial ya trae lo que empieza así', async () => {
-    expect(await sugerencias(CAJA, 'asunto_2', 'S')).toEqual([
-      'SOPORTES CONTABLES',
-      'SOPORTES DE PAGO Y SERVICIOS PUBLICOS',
-    ]);
+    expect(await sugerencias(CAJA, 'asunto_2', 'M')).toEqual(['MATERIAL DE PRUEBA']);
   });
 
   it('da igual escribirlo en minúscula, que es como se teclea', async () => {
-    expect(await sugerencias(CAJA, 'asunto_2', 'sopor')).toEqual([
-      'SOPORTES CONTABLES',
-      'SOPORTES DE PAGO Y SERVICIOS PUBLICOS',
-    ]);
+    expect(await sugerencias(CAJA, 'asunto_2', 'mater')).toEqual(['MATERIAL DE PRUEBA']);
   });
 
   it('afina según se escribe', async () => {
-    expect(await sugerencias(CAJA, 'asunto_2', 'soportes de')).toEqual([
-      'SOPORTES DE PAGO Y SERVICIOS PUBLICOS',
-    ]);
+    expect(await sugerencias(CAJA, 'asunto_2', 'asunto dos')).toEqual(['ASUNTO DOS DE PRUEBA']);
   });
 
   it('solo sugiere lo de esta caja, no lo de la de al lado', async () => {
-    const traidas = await sugerencias(CAJA, 'asunto_2', 'SOPORTES');
-    expect(traidas).not.toContain('SOPORTES DE OTRA CAJA');
+    const traidas = await sugerencias(CAJA, 'asunto_2', 'ASUNTO');
+    expect(traidas).not.toContain('ASUNTO DE OTRA CAJA');
   });
 
   it('el marcador N/A no se sugiere: no es un asunto que nadie quiera repetir', async () => {
