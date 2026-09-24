@@ -3,6 +3,7 @@ import { cn } from '@/lib/cn';
 import { useQuery } from '@tanstack/react-query';
 import { formatearHora } from '@/lib/fechas';
 import {
+  ChevronRight,
   Activity,
   Boxes,
   Download,
@@ -685,6 +686,19 @@ function PanelDelCliente({ cliente, estadoCaja }: { cliente: ClienteConDetalle; 
    * entrega por actas, así que "cómo va el acta 122" tiene que leerse sin
    * sumar filas a ojo.
    */
+  /*
+   * Qué actas están abiertas. Empieza abierta la primera, para que el panel no
+   * se vea vacío nada más elegir el cliente, y el resto se abre a petición.
+   */
+  const [actasAbiertas, setActasAbiertas] = useState<Set<string>>(new Set());
+  const alternarActa = (acta: string) =>
+    setActasAbiertas((previas) => {
+      const siguiente = new Set(previas);
+      if (siguiente.has(acta)) siguiente.delete(acta);
+      else siguiente.add(acta);
+      return siguiente;
+    });
+
   const porActa = useMemo(() => {
     const grupos = new Map<string, { acta: string; cajas: CajaDeCliente[]; registros: number; aprobados: number }>();
     for (const caja of cajas) {
@@ -702,23 +716,24 @@ function PanelDelCliente({ cliente, estadoCaja }: { cliente: ClienteConDetalle; 
 
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+      {/*
+        Tres cifras, no cinco. Estaban "Cajas 58 · 58 terminadas" y "Cajas
+        terminadas 100%", que son el mismo dato dicho de dos maneras; y
+        "Registros 4.429 · 4.429 sin revisar" junto a "Aprobados 0% · 0 de
+        4.429", que también. Cada una dice ahora el total y, debajo, en qué
+        estado está ese total.
+      */}
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
         <Cifra etiqueta="Actas" valor={cliente.actas} />
         <Cifra
           etiqueta="Cajas"
           valor={cliente.cajas}
-          detalle={`${cliente.cajas_finalizadas} terminadas · ${cliente.cajas_en_proceso} en proceso`}
+          detalle={`${cajasHechas}% terminadas · ${cliente.cajas_en_proceso} en proceso · ${cliente.cajas_sin_registros} sin empezar`}
         />
         <Cifra
-          etiqueta="Cajas terminadas"
-          valor={`${cajasHechas}%`}
-          detalle={`${cliente.cajas_sin_registros} sin empezar`}
-        />
-        <Cifra etiqueta="Registros" valor={cliente.registros} detalle={`${cliente.pendientes} sin revisar`} />
-        <Cifra
-          etiqueta="Aprobados"
-          valor={`${avance}%`}
-          detalle={`${cliente.aprobados} de ${cliente.registros}`}
+          etiqueta="Registros"
+          valor={conSeparador(cliente.registros)}
+          detalle={`${avance}% aprobados · ${conSeparador(cliente.pendientes)} sin revisar`}
         />
       </div>
 
@@ -736,16 +751,34 @@ function PanelDelCliente({ cliente, estadoCaja }: { cliente: ClienteConDetalle; 
         </h3>
         {porActa.map((grupo) => (
           <div key={grupo.acta} className="rounded-lg border border-silver-200">
-            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-silver-100 bg-silver-50 px-3 py-2">
-              <span className="font-medium text-silver-800">
+            {/*
+              El acta abre y cierra. Un cliente con cincuenta y ocho cajas
+              pintaba cincuenta y ocho filas de golpe, y para ver la siguiente
+              acta había que pasar de largo la anterior entera. Cerrada, el acta
+              dice lo que hace falta para saber si merece abrirla.
+            */}
+            <button
+              type="button"
+              onClick={() => alternarActa(grupo.acta)}
+              aria-expanded={actasAbiertas.has(grupo.acta)}
+              className="flex w-full flex-wrap items-center justify-between gap-2 border-b border-silver-100 bg-silver-50 px-3 py-2 text-left transition-colors hover:bg-silver-100"
+            >
+              <span className="flex items-center gap-2 font-medium text-silver-800">
+                <ChevronRight
+                  className={cn(
+                    'size-4 text-silver-400 transition-transform',
+                    actasAbiertas.has(grupo.acta) && 'rotate-90',
+                  )}
+                />
                 {grupo.acta === SIN_ACTA ? SIN_ACTA : `Acta ${grupo.acta}`}
               </span>
               <span className="text-sm text-silver-600">
-                {grupo.cajas.length} {grupo.cajas.length === 1 ? 'caja' : 'cajas'} ·{' '}
-                <strong className="text-silver-800">{grupo.registros}</strong> registros ·{' '}
-                {grupo.aprobados} aprobados
+                <strong className="text-silver-800">{conSeparador(grupo.registros)}</strong> registros ·{' '}
+                {grupo.cajas.length} {grupo.cajas.length === 1 ? 'caja' : 'cajas'}
+                {grupo.aprobados > 0 && ` · ${conSeparador(grupo.aprobados)} aprobados`}
               </span>
-            </div>
+            </button>
+            {actasAbiertas.has(grupo.acta) && (
             <div className="overflow-x-auto p-3">
               <table className="w-full min-w-[560px] text-sm">
                 <thead>
@@ -771,36 +804,66 @@ function PanelDelCliente({ cliente, estadoCaja }: { cliente: ClienteConDetalle; 
                       <td className="py-2 pr-3 text-right text-silver-600">{caja.aprobados}</td>
                       <td className="py-2 pr-3 text-silver-600">{fecha(caja.ultimo_dia)}</td>
                       <td className="py-2 text-silver-600">
-                        {caja.personas.length > 0 ? caja.personas.join(', ') : 'Sin digitar'}
+                        {caja.personas.length > 0
+                          ? caja.personas.map(nombreSinCedula).join(', ')
+                          : 'Sin digitar'}
                       </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
+            )}
           </div>
         ))}
       </div>
 
+      {/*
+        Quién trabaja en este cliente, con las mismas columnas que la tabla de
+        arriba. Antes era una lista con otro formato y otras palabras —"1135
+        registro(s) en 14 caja(s)"— para decir lo mismo que la tabla general
+        decía en columnas, y había que leer dos veces para comparar a la misma
+        persona consigo misma.
+      */}
       {cliente.digitadores.length > 0 && (
         <div>
           <h3 className="mb-2 text-sm font-semibold text-silver-700">
-            Personas trabajando en este cliente ({cliente.digitadores.length})
+            Quién trabaja en este cliente ({cliente.digitadores.length})
           </h3>
-          <ul className="divide-y divide-silver-100 rounded-lg border border-silver-200">
-            {cliente.digitadores.map((d) => (
-              <li key={d.nombre} className="flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2 text-sm">
-                <span className="font-medium text-silver-800">{d.nombre}</span>
-                {d.rol && <Badge color="gray">{d.rol}</Badge>}
-                <span className="text-silver-600">
-                  {d.registros} registro(s) en {d.cajas.length} caja(s)
-                </span>
-                <span className="ml-auto text-silver-500">
-                  del {fecha(d.primer_dia)} al {fecha(d.ultimo_dia)}
-                </span>
-              </li>
-            ))}
-          </ul>
+          <div className="overflow-x-auto rounded-lg border border-silver-200">
+            <table className="w-full min-w-[560px] text-sm">
+              <thead>
+                <tr className="border-b border-silver-200 bg-silver-50 text-left text-xs uppercase tracking-wide text-silver-500">
+                  <th className="px-3 py-2">Digitador</th>
+                  <th className="px-3 py-2 text-right">Registros</th>
+                  <th className="px-3 py-2 text-right">Cajas</th>
+                  <th className="px-3 py-2">Periodo</th>
+                </tr>
+              </thead>
+              <tbody>
+                {cliente.digitadores.map((d) => (
+                  <tr key={d.nombre} className="border-b border-silver-100 last:border-b-0">
+                    <td className="px-3 py-2">
+                      <p className="font-medium text-silver-800">{nombreSinCedula(d.nombre)}</p>
+                      <p className="text-xs text-silver-500">
+                        {d.cc ? `CC ${d.cc}` : 'Sin cédula'}
+                        {d.rol ? ` · ${d.rol}` : ''}
+                      </p>
+                    </td>
+                    <td className="px-3 py-2 text-right font-semibold text-silver-800" style={{ fontVariantNumeric: 'tabular-nums' }}>
+                      {conSeparador(d.registros)}
+                    </td>
+                    <td className="px-3 py-2 text-right text-silver-600" style={{ fontVariantNumeric: 'tabular-nums' }}>
+                      {d.cajas.length}
+                    </td>
+                    <td className="px-3 py-2 text-silver-600">
+                      {fecha(d.primer_dia)} – {fecha(d.ultimo_dia)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
     </div>
