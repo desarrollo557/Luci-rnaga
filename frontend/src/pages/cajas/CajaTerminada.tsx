@@ -12,13 +12,12 @@ import type { ModuloCaja } from '@/types';
  *
  * Una caja terminada se reabre a propósito, en un clic, y lo hace la propia
  * técnica: nadie tiene que autorizarla. Se muestra así, y no el formulario
- * directamente, porque reabrir tiene una consecuencia que conviene ver: al
- * reabrir se pierde el arranque de UPD en esta caja y, en cuanto la caja vuelve
- * a estar en proceso, la digitación pide el número con el que se continúa.
+ * directamente, porque una caja cerrada está terminada y volver a escribir en
+ * ella es una decisión, no un descuido.
  *
- * El momento importa. Al reabrir se refrescan a la vez la caja y el siguiente
- * UPD: el formulario y el diálogo del UPD inicial aparecen cuando la caja ya
- * está abierta, nunca sobre la caja cerrada.
+ * Reabrir no toca el consecutivo de UPD: se sigue donde se dejó. Llegó a
+ * borrarse el arranque para pedir uno nuevo, y se quitó, porque muchas
+ * reaperturas son para corregir un registro y no para seguir digitando.
  */
 
 interface Props {
@@ -47,8 +46,8 @@ export function CajaTerminada({ caja }: Props) {
             {caja.fecha_finalizacion ? ` desde el ${formatearFecha(caja.fecha_finalizacion)}` : ''}.
           </p>
           <p className="text-sm text-silver-700">
-            Para seguir digitando o corregir en ella, reábrela. Al reabrirla te pediremos el número del UPD con el
-            que continúas, y lo que digites hoy quedará contado en la jornada de hoy.
+            Para seguir digitando o corregir en ella, reábrela. Sigues con tu mismo consecutivo de UPD, y lo que
+            digites hoy queda contado en la jornada de hoy.
           </p>
           <Button onClick={() => reabrir.mutate()} loading={reabrir.isPending}>
             <LockOpen className="size-4" /> Reabrir caja y seguir digitando

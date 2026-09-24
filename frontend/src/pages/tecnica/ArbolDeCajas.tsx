@@ -124,8 +124,9 @@ export function ArbolDeCajas({ cajas }: Props) {
   /*
    * Una caja terminada no ofrece digitar, ofrece reabrir. Digitar en ella la
    * reabriría igual —guardar un registro la pone en proceso—, y así la caja
-   * quedaría abierta sin que nadie lo hubiera decidido. Al reabrirla se pierde
-   * el arranque de UPD, y la digitación pide con cuál se continúa.
+   * quedaría abierta sin que nadie lo hubiera decidido. Reabrir no pide nada
+   * más: se retoma el UPD donde quedó, porque muchas reaperturas son solo para
+   * corregir un registro ya escrito.
    */
   const reabrir = useMutation({
     mutationFn: (id: number) => modulosCajaApi.cambiarEstado(id, CAJA_EN_PROCESO),

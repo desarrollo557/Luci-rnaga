@@ -238,8 +238,7 @@ export default function CajasPage() {
                 <>
                   {/*
                     La técnica termina sus cajas y las reabre ella misma; nada
-                    las cierra solas. Al reabrir se le vuelve a pedir el UPD con
-                    el que continúa.
+                    las cierra solas. Reabrir no toca su consecutivo de UPD.
                   */}
                   <Button
                     variant="secondary"
