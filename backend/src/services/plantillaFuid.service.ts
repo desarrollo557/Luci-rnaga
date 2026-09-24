@@ -3,7 +3,9 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import ExcelJS from 'exceljs';
 import { FUID_COLUMNS } from './zohoSheet.service.js';
+import { VALOR_NO_DILIGENCIADO } from '../config/constants.js';
 import { soloNombre } from '../utils/format.js';
+import { sinDiligenciar } from '../utils/noDiligenciado.js';
 
 /**
  * El formato oficial del inventario: F-PSD-001 ÚNICO DE INVENTARIO DOCUMENTAL
@@ -162,7 +164,17 @@ export function escribirFilasFuid<T extends object>(
           return;
         }
       }
-      celda.value = valor == null || valor === '' ? null : (valor as ExcelJS.CellValue);
+      /*
+       * Ninguna celda del inventario se entrega en blanco.
+       *
+       * Lo que no se diligenció se guarda como `N/A` en las columnas de texto,
+       * pero las de fecha no admiten el literal y guardan NULL: sin esto, un
+       * registro sin fechas extremas salía con dos huecos en el Excel que
+       * recibe el cliente, y un hueco no dice si el dato falta o si nadie lo
+       * miró. El propio instructivo del FUID lo pide así: "cuando la
+       * documentación no tenga fecha se anotará N/A".
+       */
+      celda.value = sinDiligenciar(valor) ? VALOR_NO_DILIGENCIADO : (valor as ExcelJS.CellValue);
     });
     fila.commit();
   });
