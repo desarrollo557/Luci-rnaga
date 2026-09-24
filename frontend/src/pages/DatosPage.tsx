@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent, type KeyboardEvent } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { CheckCircle2, Pencil, Search, Trash2, X } from 'lucide-react';
@@ -29,9 +29,9 @@ import { useLatidoDeEscritura } from '@/lib/latidoDeEscritura';
 import { retornoDeCaja } from '@/lib/navegacion';
 import { OPCIONES_FRECUENCIA, OPCIONES_OTRO, OPCIONES_SOPORTE } from '@/lib/catalogos';
 import { limiteDe } from '@/lib/limites';
+import { completarConSugerencia, pistaDeCompletado } from '@/lib/sugerencias';
 import { fechaHoyLocal, formatearFechaHora } from '@/lib/fechas';
 import { CAJA_FINALIZADA, estadoDeCaja } from '@/lib/estadoCaja';
-import { ASUNTO_NUEVO, asuntosAutomaticosDe, seEligeDeLaLista } from '@/lib/asuntoAutomatico';
 import { CajaTerminada } from './cajas/CajaTerminada';
 import { CierreDeJornada } from './cajas/CierreDeJornada';
 import { FECHA_MINIMA_DOCUMENTAL, dateInRange, dateOrderValid, onlyDigits } from '@/lib/validation';
@@ -349,6 +349,14 @@ function buildPayload(form: FuidFormValues, editing: FuidDato | null): DataRow {
   return payload;
 }
 
+/**
+ * Cuántas letras hacen falta para que aparezcan las sugerencias de la caja.
+ *
+ * Una: son las iniciales de algo que ya está escrito en esta caja, no una
+ * búsqueda en toda la base, y el servidor devuelve ocho como mucho.
+ */
+const MINIMO_PARA_SUGERIR = 1;
+
 interface SuggestionInputProps {
   caja: string;
   campo: SuggestionField;
@@ -377,8 +385,35 @@ function SuggestionInput({
     queryKey: ['fuiddatosreal', 'suggestions', caja, campo, debouncedQuery],
     queryFn: () =>
       fuidApi.suggestions(caja, campo, debouncedQuery).then((res) => res.data as unknown as string[]),
-    enabled: Boolean(caja && debouncedQuery.trim().length >= 3),
+    // Desde la primera letra, que es lo que pide una caja con varios valores
+    // distintos en el mismo campo: hay cajas con veintinueve asuntos
+    // automáticos en treinta registros, y ahí lo que se busca es reconocer el
+    // que ya está escrito, no teclearlo entero. Con tres letras, que era el
+    // umbral anterior, media palabra ya iba escrita antes de ver la lista.
+    //
+    // No dispara una petición por tecla: el valor viene retrasado 300 ms y
+    // React Query cachea cada término mientras dura la pantalla.
+    enabled: Boolean(caja && debouncedQuery.trim().length >= MINIMO_PARA_SUGERIR),
   });
+
+  /*
+   * Lo que Tab pondría en el campo: la primera sugerencia que empieza por lo
+   * tecleado. Se teclean dos o tres letras y el resto ya está escrito en algún
+   * registro anterior de esta caja.
+   */
+  const porCompletar = completarConSugerencia(value, suggestionsQuery.data);
+
+  /*
+   * Tab completa y sigue de largo: no se corta el evento, así que el foco pasa
+   * a la casilla siguiente como siempre. Ese es el gesto de quien digita de
+   * corrido, y si no hay nada que completar Tab hace lo de toda la vida.
+   *
+   * Shift+Tab no completa: va hacia atrás, a revisar, no a llenar.
+   */
+  const completarConTab = (evento: KeyboardEvent<HTMLInputElement>) => {
+    if (evento.key !== 'Tab' || evento.shiftKey || !porCompletar) return;
+    onChange(porCompletar);
+  };
 
   return (
     <div className={cn('w-full', className)}>
@@ -386,6 +421,8 @@ function SuggestionInput({
         label={label}
         value={value}
         onChange={(event) => onChange(event.target.value)}
+        onKeyDown={completarConTab}
+        hint={pistaDeCompletado(porCompletar)}
         list={`sug-${campo}`}
         disabled={disabled}
         readOnly={readOnly}
@@ -418,8 +455,6 @@ interface FormularioFuidProps {
   defaultNOrden: number;
   /** Asunto automático del último registro de la caja, para no reescribirlo. */
   asuntoAutomaticoDeLaCaja: string;
-  /** Los asuntos automáticos distintos que ya tiene la caja, para elegir entre ellos. */
-  asuntosAutomaticosDeLaCaja: readonly string[];
   /** Caja interna del primer registro de la caja: es la misma para toda ella. */
   cajaInternaDeLaCaja: string;
   /** Avisa del UPD recién guardado, para que la lista pueda señalar su fila. */
@@ -448,7 +483,6 @@ function FormularioFuid({
   editing,
   defaultNOrden,
   asuntoAutomaticoDeLaCaja,
-  asuntosAutomaticosDeLaCaja,
   cajaInternaDeLaCaja,
   caja,
   onTerminar,
@@ -475,14 +509,6 @@ function FormularioFuid({
   const [faltantesALaVista, setFaltantesALaVista] = useState(false);
   /** Confirmación animada del último registro guardado; se apaga sola a los ~2,4 s. */
   const [confirmacion, setConfirmacion] = useState<{ id: number; upd: string; siguiente: string } | null>(null);
-  /**
-   * Si se pidió escribir un asunto automático que la caja todavía no tiene.
-   *
-   * Sale del selector y dura lo que dura este registro: al guardar se vuelve al
-   * selector, que para entonces ya trae el asunto recién escrito entre sus
-   * opciones.
-   */
-  const [asuntoNuevoALaMano, setAsuntoNuevoALaMano] = useState(false);
 
   useEffect(() => {
     if (!confirmacion) return;
@@ -579,9 +605,6 @@ function FormularioFuid({
       });
       setRacha((r) => r + 1);
       setFaltantesALaVista(false);
-      // El asunto recién escrito ya es uno de los de la caja, así que el
-      // siguiente registro vuelve a elegirlo del selector.
-      setAsuntoNuevoALaMano(false);
       setConfirmacion({ id: Date.now(), upd: guardado, siguiente: siguienteUpd });
       onGuardado?.(guardado);
       // El servidor confirma el consecutivo libre (salta UPD ya usados); solo se
@@ -659,8 +682,6 @@ function FormularioFuid({
    * registro anterior, así que casi siempre viene puesto.
    */
   const faltaAsuntoAutomatico = form.asunto_2.trim() === '' ? 'El asunto automático es requerido' : null;
-  /* Selector o campo de texto, según lo que la caja ya tenga (`asuntoAutomatico.ts`). */
-  const mostrarSelectorDeAsunto = seEligeDeLaLista(asuntosAutomaticosDeLaCaja, asuntoNuevoALaMano);
 
   const errorDeFormato = errorFechaInicial ?? errorFechaFinal ?? errorFolios;
   const primerError = errorDeFormato ?? faltaAsuntoAutomatico;
@@ -769,44 +790,22 @@ function FormularioFuid({
           value={form.subserie}
           onChange={updateField('subserie')}
         />
-        {/* Asunto Automático. Una caja suele tener uno solo, heredado del
-            registro anterior, y entonces esto es el campo de texto de siempre.
-            Cuando la caja ya llevó dos o más distintos —pasa en las cajas
-            mezcladas— el campo se vuelve un selector con los que hay: elegir
-            entre dos asuntos es un clic, y volver a teclear el que no estaba
-            heredado era el trabajo repetido más caro de esas cajas.
-
-            El selector nunca encierra: la última opción devuelve el campo de
-            texto para escribir uno que la caja todavía no tenga. */}
-        {mostrarSelectorDeAsunto ? (
-          <Select
-            label="Asunto Automático *"
-            value={form.asunto_2}
-            onChange={(valor) => {
-              if (valor === ASUNTO_NUEVO) {
-                setAsuntoNuevoALaMano(true);
-                updateField('asunto_2')('');
-                return;
-              }
-              updateField('asunto_2')(valor);
-            }}
-            options={[
-              ...opcionesCon(asuntosAutomaticosDeLaCaja, form.asunto_2),
-              { value: ASUNTO_NUEVO, label: 'Escribir otro…' },
-            ]}
-            placeholder="Elegir asunto"
-            error={(faltantesALaVista && faltaAsuntoAutomatico) || undefined}
-          />
-        ) : (
-          <SuggestionInput
-            caja={form.caja}
-            campo="asunto_2"
-            label="Asunto Automático *"
-            value={form.asunto_2}
-            onChange={updateField('asunto_2')}
-            error={(faltantesALaVista && faltaAsuntoAutomatico) || undefined}
-          />
-        )}
+        {/* Asunto Automático. Campo de texto, con el del registro anterior ya
+            puesto: una caja suele contener documentos del mismo asunto, y
+            cuando cambia se borra y se escribe el nuevo, que es lo que hereda
+            el registro siguiente. Sin selector de por medio: se probó uno con
+            los asuntos de la caja y estorbaba justo cuando hay que meter uno
+            que no está en la lista, que es lo corriente al empezar un asunto
+            nuevo. Lo ya usado en la caja sigue saliendo como sugerencia al
+            escribir. */}
+        <SuggestionInput
+          caja={form.caja}
+          campo="asunto_2"
+          label="Asunto Automático *"
+          value={form.asunto_2}
+          onChange={updateField('asunto_2')}
+          error={(faltantesALaVista && faltaAsuntoAutomatico) || undefined}
+        />
 
         {/* Asunto Manual ocupa la fila entera, que es lo único que lo distingue
             del resto: es donde se escribe de corrido y en una columna estrecha no
@@ -1286,15 +1285,6 @@ export default function DatosPage() {
     return sinNA(ultimo?.asunto_2);
   }, [registros]);
 
-  /*
-   * Los asuntos automáticos distintos que ya tiene la caja. Con dos o más, el
-   * formulario los ofrece en un selector en vez de hacer que se reescriban.
-   *
-   * Sale de los registros que ya están en pantalla y no de una consulta aparte
-   * porque la lista de la caja se trae entera, sin paginar: pedir lo mismo otra
-   * vez sería una petición por cada caja que se abre para un dato que ya está.
-   */
-  const asuntosAutomaticosDeLaCaja = useMemo<string[]>(() => asuntosAutomaticosDe(registros), [registros]);
 
 
   const deleteMutation = useMutation({
@@ -1687,7 +1677,6 @@ export default function DatosPage() {
             editing={null}
             defaultNOrden={defaultNOrden}
             asuntoAutomaticoDeLaCaja={asuntoAutomaticoDeLaCaja}
-            asuntosAutomaticosDeLaCaja={asuntosAutomaticosDeLaCaja}
             cajaInternaDeLaCaja={cajaInternaDeLaCaja}
             caja={cajaQuery.data}
             onGuardado={setUltimoGuardado}
@@ -1804,7 +1793,6 @@ export default function DatosPage() {
             editing={editing}
             defaultNOrden={defaultNOrden}
             asuntoAutomaticoDeLaCaja={asuntoAutomaticoDeLaCaja}
-            asuntosAutomaticosDeLaCaja={asuntosAutomaticosDeLaCaja}
             cajaInternaDeLaCaja={cajaInternaDeLaCaja}
             caja={cajaQuery.data}
             onTerminar={cerrarEdicion}
