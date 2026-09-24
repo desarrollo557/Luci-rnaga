@@ -319,10 +319,13 @@ export async function getNextUpdByCaja(req: Request, res: Response): Promise<voi
   // Técnico: su consecutivo propio en esta caja.
   //   1) Con historial (ultimo_upd) -> el siguiente del suyo.
   //   2) Sin historial pero con upd_inicio -> ese mismo, que es el primero a usar.
-  //   3) Sin ninguno -> requiere_inicio: la interfaz le pide el número de arranque.
-  //      Pasa la primera vez que entra a la caja, y solo esa. Reabrir una caja
-  //      ya no borra el arranque: se retoma donde se dejó, porque muchas
-  //      reaperturas son para corregir un registro y no para seguir digitando.
+  //   3) Sin ninguno pero con registros suyos en la caja -> el siguiente del
+  //      mayor que tenga digitado ahí: el consecutivo está en los datos.
+  //   4) Sin nada de lo anterior -> requiere_inicio: la interfaz le pide el
+  //      número de arranque. Pasa la primera vez que entra a la caja, y solo
+  //      esa. Reabrir una caja ya no borra el arranque: se retoma donde se
+  //      dejó, porque muchas reaperturas son para corregir un registro y no
+  //      para seguir digitando.
   // NO cae al fallback genérico/cliente para evitar conflictos entre técnicos.
   if (user?.rol === 'TECNICA') {
     const caja = await queryOne<{ id: number | null }>('SELECT id FROM modulos_caja WHERE caja_modulo = ?', [cajaModulo]);
@@ -355,7 +358,34 @@ export async function getNextUpdByCaja(req: Request, res: Response): Promise<voi
       res.json({ upd: null, requiere_inicio: true, limite_alcanzado: true, message: UPD_LIMITE_MENSAJE });
       return;
     }
-    // Sin arranque: es la primera vez que esta persona entra a esta caja.
+    /*
+     * Sin arranque anotado. Antes de pedirlo, se mira lo que de verdad hay:
+     * si esta persona ya tiene registros en esta caja, el consecutivo está en
+     * ellos y no hay nada que preguntar. `asignacion_caja_tecnica` es solo un
+     * espejo del último UPD usado, y un espejo se puede perder —lo perdieron
+     * las cajas reabiertas antes del 24 de septiembre de 2026, cuando la
+     * reapertura borraba el arranque—; los registros, no. Así, quien vuelve a
+     * una caja suya sigue por donde iba aunque su espejo esté vacío, y el
+     * propio guardado del siguiente registro lo deja otra vez al día.
+     */
+    const suyoEnLaCaja = await queryOne<{ upd: string | null }>(
+      `SELECT upd FROM fuiddatosreal
+        WHERE caja = ? AND elaborado_por = ? AND upd IS NOT NULL AND upd <> ''
+        ORDER BY CAST(SUBSTRING(upd FROM 4) AS INTEGER) DESC
+        LIMIT 1`,
+      [cajaModulo, `${user.nombre.toUpperCase()} (${user.cc})`],
+    );
+    if (suyoEnLaCaja?.upd) {
+      const siguiente = await siguienteUpdDespuesDe(suyoEnLaCaja.upd);
+      if (siguiente) {
+        res.json({ upd: siguiente, requiere_inicio: false });
+        return;
+      }
+      res.json({ upd: null, requiere_inicio: true, limite_alcanzado: true, message: UPD_LIMITE_MENSAJE });
+      return;
+    }
+
+    // Ni arranque ni registros: es la primera vez que entra a esta caja.
     res.json({ upd: null, requiere_inicio: true });
     return;
   }
