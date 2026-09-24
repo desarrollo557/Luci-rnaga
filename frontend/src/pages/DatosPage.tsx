@@ -1040,6 +1040,10 @@ interface UpdInicioDialogProps {
  * arranque. Solo escribe el número: el prefijo lo aporta el propio control y el
  * servidor lo normaliza a UPD + 7 dígitos. A partir de ahí el consecutivo corre
  * solo en cada registro nuevo.
+ *
+ * Es la primera vez y nada más. Quien vuelve a una caja en la que ya digitó no
+ * ve esto, aunque la haya reabierto: el servidor saca su consecutivo de los
+ * registros que ya tiene ahí.
  */
 function UpdInicioDialog({ open, cajaCode, volverA, onListo, mensaje }: UpdInicioDialogProps) {
   const queryClient = useQueryClient();
@@ -1645,9 +1649,11 @@ export default function DatosPage() {
   return (
     <div className="space-y-6">
       {/*
-        El UPD inicial se pide solo con la caja abierta. Tras reabrirla, la caja
-        y el siguiente UPD se refrescan a la vez: el diálogo aparece en cuanto
-        la caja vuelve a estar en proceso, nunca sobre la caja cerrada.
+        El UPD inicial se pide una sola vez por caja, y solo con la caja
+        abierta: reabrirla no lo vuelve a pedir, y a quien ya tiene registros
+        ahí el servidor le retoma su consecutivo sin preguntar. Tras reabrir, la
+        caja y el siguiente UPD se refrescan a la vez, así que nada de esto
+        aparece nunca sobre una caja cerrada.
       */}
       {requiereUpdInicio && !cajaCerradaParaMi && (
         <UpdInicioDialog
