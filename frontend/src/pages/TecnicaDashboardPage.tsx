@@ -5,19 +5,17 @@ import { toast } from 'sonner';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import axios from 'axios';
 import {
-  Badge,
   Button,
   Card,
   LoadingState,
   PageHeader,
-  Table,
-  type Column,
 } from '@/components/ui';
 import { getApiErrorMessage, inventarioApi, modulosCajaApi } from '@/lib/api';
 import { descargarBlob } from '@/lib/utils';
-import { CAJA_EN_PROCESO, estadoDeCaja } from '@/lib/estadoCaja';
+import { CAJA_EN_PROCESO } from '@/lib/estadoCaja';
 import { fechaHoyLocal } from '@/lib/fechas';
 import { useAuthStore } from '@/stores/authStore';
+import { ArbolDeCajas } from './tecnica/ArbolDeCajas';
 import { MiSeguimiento } from './tecnica/MiSeguimiento';
 
 interface TecnicaStats {
@@ -99,83 +97,6 @@ export default function TecnicaDashboardPage() {
     },
   });
 
-  /*
-   * Las columnas, en el orden en que se lee una caja: de quién es, con qué acta
-   * entró, cuál es, cuánto lleva uno en ella y cómo está.
-   *
-   * El cliente y el acta faltaban, y sin ellos el panel era una lista de
-   * números de caja: "051C000516" no dice a quién hay que entregarla.
-   *
-   * De los tres UPD que había —arranque asignado, último asignado y último
-   * real— se dejan dos en una sola columna, "desde → último". El asignado y el
-   * real son el mismo número en cuanto se digita, así que enseñar los dos
-   * ocupaba una columna para repetir un dato.
-   */
-  const columns: Column<NonNullable<TecnicaStats['detalle_cajas']>[0]>[] = [
-    {
-      key: 'entidad_cliente',
-      header: 'Cliente',
-      render: (row) =>
-        row.entidad_cliente ? (
-          <div className="min-w-0">
-            <p className="truncate font-medium text-silver-800">{row.entidad_cliente}</p>
-            {row.codigo_cliente && <p className="font-mono text-xs text-silver-500">{row.codigo_cliente}</p>}
-          </div>
-        ) : (
-          <span className="text-silver-400">—</span>
-        ),
-    },
-    {
-      key: 'acta',
-      header: 'Acta',
-      render: (row) =>
-        row.acta ? <span className="font-mono text-sm">{row.acta}</span> : <span className="text-silver-400">—</span>,
-    },
-    {
-      key: 'caja_modulo',
-      header: 'Caja',
-      render: (row) => <span className="font-mono text-sm font-medium">{row.caja_modulo}</span>,
-    },
-    {
-      key: 'fuid_creados',
-      header: 'Mis registros',
-      render: (row) => <span className="font-semibold">{formatNumber(row.fuid_creados)}</span>,
-    },
-    {
-      key: 'rango_inicio',
-      header: 'UPD (desde → último)',
-      render: (row) => (
-        <span className="font-mono text-sm">
-          {formatUpd(row.rango_inicio)} <span className="text-silver-400">→</span>{' '}
-          {formatUpd(row.ultimo_upd_caja ?? row.rango_ultimo)}
-        </span>
-      ),
-    },
-    {
-      key: 'estado_caja',
-      header: 'Estado',
-      render: (row) => {
-        const estado = estadoDeCaja({ estado: row.estado_caja, fechaFinalizacion: row.fecha_finalizacion }, fechaHoyLocal());
-        return <Badge color={estado.color}>{estado.etiqueta}</Badge>;
-      },
-    },
-    {
-      key: 'acciones',
-      header: 'Acciones',
-      render: (row) => (
-        <Button
-          variant="secondary"
-          size="sm"
-          // Se pasa el origen para que el botón de volver de la digitación
-          // devuelva al panel, en lugar de subir al acta de la caja.
-          onClick={() => navigate(`/cajas/${row.id}/datos`, { state: { from: '/mi-panel' } })}
-        >
-          <Package className="size-4" /> Ir a Digitación
-        </Button>
-      ),
-    },
-  ];
-
   if (!user || rol !== 'TECNICA') return null;
 
   if (isLoading) {
@@ -232,6 +153,8 @@ export default function TecnicaDashboardPage() {
           </div>
         }
       />
+
+      <MiSeguimiento />
 
       {/*
         Lo primero: la caja que quedó a medias. Es el trabajo que hay que
@@ -304,34 +227,19 @@ export default function TecnicaDashboardPage() {
         </div>
       </Card>
 
-      {/* Detalle por caja */}
+      {/*
+        Las cajas, en el orden en que existen: cliente, acta, caja. Cada nivel
+        dice cuántas cajas tiene y cuántas están sin terminar, que es lo que
+        hace falta para decidir dónde entrar; el resto se abre solo si se pide.
+      */}
       <Card>
-        <div className="p-4 border-b border-silver-200">
-          <h3 className="text-lg font-semibold text-silver-800 flex items-center gap-2">
-            <Users className="size-5" />
-            Detalle por Caja Asignada
-          </h3>
+        <div className="flex items-center gap-2 border-b border-silver-200 p-4">
+          <Users className="size-5 text-silver-600" />
+          <h3 className="text-lg font-semibold text-silver-800">Mis cajas</h3>
         </div>
-        {s.detalle_cajas.length === 0 ? (
-          <div className="p-8 text-center text-silver-500">
-            No tienes cajas asignadas. Contacta a tu líder para que te asigne una.
-          </div>
-        ) : (
-          <Table
-            columns={columns}
-            data={s.detalle_cajas}
-            rowKey={(row) => row.id}
-            loading={isLoading}
-            emptyMessage="No hay cajas asignadas"
-          />
-        )}
+        <ArbolDeCajas cajas={s.detalle_cajas} />
       </Card>
 
-      {/*
-        El seguimiento va al final: se saca al cerrar el día o cuando lo pide
-        el líder, y lo que se viene a hacer a esta pantalla es retomar una caja.
-      */}
-      <MiSeguimiento />
     </div>
   );
 }

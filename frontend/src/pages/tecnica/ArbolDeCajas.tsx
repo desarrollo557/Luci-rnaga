@@ -1,0 +1,228 @@
+import { useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { ChevronRight, Package } from 'lucide-react';
+import { Badge, Button } from '@/components/ui';
+import { cn } from '@/lib/cn';
+import { CAJA_EN_PROCESO, estadoDeCaja } from '@/lib/estadoCaja';
+import { fechaHoyLocal } from '@/lib/fechas';
+
+/** Un UPD sin asignar todavía se enseña como una raya, no como un hueco. */
+const formatUpd = (upd: string | null | undefined): string => upd || '—';
+
+/**
+ * Las cajas del auxiliar, en el orden en que existen: cliente, acta, caja.
+ *
+ * Era una tabla con una fila por caja y siete columnas, y quien tiene treinta
+ * cajas repartidas en dos clientes veía treinta filas con el cliente y el acta
+ * repetidos en cada una. La jerarquía es la del software —un cliente tiene
+ * actas y un acta tiene cajas—, así que la pantalla la enseña igual: **cada
+ * nivel dice lo suyo y lo demás se abre solo si hace falta.**
+ *
+ * Lo que decide qué se ve cerrado es qué haría falta para elegir dónde entrar:
+ * de un cliente, cuántas cajas tiene y cuántas están sin terminar; de un acta,
+ * lo mismo; y ya dentro de la caja, lo que se necesita para retomarla.
+ *
+ * Empieza plegado salvo lo que tiene trabajo a medias. Una caja sin terminar es
+ * a lo que se vuelve, y esconderla detrás de dos clics sería esconder justo lo
+ * que se vino a buscar.
+ */
+
+export interface CajaDelPanel {
+  id: number;
+  caja_modulo: string;
+  codigo_cliente: string | null;
+  entidad_cliente: string | null;
+  acta: string | null;
+  estado_caja: string | null;
+  fecha_finalizacion: string | null;
+  fuid_creados: number;
+  ultimo_upd_caja: string | null;
+  rango_inicio: string | null;
+  rango_ultimo: string | null;
+}
+
+/** Sin cliente o sin acta: las cajas heredadas las traen vacías y también son suyas. */
+const SIN_CLIENTE = 'Sin cliente';
+const SIN_ACTA = 'Sin acta';
+
+interface Grupo {
+  clave: string;
+  titulo: string;
+  subtitulo?: string;
+  cajas: CajaDelPanel[];
+  actas: Array<{ clave: string; titulo: string; cajas: CajaDelPanel[] }>;
+}
+
+function agrupar(cajas: readonly CajaDelPanel[]): Grupo[] {
+  const clientes = new Map<string, Grupo>();
+  for (const caja of cajas) {
+    const codigo = caja.codigo_cliente ?? '';
+    const clave = codigo || SIN_CLIENTE;
+    if (!clientes.has(clave)) {
+      clientes.set(clave, {
+        clave,
+        titulo: caja.entidad_cliente ?? SIN_CLIENTE,
+        subtitulo: codigo || undefined,
+        cajas: [],
+        actas: [],
+      });
+    }
+    const cliente = clientes.get(clave)!;
+    cliente.cajas.push(caja);
+
+    const acta = caja.acta ?? '';
+    const claveActa = acta || SIN_ACTA;
+    let grupoActa = cliente.actas.find((a) => a.clave === claveActa);
+    if (!grupoActa) {
+      grupoActa = { clave: claveActa, titulo: acta ? `Acta ${acta}` : SIN_ACTA, cajas: [] };
+      cliente.actas.push(grupoActa);
+    }
+    grupoActa.cajas.push(caja);
+  }
+  return [...clientes.values()];
+}
+
+const sinTerminar = (cajas: readonly CajaDelPanel[]) =>
+  cajas.filter((c) => c.estado_caja === CAJA_EN_PROCESO).length;
+
+/** "3 cajas · 1 sin terminar", que es lo que hace falta para decidir si abrir. */
+function resumen(cajas: readonly CajaDelPanel[]): string {
+  const abiertas = sinTerminar(cajas);
+  const cuantas = `${cajas.length} ${cajas.length === 1 ? 'caja' : 'cajas'}`;
+  return abiertas > 0 ? `${cuantas} · ${abiertas} sin terminar` : cuantas;
+}
+
+interface Props {
+  cajas: readonly CajaDelPanel[];
+}
+
+export function ArbolDeCajas({ cajas }: Props) {
+  const navigate = useNavigate();
+  const grupos = useMemo(() => agrupar(cajas), [cajas]);
+
+  /* Abierto de entrada: lo que tiene una caja a medias. */
+  const [abiertos, setAbiertos] = useState<Set<string>>(
+    () =>
+      new Set(
+        agrupar(cajas).flatMap((cliente) =>
+          sinTerminar(cliente.cajas) > 0
+            ? [
+                cliente.clave,
+                ...cliente.actas.filter((a) => sinTerminar(a.cajas) > 0).map((a) => `${cliente.clave}/${a.clave}`),
+              ]
+            : [],
+        ),
+      ),
+  );
+
+  const alternar = (clave: string) =>
+    setAbiertos((previos) => {
+      const siguiente = new Set(previos);
+      if (siguiente.has(clave)) siguiente.delete(clave);
+      else siguiente.add(clave);
+      return siguiente;
+    });
+
+  if (cajas.length === 0) {
+    return <p className="p-4 text-sm text-silver-500">No hay cajas asignadas.</p>;
+  }
+
+  return (
+    <ul className="divide-y divide-silver-100">
+      {grupos.map((cliente) => {
+        const clienteAbierto = abiertos.has(cliente.clave);
+        return (
+          <li key={cliente.clave}>
+            <button
+              type="button"
+              onClick={() => alternar(cliente.clave)}
+              aria-expanded={clienteAbierto}
+              className="flex w-full items-center gap-2 px-4 py-3 text-left transition-colors hover:bg-silver-50"
+            >
+              <ChevronRight
+                className={cn('size-4 shrink-0 text-silver-400 transition-transform', clienteAbierto && 'rotate-90')}
+              />
+              <span className="min-w-0 flex-1">
+                <span className="block truncate font-medium text-silver-900">{cliente.titulo}</span>
+                {cliente.subtitulo && (
+                  <span className="block font-mono text-xs text-silver-500">{cliente.subtitulo}</span>
+                )}
+              </span>
+              <span className="shrink-0 text-sm text-silver-600">{resumen(cliente.cajas)}</span>
+            </button>
+
+            {clienteAbierto && (
+              <ul className="border-t border-silver-100 bg-silver-50/50">
+                {cliente.actas.map((acta) => {
+                  const claveActa = `${cliente.clave}/${acta.clave}`;
+                  const actaAbierta = abiertos.has(claveActa);
+                  return (
+                    <li key={claveActa}>
+                      <button
+                        type="button"
+                        onClick={() => alternar(claveActa)}
+                        aria-expanded={actaAbierta}
+                        className="flex w-full items-center gap-2 py-2.5 pl-10 pr-4 text-left transition-colors hover:bg-silver-100"
+                      >
+                        <ChevronRight
+                          className={cn(
+                            'size-4 shrink-0 text-silver-400 transition-transform',
+                            actaAbierta && 'rotate-90',
+                          )}
+                        />
+                        <span className="min-w-0 flex-1 truncate text-sm font-medium text-silver-800">
+                          {acta.titulo}
+                        </span>
+                        <span className="shrink-0 text-sm text-silver-600">{resumen(acta.cajas)}</span>
+                      </button>
+
+                      {actaAbierta && (
+                        <ul className="divide-y divide-silver-100 border-t border-silver-100 bg-surface">
+                          {acta.cajas.map((caja) => {
+                            const estado = estadoDeCaja(
+                              { estado: caja.estado_caja, fechaFinalizacion: caja.fecha_finalizacion },
+                              fechaHoyLocal(),
+                            );
+                            return (
+                              <li
+                                key={caja.id}
+                                className="flex flex-wrap items-center gap-x-4 gap-y-2 py-3 pl-16 pr-4"
+                              >
+                                <span className="font-mono text-sm font-medium text-silver-900">
+                                  {caja.caja_modulo}
+                                </span>
+                                <Badge color={estado.color}>{estado.etiqueta}</Badge>
+                                <span className="text-sm text-silver-600">
+                                  <strong className="text-silver-800">{caja.fuid_creados}</strong> registros míos
+                                </span>
+                                {(caja.rango_inicio || caja.ultimo_upd_caja) && (
+                                  <span className="font-mono text-xs text-silver-500">
+                                    {formatUpd(caja.rango_inicio)} → {formatUpd(caja.ultimo_upd_caja ?? caja.rango_ultimo)}
+                                  </span>
+                                )}
+                                <Button
+                                  variant="secondary"
+                                  size="sm"
+                                  className="ml-auto"
+                                  onClick={() =>
+                                    navigate(`/cajas/${caja.id}/datos`, { state: { from: '/mi-panel' } })
+                                  }
+                                >
+                                  <Package className="size-4" /> Digitar
+                                </Button>
+                              </li>
+                            );
+                          })}
+                        </ul>
+                      )}
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
