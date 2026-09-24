@@ -46,7 +46,9 @@ import {
   etiquetaMes,
 } from '@/components/charts';
 import {
+  modulosClienteApi,
   reportesApi,
+  subModulosApi,
   type ClienteConDetalle,
   type Digitador,
 } from '@/lib/api';
@@ -136,10 +138,50 @@ export default function ProduccionPage() {
   const [eligiendoPeriodo, setEligiendoPeriodo] = useState(false);
   const [segDesde, setSegDesde] = useState('');
   const [segHasta, setSegHasta] = useState('');
+  /*
+   * El seguimiento no siempre se entrega entero: se pide el de un cliente, el
+   * de un acta que se está cerrando, o el de una persona. Los cuatro filtros
+   * son opcionales y se combinan; sin ninguno sale todo.
+   */
+  const [segCliente, setSegCliente] = useState('');
+  const [segActa, setSegActa] = useState('');
+  const [segPersona, setSegPersona] = useState('');
   const seguimiento = useDescargaSeguimiento();
   const descargarSeguimiento = async () => {
-    if (await seguimiento.descargar({ desde: segDesde, hasta: segHasta })) setEligiendoPeriodo(false);
+    const llego = await seguimiento.descargar({
+      desde: segDesde,
+      hasta: segHasta,
+      cliente: segCliente,
+      acta: segActa,
+      persona: segPersona,
+    });
+    if (llego) setEligiendoPeriodo(false);
   };
+
+  /* Los clientes y las actas que se ofrecen salen de lo que hay registrado. */
+  const clientesQuery = useQuery({
+    queryKey: ['sub-modulos', 'lista'],
+    queryFn: () => subModulosApi.list().then((res) => res.data),
+    enabled: eligiendoPeriodo,
+  });
+  const actasQuery = useQuery({
+    queryKey: ['modulos-cliente', 'lista'],
+    queryFn: () => modulosClienteApi.list().then((res) => res.data),
+    enabled: eligiendoPeriodo,
+  });
+  const opcionesCliente = useMemo(
+    () => (clientesQuery.data ?? []).map((c) => ({ value: c.codigo, label: `${c.codigo} — ${c.entidad_remitente}` })),
+    [clientesQuery.data],
+  );
+  /* Las actas se acotan al cliente elegido: un acta de otro daría un documento vacío. */
+  const opcionesActa = useMemo(() => {
+    const todas = actasQuery.data ?? [];
+    const delCliente = segCliente ? todas.filter((a) => a.codigo === segCliente) : todas;
+    const numeros = [...new Set(delCliente.map((a) => String(a.acta_transferencia_modulo ?? '')).filter(Boolean))];
+    return numeros
+      .sort((uno, otro) => uno.localeCompare(otro, 'es', { numeric: true }))
+      .map((n) => ({ value: n, label: `Acta ${n}` }));
+  }, [actasQuery.data, segCliente]);
 
   /*
    * Por mes se ve si el trabajo crece a lo largo del año; por día se ve la
@@ -309,9 +351,42 @@ export default function ProduccionPage() {
         <div className="space-y-4">
           <p className="text-sm text-silver-600">
             Sale en el formato oficial F-PSD-IDA-001, con una fila por jornada, cliente y colaborador.
-            Deje las fechas vacías para incluir todo lo digitado.
+            Deje un filtro vacío para no acotar por él.
           </p>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <Select
+              label="Cliente"
+              placeholder="Todos"
+              options={[{ value: '', label: 'Todos' }, ...opcionesCliente]}
+              value={segCliente}
+              onChange={(valor) => {
+                setSegCliente(valor);
+                // El acta elegida es de otro cliente: se suelta en vez de
+                // quedar puesta y devolver un documento vacío.
+                setSegActa('');
+              }}
+              disabled={seguimiento.descargando}
+            />
+            <Select
+              label="Acta"
+              placeholder="Todas"
+              options={[{ value: '', label: 'Todas' }, ...opcionesActa]}
+              value={segActa}
+              onChange={setSegActa}
+              disabled={seguimiento.descargando}
+            />
+            <Select
+              label="Técnico"
+              placeholder="Todos"
+              options={[
+                { value: '', label: 'Todos' },
+                ...(stats?.digitadores ?? []).map((d) => ({ value: d.nombre, label: d.nombre })),
+              ]}
+              value={segPersona}
+              onChange={setSegPersona}
+              disabled={seguimiento.descargando}
+            />
+            <div />
             <DatePicker label="Desde" value={segDesde} onChange={setSegDesde} max={segHasta || undefined} disabled={seguimiento.descargando} />
             <DatePicker label="Hasta" value={segHasta} onChange={setSegHasta} min={segDesde || undefined} disabled={seguimiento.descargando} />
           </div>

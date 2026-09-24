@@ -181,3 +181,56 @@ describe('el archivo generado no lleva cédulas', () => {
     expect(hoja.getRow(PRIMERA_FILA).getCell(COLUMNA_NOTAS).value).toBe('CARPETA (COPIA) DETERIORADA');
   });
 });
+
+/**
+ * Ninguna celda del inventario se entrega en blanco.
+ *
+ * Lo sin diligenciar se guarda como `N/A` en las columnas de texto, pero las de
+ * fecha no admiten el literal y guardan NULL. Un registro sin fechas extremas
+ * salía entonces con dos huecos en el Excel que recibe el cliente, y un hueco
+ * no dice si el dato falta o si nadie lo miró. El instructivo del propio FUID
+ * lo pide así: "cuando la documentación no tenga fecha se anotará N/A".
+ */
+describe('ninguna celda va vacía', () => {
+  /** Dónde cae cada columna del formato, para leerla después. */
+  const columna = (campo: string) => FUID_COLUMNS.findIndex(([, c]) => c === campo) + 1;
+
+  it('una fecha sin diligenciar sale como N/A y no como celda vacía', async () => {
+    const { hoja } = await abrirPlantillaFuid();
+    escribirFilasFuid(hoja, [
+      { n_orden: 1, caja: '001C000001', upd: 'UPD0000001', fecha_inicial: null, fecha_final: '' },
+    ]);
+    const fila = hoja.getRow(8);
+    expect(fila.getCell(columna('fecha_inicial')).value).toBe('N/A');
+    expect(fila.getCell(columna('fecha_final')).value).toBe('N/A');
+  });
+
+  it('un texto vacío o nulo también sale como N/A', async () => {
+    const { hoja } = await abrirPlantillaFuid();
+    escribirFilasFuid(hoja, [{ n_orden: 1, serie: '', notas: null, tomo: '   ' }]);
+    const fila = hoja.getRow(8);
+    expect(fila.getCell(columna('serie')).value).toBe('N/A');
+    expect(fila.getCell(columna('notas')).value).toBe('N/A');
+    expect(fila.getCell(columna('tomo')).value).toBe('N/A');
+  });
+
+  it('lo que sí tiene dato se escribe tal cual, y las fechas como fechas', async () => {
+    const { hoja } = await abrirPlantillaFuid();
+    escribirFilasFuid(hoja, [
+      { n_orden: 1, serie: 'CONTRATOS', fecha_inicial: '2026-09-24', fecha_final: '2026-09-24' },
+    ]);
+    const fila = hoja.getRow(8);
+    expect(fila.getCell(columna('serie')).value).toBe('CONTRATOS');
+    expect(fila.getCell(columna('fecha_inicial')).value).toBeInstanceOf(Date);
+  });
+
+  it('ninguna de las 27 columnas queda en blanco, aunque el registro venga casi vacío', async () => {
+    const { hoja } = await abrirPlantillaFuid();
+    escribirFilasFuid(hoja, [{ caja: '001C000001' }]);
+    const fila = hoja.getRow(8);
+    const vacias = FUID_COLUMNS.map((_, i) => fila.getCell(i + 1).value).filter(
+      (valor) => valor === null || valor === undefined || valor === '',
+    );
+    expect(vacias).toHaveLength(0);
+  });
+});
