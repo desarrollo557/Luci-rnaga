@@ -1,9 +1,13 @@
 import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ChevronRight, Package } from 'lucide-react';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { ChevronRight, Eye, LockOpen, Package } from 'lucide-react';
+import { toast } from 'sonner';
 import { Badge, Button } from '@/components/ui';
+import { getApiErrorMessage, modulosCajaApi } from '@/lib/api';
 import { cn } from '@/lib/cn';
-import { CAJA_EN_PROCESO, estadoDeCaja } from '@/lib/estadoCaja';
+import { invalidateDomain } from '@/lib/queryInvalidation';
+import { CAJA_EN_PROCESO, CAJA_FINALIZADA, estadoDeCaja } from '@/lib/estadoCaja';
 import { fechaHoyLocal } from '@/lib/fechas';
 
 /** Un UPD sin asignar todavía se enseña como una raya, no como un hueco. */
@@ -36,8 +40,6 @@ export interface CajaDelPanel {
   estado_caja: string | null;
   fecha_finalizacion: string | null;
   fuid_creados: number;
-  /** De esos registros, los digitados hoy. */
-  fuid_hoy: number;
   ultimo_upd_caja: string | null;
   rango_inicio: string | null;
   rango_ultimo: string | null;
@@ -87,26 +89,25 @@ function agrupar(cajas: readonly CajaDelPanel[]): Grupo[] {
 const sinTerminar = (cajas: readonly CajaDelPanel[]) =>
   cajas.filter((c) => c.estado_caja === CAJA_EN_PROCESO).length;
 
-const sumar = (cajas: readonly CajaDelPanel[], campo: 'fuid_creados' | 'fuid_hoy') =>
-  cajas.reduce((total, caja) => total + (caja[campo] ?? 0), 0);
+const sumar = (cajas: readonly CajaDelPanel[]) =>
+  cajas.reduce((total, caja) => total + (caja.fuid_creados ?? 0), 0);
 
 const conSeparador = (n: number) => n.toLocaleString('es-CO');
 
 /**
- * Lo producido en ese nivel: "1.098 registros · 24 hoy · 8 cajas · 2 sin terminar".
+ * Lo producido en ese nivel: "1.098 registros · 8 cajas · 2 sin terminar".
  *
  * Los registros van delante porque son la pregunta —cuánto llevo en este
  * cliente, en esta acta—, y las cajas detrás, que son el continente.
  *
- * Lo de hoy solo aparece cuando hay algo hoy: un "· 0 hoy" en cada línea del
- * árbol sería ruido repetido tantas veces como clientes haya.
+ * Aquí no se habla de hoy ni de ninguna fecha: lo que el árbol enseña es el
+ * periodo que se haya elegido arriba, y decirlo otra vez en cada línea sería
+ * repetir lo que ya dice la cabecera.
  */
 function resumen(cajas: readonly CajaDelPanel[]): string {
-  const registros = sumar(cajas, 'fuid_creados');
-  const hoy = sumar(cajas, 'fuid_hoy');
+  const registros = sumar(cajas);
   const abiertas = sinTerminar(cajas);
   const partes = [`${conSeparador(registros)} ${registros === 1 ? 'registro' : 'registros'}`];
-  if (hoy > 0) partes.push(`${conSeparador(hoy)} hoy`);
   partes.push(`${cajas.length} ${cajas.length === 1 ? 'caja' : 'cajas'}`);
   if (abiertas > 0) partes.push(`${abiertas} sin terminar`);
   return partes.join(' · ');
@@ -118,6 +119,22 @@ interface Props {
 
 export function ArbolDeCajas({ cajas }: Props) {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
+
+  /*
+   * Una caja terminada no ofrece digitar, ofrece reabrir. Digitar en ella la
+   * reabriría igual —guardar un registro la pone en proceso—, y así la caja
+   * quedaría abierta sin que nadie lo hubiera decidido. Al reabrirla se pierde
+   * el arranque de UPD, y la digitación pide con cuál se continúa.
+   */
+  const reabrir = useMutation({
+    mutationFn: (id: number) => modulosCajaApi.cambiarEstado(id, CAJA_EN_PROCESO),
+    onSuccess: (res) => {
+      toast.success(res.data?.message || 'Caja reabierta');
+      void invalidateDomain(queryClient, 'modulos-caja');
+    },
+    onError: (error) => toast.error(getApiErrorMessage(error)),
+  });
   const grupos = useMemo(() => agrupar(cajas), [cajas]);
 
   /* Abierto de entrada: lo que tiene una caja a medias. */
@@ -215,27 +232,50 @@ export function ArbolDeCajas({ cajas }: Props) {
                                 <span className="text-sm text-silver-600">
                                   <strong className="text-silver-800">{conSeparador(caja.fuid_creados)}</strong>{' '}
                                   {caja.fuid_creados === 1 ? 'registro' : 'registros'}
-                                  {caja.fuid_hoy > 0 && (
-                                    <span className="ml-1 font-medium text-primary-700">
-                                      · {conSeparador(caja.fuid_hoy)} hoy
-                                    </span>
-                                  )}
                                 </span>
                                 {(caja.rango_inicio || caja.ultimo_upd_caja) && (
                                   <span className="font-mono text-xs text-silver-500">
                                     {formatUpd(caja.rango_inicio)} → {formatUpd(caja.ultimo_upd_caja ?? caja.rango_ultimo)}
                                   </span>
                                 )}
-                                <Button
-                                  variant="secondary"
-                                  size="sm"
-                                  className="ml-auto"
-                                  onClick={() =>
-                                    navigate(`/cajas/${caja.id}/datos`, { state: { from: '/mi-panel' } })
-                                  }
-                                >
-                                  <Package className="size-4" /> Digitar
-                                </Button>
+                                {caja.estado_caja === CAJA_FINALIZADA ? (
+                                  <span className="ml-auto flex flex-wrap items-center gap-2">
+                                    {/*
+                                      Consultar lo que tiene la caja no obliga a
+                                      reabrirla: lleva a la misma pantalla, donde
+                                      con la caja cerrada se ven los registros y
+                                      no el formulario.
+                                    */}
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      onClick={() =>
+                                        navigate(`/cajas/${caja.id}/datos`, { state: { from: '/mi-panel' } })
+                                      }
+                                    >
+                                      <Eye className="size-4" /> Ver registros
+                                    </Button>
+                                    <Button
+                                      variant="secondary"
+                                      size="sm"
+                                      loading={reabrir.isPending && reabrir.variables === caja.id}
+                                      onClick={() => reabrir.mutate(caja.id)}
+                                    >
+                                      <LockOpen className="size-4" /> Reabrir caja
+                                    </Button>
+                                  </span>
+                                ) : (
+                                  <Button
+                                    variant="secondary"
+                                    size="sm"
+                                    className="ml-auto"
+                                    onClick={() =>
+                                      navigate(`/cajas/${caja.id}/datos`, { state: { from: '/mi-panel' } })
+                                    }
+                                  >
+                                    <Package className="size-4" /> Digitar
+                                  </Button>
+                                )}
                               </li>
                             );
                           })}

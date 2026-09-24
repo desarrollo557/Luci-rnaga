@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ArbolDeCajas, type CajaDelPanel } from '../ArbolDeCajas';
 
 /**
@@ -23,7 +24,6 @@ function caja(parcial: Partial<CajaDelPanel> & { id: number }): CajaDelPanel {
     estado_caja: 'FINALIZADO',
     fecha_finalizacion: '2026-09-20',
     fuid_creados: 5,
-    fuid_hoy: 0,
     ultimo_upd_caja: 'UPD0000010',
     rango_inicio: 'UPD0000001',
     rango_ultimo: 'UPD0000010',
@@ -33,9 +33,11 @@ function caja(parcial: Partial<CajaDelPanel> & { id: number }): CajaDelPanel {
 
 const pintar = (cajas: CajaDelPanel[]) =>
   render(
-    <MemoryRouter>
-      <ArbolDeCajas cajas={cajas} />
-    </MemoryRouter>,
+    <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+      <MemoryRouter>
+        <ArbolDeCajas cajas={cajas} />
+      </MemoryRouter>
+    </QueryClientProvider>,
   );
 
 describe('el árbol de cajas del panel', () => {
@@ -68,7 +70,10 @@ describe('el árbol de cajas del panel', () => {
 
     await userEvent.click(screen.getByText('Acta 100'));
     expect(screen.getByText('001C000001')).toBeInTheDocument();
-    expect(screen.getByText('Digitar')).toBeInTheDocument();
+    // Terminada: se ofrece reabrir y consultar, nunca digitar.
+    expect(screen.getByText('Reabrir caja')).toBeInTheDocument();
+    expect(screen.getByText('Ver registros')).toBeInTheDocument();
+    expect(screen.queryByText('Digitar')).not.toBeInTheDocument();
   });
 
   it('separa las actas del mismo cliente', async () => {
@@ -103,22 +108,6 @@ describe('lo producido en cada nivel', () => {
     expect(screen.getByText('60 registros · 1 caja')).toBeInTheDocument();
   });
 
-  it('lo de hoy se dice aparte, y solo cuando hay algo hoy', async () => {
-    pintar([caja({ id: 1, fuid_creados: 40, fuid_hoy: 12 })]);
-    expect(screen.getByText('40 registros · 12 hoy · 1 caja')).toBeInTheDocument();
-
-    await userEvent.click(screen.getByText('CLIENTE DE PRUEBA'));
-    await userEvent.click(screen.getByText('Acta 100'));
-    // Tres veces: en el cliente, en el acta y en la caja. Cada nivel cuenta lo suyo.
-    expect(screen.getAllByText(/12 hoy/)).toHaveLength(3);
-  });
-
-  it('sin nada digitado hoy, la línea no lo menciona', () => {
-    pintar([caja({ id: 1, fuid_creados: 40, fuid_hoy: 0 })]);
-    expect(screen.getByText('40 registros · 1 caja')).toBeInTheDocument();
-    expect(screen.queryByText(/hoy/)).not.toBeInTheDocument();
-  });
-
   it('una caja sin registros no rompe la suma', () => {
     pintar([caja({ id: 1, fuid_creados: 0 }), caja({ id: 2, fuid_creados: 7 })]);
     expect(screen.getByText('7 registros · 2 cajas')).toBeInTheDocument();
@@ -127,5 +116,30 @@ describe('lo producido en cada nivel', () => {
   it('las cifras grandes se leen con separador de miles', () => {
     pintar([caja({ id: 1, fuid_creados: 1098 })]);
     expect(screen.getByText('1.098 registros · 1 caja')).toBeInTheDocument();
+  });
+});
+
+describe('una caja terminada no ofrece digitar', () => {
+  it('con la caja en proceso el botón lleva a digitar', () => {
+    pintar([caja({ id: 3, estado_caja: 'EN PROCESO', fecha_finalizacion: null })]);
+    expect(screen.getByText('Digitar')).toBeInTheDocument();
+    expect(screen.queryByText('Reabrir caja')).not.toBeInTheDocument();
+    // Estando abierta, digitar ya deja ver los registros: un botón de más sobra.
+    expect(screen.queryByText('Ver registros')).not.toBeInTheDocument();
+  });
+
+  it('con la caja terminada el botón es reabrir', async () => {
+    pintar([caja({ id: 4 })]);
+    await userEvent.click(screen.getByText('CLIENTE DE PRUEBA'));
+    await userEvent.click(screen.getByText('Acta 100'));
+    expect(screen.getByText('Reabrir caja')).toBeInTheDocument();
+    expect(screen.queryByText('Digitar')).not.toBeInTheDocument();
+  });
+
+  it('terminada, se puede consultar lo que tiene sin reabrirla', async () => {
+    pintar([caja({ id: 5 })]);
+    await userEvent.click(screen.getByText('CLIENTE DE PRUEBA'));
+    await userEvent.click(screen.getByText('Acta 100'));
+    expect(screen.getByText('Ver registros')).toBeInTheDocument();
   });
 });

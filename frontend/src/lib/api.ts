@@ -304,10 +304,10 @@ export const modulosCajaApi = {
     resumen: {
       cajas_asignadas: number;
       fuid_creados: number;
-      /** Lo digitado hoy por esta persona, por la fecha del dato. */
-      fuid_hoy: number;
       ultimo_upd_global: string | null;
     };
+    /** Lo digitado día por día y caja por caja, últimos 90 días. */
+    produccion_por_dia: Array<{ dia: string; caja: string; registros: number }>;
     detalle_cajas: Array<{
       id: number;
       caja_modulo: string;
@@ -318,8 +318,6 @@ export const modulosCajaApi = {
       estado_caja: string | null;
       fecha_finalizacion: string | null;
       fuid_creados: number;
-      /** De esos registros, los digitados hoy. */
-      fuid_hoy: number;
       ultimo_upd_caja: string | null;
       rango_inicio: string | null;
       rango_ultimo: string | null;

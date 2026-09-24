@@ -681,32 +681,39 @@ export default function ActasPage() {
       header: 'Acciones',
       render: (caja: ModuloCaja) => (
         <div className="flex flex-wrap items-center gap-2">
-          <Link to={`/cajas/${caja.id}/datos`} state={{ from: `/clientes/${id}/actas` }}>
-            <Button variant="secondary" size="sm">
-              <ClipboardList className="size-4" /> Ir a Digitación
+          {/*
+            Una caja terminada no ofrece digitar: ofrece reabrir. Digitar en
+            ella la reabriría de todos modos, y entonces la caja quedaría
+            abierta sin que nadie lo hubiera decidido.
+          */}
+          {caja.estado_caja === 'FINALIZADO' ? (
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => reabrirMutation.mutate(caja.id)}
+              loading={reabrirMutation.isPending && reabrirMutation.variables === caja.id}
+            >
+              <LockOpen className="size-4" /> Reabrir caja
             </Button>
-          </Link>
+          ) : (
+            <Link to={`/cajas/${caja.id}/datos`} state={{ from: `/clientes/${id}/actas` }}>
+              <Button variant="secondary" size="sm">
+                <ClipboardList className="size-4" /> Ir a Digitación
+              </Button>
+            </Link>
+          )}
           {isManager ? (
             <>
               <Button variant="secondary" size="sm" onClick={() => handleEditarCaja(caja)}>
                 <Pencil className="size-4" /> Editar
               </Button>
-              {caja.estado_caja === 'FINALIZADO' && (
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  onClick={() => reabrirMutation.mutate(caja.id)}
-                  loading={reabrirMutation.isPending && reabrirMutation.variables === caja.id}
-                >
-                  <LockOpen className="size-4" /> Reabrir
-                </Button>
-              )}
               <Button variant="danger" size="sm" onClick={() => setDeleteTarget(caja)}>
                 <Trash2 className="size-4" /> Eliminar
               </Button>
             </>
           ) : (
-            // Técnica: solo Ir a Digitación (finalizar está dentro de la caja)
+            // La técnica no edita ni borra cajas: entra a digitar, o la reabre
+            // si está terminada. Darla por terminada se hace dentro de la caja.
             null
           )}
         </div>
