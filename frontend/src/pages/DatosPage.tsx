@@ -31,6 +31,7 @@ import { OPCIONES_FRECUENCIA, OPCIONES_OTRO, OPCIONES_SOPORTE } from '@/lib/cata
 import { limiteDe } from '@/lib/limites';
 import { fechaHoyLocal, formatearFechaHora } from '@/lib/fechas';
 import { CAJA_FINALIZADA, estadoDeCaja } from '@/lib/estadoCaja';
+import { ASUNTO_NUEVO, asuntosAutomaticosDe, seEligeDeLaLista } from '@/lib/asuntoAutomatico';
 import { CajaTerminada } from './cajas/CajaTerminada';
 import { CierreDeJornada } from './cajas/CierreDeJornada';
 import { FECHA_MINIMA_DOCUMENTAL, dateInRange, dateOrderValid, onlyDigits } from '@/lib/validation';
@@ -417,6 +418,8 @@ interface FormularioFuidProps {
   defaultNOrden: number;
   /** Asunto automático del último registro de la caja, para no reescribirlo. */
   asuntoAutomaticoDeLaCaja: string;
+  /** Los asuntos automáticos distintos que ya tiene la caja, para elegir entre ellos. */
+  asuntosAutomaticosDeLaCaja: readonly string[];
   /** Caja interna del primer registro de la caja: es la misma para toda ella. */
   cajaInternaDeLaCaja: string;
   /** Avisa del UPD recién guardado, para que la lista pueda señalar su fila. */
@@ -445,6 +448,7 @@ function FormularioFuid({
   editing,
   defaultNOrden,
   asuntoAutomaticoDeLaCaja,
+  asuntosAutomaticosDeLaCaja,
   cajaInternaDeLaCaja,
   caja,
   onTerminar,
@@ -471,6 +475,14 @@ function FormularioFuid({
   const [faltantesALaVista, setFaltantesALaVista] = useState(false);
   /** Confirmación animada del último registro guardado; se apaga sola a los ~2,4 s. */
   const [confirmacion, setConfirmacion] = useState<{ id: number; upd: string; siguiente: string } | null>(null);
+  /**
+   * Si se pidió escribir un asunto automático que la caja todavía no tiene.
+   *
+   * Sale del selector y dura lo que dura este registro: al guardar se vuelve al
+   * selector, que para entonces ya trae el asunto recién escrito entre sus
+   * opciones.
+   */
+  const [asuntoNuevoALaMano, setAsuntoNuevoALaMano] = useState(false);
 
   useEffect(() => {
     if (!confirmacion) return;
@@ -567,6 +579,9 @@ function FormularioFuid({
       });
       setRacha((r) => r + 1);
       setFaltantesALaVista(false);
+      // El asunto recién escrito ya es uno de los de la caja, así que el
+      // siguiente registro vuelve a elegirlo del selector.
+      setAsuntoNuevoALaMano(false);
       setConfirmacion({ id: Date.now(), upd: guardado, siguiente: siguienteUpd });
       onGuardado?.(guardado);
       // El servidor confirma el consecutivo libre (salta UPD ya usados); solo se
@@ -644,6 +659,8 @@ function FormularioFuid({
    * registro anterior, así que casi siempre viene puesto.
    */
   const faltaAsuntoAutomatico = form.asunto_2.trim() === '' ? 'El asunto automático es requerido' : null;
+  /* Selector o campo de texto, según lo que la caja ya tenga (`asuntoAutomatico.ts`). */
+  const mostrarSelectorDeAsunto = seEligeDeLaLista(asuntosAutomaticosDeLaCaja, asuntoNuevoALaMano);
 
   const errorDeFormato = errorFechaInicial ?? errorFechaFinal ?? errorFolios;
   const primerError = errorDeFormato ?? faltaAsuntoAutomatico;
@@ -752,14 +769,44 @@ function FormularioFuid({
           value={form.subserie}
           onChange={updateField('subserie')}
         />
-        <SuggestionInput
-          caja={form.caja}
-          campo="asunto_2"
-          label="Asunto Automático *"
-          value={form.asunto_2}
-          onChange={updateField('asunto_2')}
-          error={(faltantesALaVista && faltaAsuntoAutomatico) || undefined}
-        />
+        {/* Asunto Automático. Una caja suele tener uno solo, heredado del
+            registro anterior, y entonces esto es el campo de texto de siempre.
+            Cuando la caja ya llevó dos o más distintos —pasa en las cajas
+            mezcladas— el campo se vuelve un selector con los que hay: elegir
+            entre dos asuntos es un clic, y volver a teclear el que no estaba
+            heredado era el trabajo repetido más caro de esas cajas.
+
+            El selector nunca encierra: la última opción devuelve el campo de
+            texto para escribir uno que la caja todavía no tenga. */}
+        {mostrarSelectorDeAsunto ? (
+          <Select
+            label="Asunto Automático *"
+            value={form.asunto_2}
+            onChange={(valor) => {
+              if (valor === ASUNTO_NUEVO) {
+                setAsuntoNuevoALaMano(true);
+                updateField('asunto_2')('');
+                return;
+              }
+              updateField('asunto_2')(valor);
+            }}
+            options={[
+              ...opcionesCon(asuntosAutomaticosDeLaCaja, form.asunto_2),
+              { value: ASUNTO_NUEVO, label: 'Escribir otro…' },
+            ]}
+            placeholder="Elegir asunto"
+            error={(faltantesALaVista && faltaAsuntoAutomatico) || undefined}
+          />
+        ) : (
+          <SuggestionInput
+            caja={form.caja}
+            campo="asunto_2"
+            label="Asunto Automático *"
+            value={form.asunto_2}
+            onChange={updateField('asunto_2')}
+            error={(faltantesALaVista && faltaAsuntoAutomatico) || undefined}
+          />
+        )}
 
         {/* Asunto Manual ocupa la fila entera, que es lo único que lo distingue
             del resto: es donde se escribe de corrido y en una columna estrecha no
@@ -1239,6 +1286,16 @@ export default function DatosPage() {
     return sinNA(ultimo?.asunto_2);
   }, [registros]);
 
+  /*
+   * Los asuntos automáticos distintos que ya tiene la caja. Con dos o más, el
+   * formulario los ofrece en un selector en vez de hacer que se reescriban.
+   *
+   * Sale de los registros que ya están en pantalla y no de una consulta aparte
+   * porque la lista de la caja se trae entera, sin paginar: pedir lo mismo otra
+   * vez sería una petición por cada caja que se abre para un dato que ya está.
+   */
+  const asuntosAutomaticosDeLaCaja = useMemo<string[]>(() => asuntosAutomaticosDe(registros), [registros]);
+
 
   const deleteMutation = useMutation({
     mutationFn: (id: number) => fuidApi.remove(id),
@@ -1630,6 +1687,7 @@ export default function DatosPage() {
             editing={null}
             defaultNOrden={defaultNOrden}
             asuntoAutomaticoDeLaCaja={asuntoAutomaticoDeLaCaja}
+            asuntosAutomaticosDeLaCaja={asuntosAutomaticosDeLaCaja}
             cajaInternaDeLaCaja={cajaInternaDeLaCaja}
             caja={cajaQuery.data}
             onGuardado={setUltimoGuardado}
@@ -1746,6 +1804,7 @@ export default function DatosPage() {
             editing={editing}
             defaultNOrden={defaultNOrden}
             asuntoAutomaticoDeLaCaja={asuntoAutomaticoDeLaCaja}
+            asuntosAutomaticosDeLaCaja={asuntosAutomaticosDeLaCaja}
             cajaInternaDeLaCaja={cajaInternaDeLaCaja}
             caja={cajaQuery.data}
             onTerminar={cerrarEdicion}
