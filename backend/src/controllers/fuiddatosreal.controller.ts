@@ -479,7 +479,7 @@ export async function deleteFuid(req: Request, res: Response): Promise<void> {
  * **Busca sin distinguir mayúsculas.** Los valores se guardan en mayúsculas,
  * pero quien digita las escribe como le salen: el campo se ve en mayúsculas por
  * la hoja de estilos y lo que viaja en la consulta es lo tecleado, así que con
- * `LIKE` un "sopor" en minúscula no encontraba "SOPORTES DE PAGO" y las
+ * `LIKE` lo tecleado en minúscula no encontraba lo guardado en mayúsculas y las
  * sugerencias parecían no existir. Con `ILIKE` da igual cómo se escriba.
  *
  * Los comodines de `LIKE` se escapan: un `%` tecleado es un porcentaje, no

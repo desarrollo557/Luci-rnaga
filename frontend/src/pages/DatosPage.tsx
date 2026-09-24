@@ -29,7 +29,13 @@ import { useLatidoDeEscritura } from '@/lib/latidoDeEscritura';
 import { retornoDeCaja } from '@/lib/navegacion';
 import { OPCIONES_FRECUENCIA, OPCIONES_OTRO, OPCIONES_SOPORTE } from '@/lib/catalogos';
 import { limiteDe } from '@/lib/limites';
-import { completarConSugerencia, pistaDeCompletado } from '@/lib/sugerencias';
+import {
+  completarConSugerencia,
+  filtrarPorInicio,
+  pistaDeCompletado,
+  sugerenciasDeLosRegistros,
+  TOPE_DE_LA_LISTA,
+} from '@/lib/sugerencias';
 import { fechaHoyLocal, formatearFechaHora } from '@/lib/fechas';
 import { CAJA_FINALIZADA, estadoDeCaja } from '@/lib/estadoCaja';
 import { CajaTerminada } from './cajas/CajaTerminada';
@@ -362,6 +368,10 @@ interface SuggestionInputProps {
   readOnly?: boolean;
   className?: string;
   error?: string;
+  /** Lo ya escrito en la caja para este campo, sacado de los registros en pantalla. */
+  deLaCaja?: readonly string[];
+  /** La lista de la caja llegó al tope, así que puede haber valores fuera de ella. */
+  puedeFaltarAlguna?: boolean;
 }
 
 function SuggestionInput({
@@ -374,7 +384,21 @@ function SuggestionInput({
   readOnly,
   className,
   error,
+  deLaCaja = [],
+  puedeFaltarAlguna = false,
 }: SuggestionInputProps) {
+  /*
+   * Lo que ya está en pantalla, filtrado aquí mismo: aparece con la tecla, sin
+   * esperar a nadie. Es el camino normal, porque la lista de la caja se trae
+   * entera y la caja más grande de la base lleva 247 registros.
+   */
+  const sugerenciasEnMano = filtrarPorInicio(deLaCaja, value);
+
+  /*
+   * Solo si la lista pudo quedarse corta —una caja que llegue al tope de 500—
+   * se le pregunta al servidor por lo que no está a la vista. Entonces sí hay
+   * espera, y por eso se le pone freno a las teclas.
+   */
   const debouncedQuery = useDebouncedValue(value, 300);
   const suggestionsQuery = useQuery({
     queryKey: ['fuiddatosreal', 'suggestions', caja, campo, debouncedQuery],
@@ -388,7 +412,7 @@ function SuggestionInput({
     //
     // No dispara una petición por tecla: el valor viene retrasado 300 ms y
     // React Query cachea cada término mientras dura la pantalla.
-    enabled: Boolean(caja && debouncedQuery.trim().length >= MINIMO_PARA_SUGERIR),
+    enabled: Boolean(puedeFaltarAlguna && caja && debouncedQuery.trim().length >= MINIMO_PARA_SUGERIR),
   });
 
   /*
@@ -396,7 +420,8 @@ function SuggestionInput({
    * tecleado. Se teclean dos o tres letras y el resto ya está escrito en algún
    * registro anterior de esta caja.
    */
-  const porCompletar = completarConSugerencia(value, suggestionsQuery.data);
+  const sugerencias = [...new Set([...sugerenciasEnMano, ...(suggestionsQuery.data ?? [])])];
+  const porCompletar = completarConSugerencia(value, sugerencias);
 
   /*
    * Tab completa y sigue de largo: no se corta el evento, así que el foco pasa
@@ -427,7 +452,7 @@ function SuggestionInput({
         maxLength={limiteDe(campo)}
       />
       <datalist id={`sug-${campo}`}>
-        {(suggestionsQuery.data ?? []).map((suggestion) => (
+        {sugerencias.map((suggestion) => (
           <option key={suggestion} value={suggestion} />
         ))}
       </datalist>
@@ -450,6 +475,10 @@ interface FormularioFuidProps {
   defaultNOrden: number;
   /** Caja interna del primer registro de la caja: es la misma para toda ella. */
   cajaInternaDeLaCaja: string;
+  /** Lo ya escrito en la caja, campo por campo, para sugerir sin salir a la red. */
+  sugerenciasDeLaCaja: Record<string, string[]>;
+  /** La lista de registros llegó al tope, así que puede haber valores fuera de ella. */
+  listaIncompleta: boolean;
   /** Avisa del UPD recién guardado, para que la lista pueda señalar su fila. */
   onGuardado?: (upd: string) => void;
   caja?: ModuloCaja | null;
@@ -476,6 +505,8 @@ function FormularioFuid({
   editing,
   defaultNOrden,
   cajaInternaDeLaCaja,
+  sugerenciasDeLaCaja,
+  listaIncompleta,
   caja,
   onTerminar,
   onGuardado,
@@ -721,6 +752,8 @@ function FormularioFuid({
         <SuggestionInput
           caja={form.caja}
           campo="entidad_productora"
+          deLaCaja={sugerenciasDeLaCaja['entidad_productora']}
+          puedeFaltarAlguna={listaIncompleta}
           label="Entidad Productora"
           value={form.entidad_productora}
           onChange={updateField('entidad_productora')}
@@ -728,6 +761,8 @@ function FormularioFuid({
         <SuggestionInput
           caja={form.caja}
           campo="unidad_administrativa"
+          deLaCaja={sugerenciasDeLaCaja['unidad_administrativa']}
+          puedeFaltarAlguna={listaIncompleta}
           label="Unidad Administrativa"
           value={form.unidad_administrativa}
           onChange={updateField('unidad_administrativa')}
@@ -735,6 +770,8 @@ function FormularioFuid({
         <SuggestionInput
           caja={form.caja}
           campo="oficina_productora"
+          deLaCaja={sugerenciasDeLaCaja['oficina_productora']}
+          puedeFaltarAlguna={listaIncompleta}
           label="Oficina Productora"
           value={form.oficina_productora}
           onChange={updateField('oficina_productora')}
@@ -742,6 +779,8 @@ function FormularioFuid({
         <SuggestionInput
           caja={form.caja}
           campo="objeto"
+          deLaCaja={sugerenciasDeLaCaja['objeto']}
+          puedeFaltarAlguna={listaIncompleta}
           label="Objeto"
           value={form.objeto}
           onChange={updateField('objeto')}
@@ -757,6 +796,8 @@ function FormularioFuid({
         <SuggestionInput
           caja={form.caja}
           campo="codigo"
+          deLaCaja={sugerenciasDeLaCaja['codigo']}
+          puedeFaltarAlguna={listaIncompleta}
           label="Codigo"
           value={form.codigo}
           onChange={updateField('codigo')}
@@ -764,6 +805,8 @@ function FormularioFuid({
         <SuggestionInput
           caja={form.caja}
           campo="serie"
+          deLaCaja={sugerenciasDeLaCaja['serie']}
+          puedeFaltarAlguna={listaIncompleta}
           label="Serie"
           value={form.serie}
           onChange={updateField('serie')}
@@ -771,6 +814,8 @@ function FormularioFuid({
         <SuggestionInput
           caja={form.caja}
           campo="subserie"
+          deLaCaja={sugerenciasDeLaCaja['subserie']}
+          puedeFaltarAlguna={listaIncompleta}
           label="Subserie"
           value={form.subserie}
           onChange={updateField('subserie')}
@@ -786,6 +831,8 @@ function FormularioFuid({
         <SuggestionInput
           caja={form.caja}
           campo="asunto_2"
+          deLaCaja={sugerenciasDeLaCaja['asunto_2']}
+          puedeFaltarAlguna={listaIncompleta}
           label="Asunto Automático *"
           value={form.asunto_2}
           onChange={updateField('asunto_2')}
@@ -815,6 +862,8 @@ function FormularioFuid({
         <SuggestionInput
           caja={form.caja}
           campo="numero_doc"
+          deLaCaja={sugerenciasDeLaCaja['numero_doc']}
+          puedeFaltarAlguna={listaIncompleta}
           label="Nro. Documento Desde"
           value={form.numero_doc}
           onChange={updateField('numero_doc')}
@@ -822,6 +871,8 @@ function FormularioFuid({
         <SuggestionInput
           caja={form.caja}
           campo="numero_doc_hasta"
+          deLaCaja={sugerenciasDeLaCaja['numero_doc_hasta']}
+          puedeFaltarAlguna={listaIncompleta}
           label="Nro. Documento Hasta"
           value={form.numero_doc_hasta}
           onChange={updateField('numero_doc_hasta')}
@@ -866,6 +917,8 @@ function FormularioFuid({
         <SuggestionInput
           caja={form.caja}
           campo="caja_interna"
+          deLaCaja={sugerenciasDeLaCaja['caja_interna']}
+          puedeFaltarAlguna={listaIncompleta}
           label="Caja Interna"
           value={form.caja_interna}
           onChange={updateField('caja_interna')}
@@ -1226,6 +1279,22 @@ export default function DatosPage() {
   }, [cajaQuery.data?.estado_caja, cajaQuery.data?.fecha_finalizacion, cajaQuery.data?.reabierta_por, registros]);
 
   const cajaCerradaParaMi = !gestiona && cajaQuery.data?.estado_caja === CAJA_FINALIZADA;
+
+  /*
+   * Lo ya escrito en esta caja, campo por campo. Sale de los registros que ya
+   * están cargados para la tabla, así que sugerir no cuesta una petición ni una
+   * espera: se escribe, aparece y se tabula.
+   */
+  const sugerenciasDeLaCaja = useMemo(
+    () => sugerenciasDeLosRegistros(registros as unknown as Record<string, unknown>[], SUGGESTION_FIELDS),
+    [registros],
+  );
+
+  /*
+   * Si la caja llegó al tope de la lista, lo que se ve puede no ser todo, y
+   * entonces sí hay que preguntarle al servidor por lo que falta.
+   */
+  const listaIncompleta = registros.length >= TOPE_DE_LA_LISTA;
 
   const defaultNOrden = useMemo(() => {
     if (registros.length === 0) return 1;
@@ -1646,6 +1715,8 @@ export default function DatosPage() {
             editing={null}
             defaultNOrden={defaultNOrden}
             cajaInternaDeLaCaja={cajaInternaDeLaCaja}
+            sugerenciasDeLaCaja={sugerenciasDeLaCaja}
+            listaIncompleta={listaIncompleta}
             caja={cajaQuery.data}
             onGuardado={setUltimoGuardado}
           />
@@ -1761,6 +1832,8 @@ export default function DatosPage() {
             editing={editing}
             defaultNOrden={defaultNOrden}
             cajaInternaDeLaCaja={cajaInternaDeLaCaja}
+            sugerenciasDeLaCaja={sugerenciasDeLaCaja}
+            listaIncompleta={listaIncompleta}
             caja={cajaQuery.data}
             onTerminar={cerrarEdicion}
           />
