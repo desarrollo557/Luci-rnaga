@@ -256,11 +256,18 @@ export default function CajasPage() {
                       </>
                     )}
                   </Button>
-                  <Link to={`/cajas/${mid}/datos`} state={{ from: `/clientes/${id}/actas/${mid}/cajas` }}>
-                    <Button>
-                      <ClipboardList className="size-4" /> Ir a Digitación
-                    </Button>
-                  </Link>
+                  {/*
+                    Con la caja terminada no se ofrece entrar a digitar: al lado
+                    está "Reabrir caja", que es lo que corresponde. Digitar en
+                    una caja cerrada la reabriría sin que nadie lo decidiera.
+                  */}
+                  {estado !== 'FINALIZADO' && (
+                    <Link to={`/cajas/${mid}/datos`} state={{ from: `/clientes/${id}/actas/${mid}/cajas` }}>
+                      <Button>
+                        <ClipboardList className="size-4" /> Ir a Digitación
+                      </Button>
+                    </Link>
+                  )}
                   <Link to={`/cajas/${mid}/revision`} state={{ from: `/clientes/${id}/actas/${mid}/cajas` }}>
                     <Button variant="secondary">
                       <Eye className="size-4" /> Ver Revisión
