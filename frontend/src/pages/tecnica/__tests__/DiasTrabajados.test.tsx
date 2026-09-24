@@ -4,59 +4,68 @@ import userEvent from '@testing-library/user-event';
 import { DiasTrabajados } from '../DiasTrabajados';
 
 /**
- * El selector de días del panel: cuánto se produjo cada día y cuál se está
- * mirando. Es el eje que cruza con el árbol de cajas.
+ * El calendario del panel: qué días se trabajó, cuánto, y cuál se está mirando.
+ * Es el eje que cruza con el árbol de cajas.
  */
 
 const DIAS = [
-  { dia: '2026-09-24', registros: 120 },
-  { dia: '2026-09-23', registros: 98 },
-  { dia: '2026-09-22', registros: 1 },
+  { dia: '2026-09-24', registros: 17 },
+  { dia: '2026-09-23', registros: 26 },
+  { dia: '2026-09-18', registros: 275 },
 ];
 
-describe('los días trabajados', () => {
-  it('enseña cada día con lo que se produjo, y singulariza el uno', () => {
+/** El botón del día 23, que en el calendario lleva el número y su cifra. */
+const dia23 = () => screen.getByRole('button', { name: /23\s*26/ });
+
+describe('el calendario de días trabajados', () => {
+  it('abre en el mes del último día con trabajo', () => {
     render(<DiasTrabajados dias={DIAS} elegido="" onElegir={() => {}} />);
-    expect(screen.getByText('120 registros')).toBeInTheDocument();
-    expect(screen.getByText('1 registro')).toBeInTheDocument();
+    expect(screen.getByText(/septiembre de 2026/i)).toBeInTheDocument();
+  });
+
+  it('cada día trabajado lleva su cifra', () => {
+    render(<DiasTrabajados dias={DIAS} elegido="" onElegir={() => {}} />);
+    // Se busca por el botón entero —número del día y cifra— porque una cifra
+    // suelta puede coincidir con el número de otro día del mes.
+    expect(screen.getByRole('button', { name: /18\s*275/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /24\s*17/ })).toBeInTheDocument();
   });
 
   it('elegir un día lo comunica', async () => {
     const alElegir = vi.fn();
     render(<DiasTrabajados dias={DIAS} elegido="" onElegir={alElegir} />);
-    await userEvent.click(screen.getByText('98 registros'));
+    await userEvent.click(dia23());
     expect(alElegir).toHaveBeenCalledWith('2026-09-23');
   });
 
   it('volver a pulsar el día elegido suelta el filtro', async () => {
     const alElegir = vi.fn();
     render(<DiasTrabajados dias={DIAS} elegido="2026-09-23" onElegir={alElegir} />);
-    await userEvent.click(screen.getByText('98 registros'));
+    await userEvent.click(dia23());
     expect(alElegir).toHaveBeenCalledWith('');
   });
 
-  it('con un día elegido dice cuál se está mirando', () => {
-    render(<DiasTrabajados dias={DIAS} elegido="2026-09-23" onElegir={() => {}} />);
-    expect(screen.getByText(/Mostrando lo digitado el/)).toBeInTheDocument();
+  it('un día sin trabajo no se puede elegir: el árbol saldría vacío', () => {
+    render(<DiasTrabajados dias={DIAS} elegido="" onElegir={() => {}} />);
+    // El 25 de septiembre no está en la lista de días trabajados.
+    expect(screen.getByRole('button', { name: '25' })).toBeDisabled();
   });
 
-  it('«Todo» devuelve al acumulado', async () => {
+  it('con un día elegido dice cuál se está mirando y deja volver al acumulado', async () => {
     const alElegir = vi.fn();
     render(<DiasTrabajados dias={DIAS} elegido="2026-09-23" onElegir={alElegir} />);
-    await userEvent.click(screen.getByText('Todo'));
+    expect(screen.getByText(/Mostrando lo digitado el/)).toBeInTheDocument();
+    await userEvent.click(screen.getByText('Ver todo el acumulado'));
     expect(alElegir).toHaveBeenCalledWith('');
   });
 
-  it('con muchos días enseña los más recientes y dice cuántos hay', () => {
-    const muchos = Array.from({ length: 30 }, (_, i) => ({
-      dia: `2026-09-${String(i + 1).padStart(2, '0')}`,
-      registros: i + 1,
-    }));
-    render(<DiasTrabajados dias={muchos} elegido="" onElegir={() => {}} tope={5} />);
-    expect(screen.getByText(/Se muestran los 5 días más recientes de los 30/)).toBeInTheDocument();
+  it('se puede pasar al mes anterior', async () => {
+    render(<DiasTrabajados dias={DIAS} elegido="" onElegir={() => {}} />);
+    await userEvent.click(screen.getByLabelText('Mes anterior'));
+    expect(screen.getByText(/agosto de 2026/i)).toBeInTheDocument();
   });
 
-  it('sin días trabajados lo dice, en vez de dejar un hueco', () => {
+  it('sin días trabajados lo dice, en vez de dejar un calendario vacío', () => {
     render(<DiasTrabajados dias={[]} elegido="" onElegir={() => {}} />);
     expect(screen.getByText(/Todavía no hay días con registros/)).toBeInTheDocument();
   });
