@@ -1,6 +1,6 @@
-import { useEffect } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Download, Package, PackageOpen, TrendingUp, Users } from 'lucide-react';
+import { Download, TrendingUp, Users } from 'lucide-react';
 import { toast } from 'sonner';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import axios from 'axios';
@@ -12,10 +12,10 @@ import {
 } from '@/components/ui';
 import { getApiErrorMessage, inventarioApi, modulosCajaApi } from '@/lib/api';
 import { descargarBlob } from '@/lib/utils';
-import { CAJA_EN_PROCESO } from '@/lib/estadoCaja';
-import { fechaHoyLocal } from '@/lib/fechas';
+import { fechaHoyLocal, formatearFecha } from '@/lib/fechas';
 import { useAuthStore } from '@/stores/authStore';
 import { ArbolDeCajas } from './tecnica/ArbolDeCajas';
+import { DiasTrabajados } from './tecnica/DiasTrabajados';
 import { MiSeguimiento } from './tecnica/MiSeguimiento';
 
 interface TecnicaStats {
@@ -23,9 +23,9 @@ interface TecnicaStats {
   resumen: {
     cajas_asignadas: number;
     fuid_creados: number;
-    fuid_hoy: number;
     ultimo_upd_global: string | null;
   };
+  produccion_por_dia: Array<{ dia: string; caja: string; registros: number }>;
   detalle_cajas: Array<{
     id: number;
     caja_modulo: string;
@@ -63,11 +63,47 @@ export default function TecnicaDashboardPage() {
     }
   }, [navigate, rol]);
 
+  /** Día del que se está mirando lo producido; vacío es el acumulado. */
+  const [diaElegido, setDiaElegido] = useState('');
+
   const { data: stats, isLoading, error, refetch } = useQuery<TecnicaStats>({
     queryKey: ['modulos-caja', 'tecnica-stats'],
     queryFn: () => modulosCajaApi.getTecnicaStats().then((res) => res.data),
     enabled: rol === 'TECNICA',
   });
+
+
+  /*
+   * Los días con trabajo, del más reciente al más antiguo. El servidor manda el
+   * detalle por día y caja; aquí se suma por día, que es lo que se elige.
+   */
+  const diasTrabajados = useMemo(() => {
+    const porDia = new Map<string, number>();
+    for (const fila of stats?.produccion_por_dia ?? []) {
+      porDia.set(fila.dia, (porDia.get(fila.dia) ?? 0) + fila.registros);
+    }
+    return [...porDia.entries()]
+      .map(([dia, registros]) => ({ dia, registros }))
+      .sort((uno, otro) => otro.dia.localeCompare(uno.dia));
+  }, [stats?.produccion_por_dia]);
+
+  /*
+   * Las cajas que ve el árbol. Sin día elegido son todas, con su total. Con un
+   * día elegido, cada caja lleva lo que se digitó en ella **ese día** y las que
+   * no se tocaron se quedan fuera: el árbol pasa a contestar "qué hice ese día"
+   * sin cambiar de forma.
+   */
+  const cajasDelArbol = useMemo(() => {
+    const detalleCajas = stats?.detalle_cajas ?? [];
+    if (!diaElegido) return detalleCajas;
+    const delDia = new Map<string, number>();
+    for (const fila of stats?.produccion_por_dia ?? []) {
+      if (fila.dia === diaElegido) delDia.set(fila.caja, fila.registros);
+    }
+    return detalleCajas
+      .filter((caja) => delDia.has(caja.caja_modulo))
+      .map((caja) => ({ ...caja, fuid_creados: delDia.get(caja.caja_modulo) ?? 0 }));
+  }, [stats?.detalle_cajas, stats?.produccion_por_dia, diaElegido]);
 
   /*
    * El inventario general propio: todo lo que esta persona ha digitado, en el
@@ -135,13 +171,15 @@ export default function TecnicaDashboardPage() {
   }
 
   const s = stats!;
-  const cajasSinTerminar = s.detalle_cajas.filter((c) => c.estado_caja === CAJA_EN_PROCESO);
+
 
   return (
     <div className="space-y-6">
       <PageHeader
         title="Mi Panel Técnico"
-        description={`Bienvenido, ${user.nombre} (CC: ${user.cc}) — Resumen de tus cajas, UPDs y progreso`}
+        description={`${user.nombre} · ${formatNumber(s.resumen.fuid_creados)} registros en ${
+          s.resumen.cajas_asignadas
+        } cajas asignadas · último ${formatUpd(s.resumen.ultimo_upd_global)}`}
         actions={
           <div className="flex flex-wrap gap-2">
             <Button variant="secondary" onClick={() => refetch()}>
@@ -157,89 +195,39 @@ export default function TecnicaDashboardPage() {
       <MiSeguimiento />
 
       {/*
-        Lo primero: la caja que quedó a medias. Es el trabajo que hay que
-        retomar, y llegar a ella por clientes, actas y cajas costaba tres o
-        cuatro pasos. Sigue abierta porque nadie la ha dado por terminada:
-        ninguna caja se cierra sola.
-      */}
-      {cajasSinTerminar.length > 0 && (
-        <Card className="border-amber-200 bg-amber-50 p-4">
-          <div className="flex items-start gap-3">
-            <PackageOpen className="mt-0.5 size-5 shrink-0 text-amber-700" />
-            <div className="min-w-0 flex-1 space-y-3">
-              <div>
-                <p className="font-semibold text-silver-900">
-                  {cajasSinTerminar.length === 1
-                    ? 'Tienes una caja sin terminar'
-                    : `Tienes ${cajasSinTerminar.length} cajas sin terminar`}
-                </p>
-                <p className="text-sm text-silver-600">
-                  Continúa donde la dejaste. La caja sigue abierta hasta que la des por terminada desde la digitación; si ya la cerraste y necesitas volver, reábrela desde la caja y te pediremos el UPD con el que continúas.
-                </p>
-              </div>
-              <div className="flex flex-wrap gap-2">
-                {cajasSinTerminar.map((c) => (
-                  <Button
-                    key={c.id}
-                    variant="secondary"
-                    size="sm"
-                    onClick={() => navigate(`/cajas/${c.id}/datos`, { state: { from: '/mi-panel' } })}
-                  >
-                    <Package className="size-4" /> Continuar caja {c.caja_modulo}
-                  </Button>
-                ))}
-              </div>
-            </div>
-          </div>
-        </Card>
-      )}
-
-      {/*
-        Lo producido, en una línea. Antes eran tres tarjetas con un icono cada
-        una que ocupaban media pantalla para decir tres números; y faltaba el
-        único que se mira todo el día, que es cuánto llevo hoy.
+        Los días con trabajo. Es el cuarto eje del panel —día, cliente, acta,
+        caja— y el que enlaza con los otros tres: al elegir un día, el árbol de
+        abajo enseña lo de ese día y nada más.
       */}
       <Card className="p-4">
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          <div>
-            <p className="text-sm text-silver-600">Registros de hoy</p>
-            <p className="text-2xl font-bold text-primary-700">{formatNumber(s.resumen.fuid_hoy)}</p>
-          </div>
-          <div>
-            <p className="text-sm text-silver-600">Registros en total</p>
-            <p className="text-2xl font-bold text-silver-900">{formatNumber(s.resumen.fuid_creados)}</p>
-          </div>
-          <div>
-            <p className="text-sm text-silver-600">Cajas asignadas</p>
-            <p className="text-2xl font-bold text-silver-900">
-              {s.resumen.cajas_asignadas}
-              {cajasSinTerminar.length > 0 && (
-                <span className="ml-2 text-sm font-medium text-amber-700">
-                  {cajasSinTerminar.length} sin terminar
-                </span>
-              )}
-            </p>
-          </div>
-          <div>
-            <p className="text-sm text-silver-600">Último UPD</p>
-            <p className="font-mono text-xl font-bold text-silver-900">{formatUpd(s.resumen.ultimo_upd_global)}</p>
-          </div>
-        </div>
+        <DiasTrabajados dias={diasTrabajados} elegido={diaElegido} onElegir={setDiaElegido} />
       </Card>
 
       {/*
         Las cajas, en el orden en que existen: cliente, acta, caja. Cada nivel
-        dice cuántas cajas tiene y cuántas están sin terminar, que es lo que
-        hace falta para decidir dónde entrar; el resto se abre solo si se pide.
+        dice lo producido y cuántas cajas están sin terminar, y esas ramas vienen
+        abiertas: es a lo que se vuelve al entrar.
       */}
       <Card>
         <div className="flex items-center gap-2 border-b border-silver-200 p-4">
           <Users className="size-5 text-silver-600" />
-          <h3 className="text-lg font-semibold text-silver-800">Mis cajas</h3>
+          <div>
+            <h3 className="text-lg font-semibold text-silver-800">Mis cajas</h3>
+            <p className="text-sm text-silver-500">
+              {diaElegido
+                ? `Lo que digitaste el ${formatearFecha(diaElegido)}, por cliente, acta y caja`
+                : 'Cuánto llevas digitado en cada cliente, en cada acta y en cada caja'}
+            </p>
+          </div>
         </div>
-        <ArbolDeCajas cajas={s.detalle_cajas} />
+        {cajasDelArbol.length === 0 ? (
+          <p className="p-4 text-sm text-silver-500">
+            Ese día no digitaste en ninguna caja.
+          </p>
+        ) : (
+          <ArbolDeCajas cajas={cajasDelArbol} />
+        )}
       </Card>
-
     </div>
   );
 }

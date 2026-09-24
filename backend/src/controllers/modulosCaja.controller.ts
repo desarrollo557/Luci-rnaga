@@ -1012,7 +1012,7 @@ export async function getTecnicaStats(req: Request, res: Response): Promise<void
 
   const cajaModulos = cajasAsignadas.map((c) => c.caja_modulo);
 
-  let fuidStats: { total: number; hoy: number; ultimo_upd: string | null } = { total: 0, hoy: 0, ultimo_upd: null };
+  let fuidStats: { total: number; ultimo_upd: string | null } = { total: 0, ultimo_upd: null };
   let updPorCaja: Record<string, { count: number; ultimo_upd: string | null }> = {};
 
   if (cajaModulos.length > 0) {
@@ -1021,25 +1021,23 @@ export async function getTecnicaStats(req: Request, res: Response): Promise<void
     const autor = `${user.nombre} (${user.cc})`;
     const placeholders = cajaModulos.map(() => '?').join(',');
 
-    /*
-     * Lo suyo en sus cajas: el total y lo de hoy.
-     *
-     * Lo de hoy es la cifra que se mira al entrar y al cerrar el día —cuánto
-     * llevo—, y sale de la misma consulta que el total para no pagar dos
-     * recorridos por lo mismo. La fecha es la del dato, que es el día de
-     * trabajo al que se atribuye el registro, no la hora en que se guardó.
-     */
-    const fuidResult = await query<{ total: number; hoy: number; ultimo_upd: string | null }>(
-      `SELECT COUNT(*) as total,
-              COUNT(*) FILTER (WHERE fecha_del_dato = ?) as hoy,
-              MAX(upd) as ultimo_upd
+    // Lo suyo en sus cajas, de siempre: cuánto lleva y hasta qué UPD llegó. El
+    // desglose por día va aparte, en `produccion_por_dia`.
+    const fuidResult = await query<{ total: number; ultimo_upd: string | null }>(
+      `SELECT COUNT(*) as total, MAX(upd) as ultimo_upd
        FROM fuiddatosreal
        WHERE caja IN (${placeholders}) AND elaborado_por = ?`,
-      [fechaHoyLocal(), ...cajaModulos, autor],
+      [...cajaModulos, autor],
     );
-    fuidStats = fuidResult[0] || { total: 0, hoy: 0, ultimo_upd: null };
+    fuidStats = fuidResult[0] || { total: 0, ultimo_upd: null };
 
-    // UPDs por caja para este técnico
+    /*
+     * Lo suyo caja por caja: cuántos registros lleva en cada una, cuántos de
+     * hoy y hasta qué UPD llegó.
+     *
+     * Con esto el panel puede sumar por acta y por cliente sin pedir nada más:
+     * cada caja ya sabe de qué acta y de qué cliente es.
+     */
     const updRows = await query<{ caja: string; count: number; ultimo_upd: string | null }>(
       `SELECT caja, COUNT(*) as count, MAX(upd) as ultimo_upd
        FROM fuiddatosreal
@@ -1047,7 +1045,42 @@ export async function getTecnicaStats(req: Request, res: Response): Promise<void
        GROUP BY caja`,
       [...cajaModulos, autor],
     );
-    updPorCaja = Object.fromEntries(updRows.map((r) => [r.caja, { count: r.count, ultimo_upd: r.ultimo_upd }]));
+    updPorCaja = Object.fromEntries(
+      updRows.map((r) => [r.caja, { count: Number(r.count ?? 0), ultimo_upd: r.ultimo_upd }]),
+    );
+  }
+
+  /*
+   * Lo suyo día por día y caja por caja, para los últimos noventa días.
+   *
+   * Con esto el panel puede contestar "cuánto hice el martes" y, dentro de ese
+   * día, en qué clientes, actas y cajas: la caja ya sabe de qué acta y de qué
+   * cliente es, así que el desglose sale de aquí sin pedir nada más.
+   *
+   * Noventa días y no todo el histórico porque esto es el panel de trabajo, no
+   * el informe de producción: se mira la semana, el mes, a lo sumo el trimestre.
+   * El total de la persona no se toca, que va aparte y sí cuenta todo.
+   */
+  let produccionPorDia: Array<{ dia: string; caja: string; registros: number }> = [];
+  if (cajaModulos.length > 0) {
+    const autor = `${user.nombre} (${user.cc})`;
+    const placeholders = cajaModulos.map(() => '?').join(',');
+    const filas = await query<{ dia: string; caja: string; registros: number | string }>(
+      `SELECT fecha_del_dato AS dia, caja, COUNT(*) AS registros
+         FROM fuiddatosreal
+        WHERE caja IN (${placeholders})
+          AND elaborado_por = ?
+          AND fecha_del_dato IS NOT NULL
+          AND fecha_del_dato >= (CURRENT_DATE - INTERVAL '90 days')
+        GROUP BY fecha_del_dato, caja
+        ORDER BY fecha_del_dato DESC`,
+      [...cajaModulos, autor],
+    );
+    produccionPorDia = filas.map((f) => ({
+      dia: String(f.dia).slice(0, 10),
+      caja: f.caja,
+      registros: Number(f.registros ?? 0),
+    }));
   }
 
   // Rango UPD actual del técnico en cada caja (desde asignacion_caja_tecnica)
@@ -1064,9 +1097,9 @@ export async function getTecnicaStats(req: Request, res: Response): Promise<void
     resumen: {
       cajas_asignadas: cajasAsignadas.length,
       fuid_creados: Number(fuidStats.total ?? 0),
-      fuid_hoy: Number(fuidStats.hoy ?? 0),
       ultimo_upd_global: fuidStats.ultimo_upd,
     },
+    produccion_por_dia: produccionPorDia,
     detalle_cajas: cajasAsignadas.map((c) => ({
       id: c.id,
       caja_modulo: c.caja_modulo,

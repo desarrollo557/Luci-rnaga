@@ -621,6 +621,22 @@ function FormularioFuid({
       });
       setRacha((r) => r + 1);
       setFaltantesALaVista(false);
+      /*
+       * El aviso de que quedó guardado, donde se mira al terminar un registro.
+       *
+       * La píldora del formulario y el pulso verde estaban, pero se pasaban por
+       * alto: quien digita ya está escribiendo el siguiente cuando aparecen.
+       * Este sale por encima, dice qué UPD se guardó y con cuál se sigue.
+       *
+       * Con un identificador fijo, el de cada registro reemplaza al anterior en
+       * vez de apilarse: digitando de corrido son uno cada pocos segundos, y
+       * una columna de avisos taparía la pantalla.
+       */
+      toast.success(`${guardado} guardado`, {
+        id: 'fuid-guardado',
+        description: siguienteUpd ? `Sigue ${siguienteUpd}` : undefined,
+        duration: 2000,
+      });
       setConfirmacion({ id: Date.now(), upd: guardado, siguiente: siguienteUpd });
       onGuardado?.(guardado);
       // El servidor confirma el consecutivo libre (salta UPD ya usados); solo se
@@ -980,9 +996,9 @@ function FormularioFuid({
             {confirmacion && (
               <span
                 key={confirmacion.id}
-                className="inline-flex animate-[field-pop-in_260ms_ease-out] items-center gap-1.5 rounded-full border border-green-200 bg-green-50 px-2.5 py-1 text-xs font-medium text-green-800"
+                className="inline-flex animate-[field-pop-in_260ms_ease-out] items-center gap-2 rounded-full border border-green-300 bg-green-100 px-3 py-1.5 text-sm font-semibold text-green-900 shadow-sm"
               >
-                <CheckCircle2 className="size-3.5 shrink-0" />
+                <CheckCircle2 className="size-4 shrink-0" />
                 <span className="font-mono">{confirmacion.upd}</span>
                 <span className="text-green-700">guardado</span>
                 {confirmacion.siguiente && (
