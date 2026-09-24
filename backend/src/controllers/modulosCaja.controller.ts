@@ -976,23 +976,43 @@ export async function getTecnicaStats(req: Request, res: Response): Promise<void
     return;
   }
 
-  // Cajas asignadas al técnico
+  /*
+   * Cajas asignadas al técnico, con de quién son y de qué acta salen.
+   *
+   * Una caja suelta no dice nada: "051C000516" no deja saber a qué cliente hay
+   * que entregarla ni con qué acta entró, y esas son las dos preguntas que se
+   * hacen al mirar el panel. El acta cuelga del cliente y la caja del acta, así
+   * que las dos salen del mismo camino de tablas y no cuestan una consulta
+   * aparte.
+   *
+   * Los JOIN son LEFT porque una caja heredada puede no tener acta relacionada,
+   * y esa caja también está asignada y también hay que verla.
+   */
   const cajasAsignadas = await query<{
     id: number;
     caja_modulo: string;
     estado_caja: string | null;
     fecha_finalizacion: string | null;
+    codigo_cliente: string | null;
+    entidad_cliente: string | null;
+    acta: string | null;
   }>(
-    `SELECT mc.id, mc.caja_modulo, mc.estado_caja, mc.fecha_finalizacion
+    `SELECT mc.id, mc.caja_modulo, mc.estado_caja, mc.fecha_finalizacion,
+            mcl.codigo AS codigo_cliente,
+            COALESCE(sm.entidad_remitente, mcl.entidad_remitente) AS entidad_cliente,
+            mcl.acta_transferencia_modulo AS acta
      FROM modulos_caja mc
      JOIN asignacion_caja_tecnica act ON act.modulo_id = mc.id
-     WHERE act.usuario_id = ?`,
+     LEFT JOIN moduloscliente mcl ON mcl.id = mc.id_modulo_caja
+     LEFT JOIN sub_modulos sm ON sm.id = mcl.id_submodulo
+     WHERE act.usuario_id = ?
+     ORDER BY mcl.codigo NULLS LAST, mcl.acta_transferencia_modulo, mc.caja_modulo`,
     [user.id],
   );
 
   const cajaModulos = cajasAsignadas.map((c) => c.caja_modulo);
 
-  let fuidStats: { total: number; ultimo_upd: string | null } = { total: 0, ultimo_upd: null };
+  let fuidStats: { total: number; hoy: number; ultimo_upd: string | null } = { total: 0, hoy: 0, ultimo_upd: null };
   let updPorCaja: Record<string, { count: number; ultimo_upd: string | null }> = {};
 
   if (cajaModulos.length > 0) {
@@ -1001,13 +1021,23 @@ export async function getTecnicaStats(req: Request, res: Response): Promise<void
     const autor = `${user.nombre} (${user.cc})`;
     const placeholders = cajaModulos.map(() => '?').join(',');
 
-    const fuidResult = await query<{ total: number; ultimo_upd: string | null }>(
-      `SELECT COUNT(*) as total, MAX(upd) as ultimo_upd
+    /*
+     * Lo suyo en sus cajas: el total y lo de hoy.
+     *
+     * Lo de hoy es la cifra que se mira al entrar y al cerrar el día —cuánto
+     * llevo—, y sale de la misma consulta que el total para no pagar dos
+     * recorridos por lo mismo. La fecha es la del dato, que es el día de
+     * trabajo al que se atribuye el registro, no la hora en que se guardó.
+     */
+    const fuidResult = await query<{ total: number; hoy: number; ultimo_upd: string | null }>(
+      `SELECT COUNT(*) as total,
+              COUNT(*) FILTER (WHERE fecha_del_dato = ?) as hoy,
+              MAX(upd) as ultimo_upd
        FROM fuiddatosreal
        WHERE caja IN (${placeholders}) AND elaborado_por = ?`,
-      [...cajaModulos, autor],
+      [fechaHoyLocal(), ...cajaModulos, autor],
     );
-    fuidStats = fuidResult[0] || { total: 0, ultimo_upd: null };
+    fuidStats = fuidResult[0] || { total: 0, hoy: 0, ultimo_upd: null };
 
     // UPDs por caja para este técnico
     const updRows = await query<{ caja: string; count: number; ultimo_upd: string | null }>(
@@ -1033,12 +1063,18 @@ export async function getTecnicaStats(req: Request, res: Response): Promise<void
     usuario: { id: user.id, nombre: user.nombre, cc: user.cc },
     resumen: {
       cajas_asignadas: cajasAsignadas.length,
-      fuid_creados: fuidStats.total,
+      fuid_creados: Number(fuidStats.total ?? 0),
+      fuid_hoy: Number(fuidStats.hoy ?? 0),
       ultimo_upd_global: fuidStats.ultimo_upd,
     },
     detalle_cajas: cajasAsignadas.map((c) => ({
       id: c.id,
       caja_modulo: c.caja_modulo,
+      // De quién es la caja y con qué acta entró: es lo que permite reconocerla
+      // en el panel sin abrirla.
+      codigo_cliente: c.codigo_cliente,
+      entidad_cliente: c.entidad_cliente,
+      acta: c.acta,
       // Con el estado y el acta a la que pertenece, el panel puede ofrecer
       // "continuar" la caja abierta sin pasar por clientes, actas y cajas.
       estado_caja: c.estado_caja,

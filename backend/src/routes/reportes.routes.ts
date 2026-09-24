@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { isAuthenticated, isLiderOrAdmin } from '../middlewares/auth.js';
+import { isAuthenticated, isLiderOrAdmin, isTecnica } from '../middlewares/auth.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import {
   descargarSeguimientoInventario,
@@ -23,16 +23,21 @@ router.get('/resumen-cajas-agrupado', isAuthenticated, asyncHandler(resumenCajas
 router.get('/estadisticas', isAuthenticated, asyncHandler(estadisticasProduccion));
 router.get('/estadisticas/detalle', isAuthenticated, asyncHandler(produccionDetallada));
 // Seguimiento de inventario en el formato oficial F-PSD-IDA-001.
+//
+// Lo saca también quien digita, pero solo el suyo: el controlador le impone su
+// nombre como filtro de persona y descarta el que venga en la petición
+// (`filtrosSeguimiento`). El líder y el administrador eligen de quién lo
+// quieren, o de nadie para sacarlo entero.
 router.get(
   '/seguimiento-inventario/resumen',
   isAuthenticated,
-  isLiderOrAdmin,
+  isTecnica,
   asyncHandler(resumenSeguimientoInventario),
 );
 router.get(
   '/seguimiento-inventario/excel',
   isAuthenticated,
-  isLiderOrAdmin,
+  isTecnica,
   asyncHandler(descargarSeguimientoInventario),
 );
 
