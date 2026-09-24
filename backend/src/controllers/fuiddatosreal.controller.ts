@@ -469,17 +469,41 @@ export async function deleteFuid(req: Request, res: Response): Promise<void> {
   res.status(200).json({ message: 'Registro eliminado' });
 }
 
+/**
+ * Lo ya escrito en esta caja para un campo, a partir de sus iniciales.
+ *
+ * Sirve a las cajas que llevan varios valores distintos en la misma columna
+ * —hay cajas con veintinueve asuntos automáticos en treinta registros— donde
+ * volver a teclear el que ya está costaba más que el documento.
+ *
+ * **Busca sin distinguir mayúsculas.** Los valores se guardan en mayúsculas,
+ * pero quien digita las escribe como le salen: el campo se ve en mayúsculas por
+ * la hoja de estilos y lo que viaja en la consulta es lo tecleado, así que con
+ * `LIKE` un "sopor" en minúscula no encontraba "SOPORTES DE PAGO" y las
+ * sugerencias parecían no existir. Con `ILIKE` da igual cómo se escriba.
+ *
+ * Los comodines de `LIKE` se escapan: un `%` tecleado es un porcentaje, no
+ * "todo lo que haya", y sin escaparlo la primera letra de un campo con `%`
+ * devolvía la caja entera.
+ *
+ * Van ordenadas y acotadas a ocho: es una ayuda para escribir menos, no un
+ * listado del contenido de la caja.
+ */
 export async function suggestions(req: Request, res: Response): Promise<void> {
   const { caja, campo } = req.params;
-  const q = String(req.query.q ?? '');
+  const q = String(req.query.q ?? '').trim();
 
   if (!q || !caja || !isSuggestionField(campo)) {
     res.status(400).json({ error: 'Datos incompletos o campo no válido' });
     return;
   }
 
-  const sql = `SELECT DISTINCT ${campo} FROM fuiddatosreal WHERE caja = ? AND ${campo} LIKE ? LIMIT 8`;
-  const rows = await query<Record<string, string>>(sql, [caja, `${q}%`]);
+  const inicio = `${q.replace(/([%_\\])/g, '\\$1')}%`;
+  const sql = `SELECT DISTINCT ${campo} FROM fuiddatosreal
+                WHERE caja = ? AND ${campo} ILIKE ? AND ${campo} <> 'N/A'
+                ORDER BY ${campo}
+                LIMIT 8`;
+  const rows = await query<Record<string, string>>(sql, [caja, inicio]);
   res.json(rows.map((row) => row[campo]));
 }
 
