@@ -301,10 +301,20 @@ export const modulosCajaApi = {
     ),
   getTecnicaStats: () => api.get<{
     usuario: { id: number; nombre: string; cc: string };
-    resumen: { cajas_asignadas: number; fuid_creados: number; ultimo_upd_global: string | null };
+    resumen: {
+      cajas_asignadas: number;
+      fuid_creados: number;
+      /** Lo digitado hoy por esta persona, por la fecha del dato. */
+      fuid_hoy: number;
+      ultimo_upd_global: string | null;
+    };
     detalle_cajas: Array<{
       id: number;
       caja_modulo: string;
+      /** De quién es la caja y con qué acta entró: sin esto es solo un número. */
+      codigo_cliente: string | null;
+      entidad_cliente: string | null;
+      acta: string | null;
       estado_caja: string | null;
       fecha_finalizacion: string | null;
       fuid_creados: number;

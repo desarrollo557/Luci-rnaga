@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Download, FileText, Package, PackageOpen, TrendingUp, Users } from 'lucide-react';
+import { Download, Package, PackageOpen, TrendingUp, Users } from 'lucide-react';
 import { toast } from 'sonner';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import axios from 'axios';
@@ -25,11 +25,15 @@ interface TecnicaStats {
   resumen: {
     cajas_asignadas: number;
     fuid_creados: number;
+    fuid_hoy: number;
     ultimo_upd_global: string | null;
   };
   detalle_cajas: Array<{
     id: number;
     caja_modulo: string;
+    codigo_cliente: string | null;
+    entidad_cliente: string | null;
+    acta: string | null;
     estado_caja: string | null;
     fecha_finalizacion: string | null;
     fuid_creados: number;
@@ -95,27 +99,57 @@ export default function TecnicaDashboardPage() {
     },
   });
 
+  /*
+   * Las columnas, en el orden en que se lee una caja: de quién es, con qué acta
+   * entró, cuál es, cuánto lleva uno en ella y cómo está.
+   *
+   * El cliente y el acta faltaban, y sin ellos el panel era una lista de
+   * números de caja: "051C000516" no dice a quién hay que entregarla.
+   *
+   * De los tres UPD que había —arranque asignado, último asignado y último
+   * real— se dejan dos en una sola columna, "desde → último". El asignado y el
+   * real son el mismo número en cuanto se digita, así que enseñar los dos
+   * ocupaba una columna para repetir un dato.
+   */
   const columns: Column<NonNullable<TecnicaStats['detalle_cajas']>[0]>[] = [
-    { key: 'caja_modulo', header: 'Caja' },
     {
-      key: 'rango_inicio',
-      header: 'Rango Inicio',
-      render: (row) => <span className="font-mono text-sm">{formatUpd(row.rango_inicio)}</span>,
+      key: 'entidad_cliente',
+      header: 'Cliente',
+      render: (row) =>
+        row.entidad_cliente ? (
+          <div className="min-w-0">
+            <p className="truncate font-medium text-silver-800">{row.entidad_cliente}</p>
+            {row.codigo_cliente && <p className="font-mono text-xs text-silver-500">{row.codigo_cliente}</p>}
+          </div>
+        ) : (
+          <span className="text-silver-400">—</span>
+        ),
     },
     {
-      key: 'rango_ultimo',
-      header: 'Último UPD Asignado',
-      render: (row) => <span className="font-mono text-sm">{formatUpd(row.rango_ultimo)}</span>,
+      key: 'acta',
+      header: 'Acta',
+      render: (row) =>
+        row.acta ? <span className="font-mono text-sm">{row.acta}</span> : <span className="text-silver-400">—</span>,
+    },
+    {
+      key: 'caja_modulo',
+      header: 'Caja',
+      render: (row) => <span className="font-mono text-sm font-medium">{row.caja_modulo}</span>,
     },
     {
       key: 'fuid_creados',
-      header: 'FUIDs Creados',
+      header: 'Mis registros',
       render: (row) => <span className="font-semibold">{formatNumber(row.fuid_creados)}</span>,
     },
     {
-      key: 'ultimo_upd_caja',
-      header: 'Último UPD Real',
-      render: (row) => <span className="font-mono text-sm">{formatUpd(row.ultimo_upd_caja)}</span>,
+      key: 'rango_inicio',
+      header: 'UPD (desde → último)',
+      render: (row) => (
+        <span className="font-mono text-sm">
+          {formatUpd(row.rango_inicio)} <span className="text-silver-400">→</span>{' '}
+          {formatUpd(row.ultimo_upd_caja ?? row.rango_ultimo)}
+        </span>
+      ),
     },
     {
       key: 'estado_caja',
@@ -200,13 +234,6 @@ export default function TecnicaDashboardPage() {
       />
 
       {/*
-        El seguimiento propio va arriba del todo pero después de la cabecera:
-        se saca al cerrar el día o cuando lo pide el líder, no es lo que se
-        mira al entrar, pero tampoco algo que haya que ir a buscar.
-      */}
-      <MiSeguimiento />
-
-      {/*
         Lo primero: la caja que quedó a medias. Es el trabajo que hay que
         retomar, y llegar a ella por clientes, actas y cajas costaba tres o
         cuatro pasos. Sigue abierta porque nadie la ha dado por terminada:
@@ -244,42 +271,38 @@ export default function TecnicaDashboardPage() {
         </Card>
       )}
 
-      {/* Tarjetas de resumen */}
-      <div className="grid gap-4 md:grid-cols-3">
-        <Card className="p-5 border-primary-200 bg-primary-50">
-          <div className="flex items-center gap-4">
-            <div className="flex size-12 shrink-0 items-center justify-center rounded-xl bg-primary-100 text-primary-700">
-              <Package className="size-6" />
-            </div>
-            <div>
-              <p className="text-sm font-medium text-silver-600">Cajas Asignadas</p>
-              <p className="text-2xl font-bold text-silver-900">{s.resumen.cajas_asignadas}</p>
-            </div>
+      {/*
+        Lo producido, en una línea. Antes eran tres tarjetas con un icono cada
+        una que ocupaban media pantalla para decir tres números; y faltaba el
+        único que se mira todo el día, que es cuánto llevo hoy.
+      */}
+      <Card className="p-4">
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <div>
+            <p className="text-sm text-silver-600">Registros de hoy</p>
+            <p className="text-2xl font-bold text-primary-700">{formatNumber(s.resumen.fuid_hoy)}</p>
           </div>
-        </Card>
-        <Card className="p-5 border-green-200 bg-green-50">
-          <div className="flex items-center gap-4">
-            <div className="flex size-12 shrink-0 items-center justify-center rounded-xl bg-green-100 text-green-700">
-              <FileText className="size-6" />
-            </div>
-            <div>
-              <p className="text-sm font-medium text-silver-600">FUIDs Creados</p>
-              <p className="text-2xl font-bold text-silver-900">{formatNumber(s.resumen.fuid_creados)}</p>
-            </div>
+          <div>
+            <p className="text-sm text-silver-600">Registros en total</p>
+            <p className="text-2xl font-bold text-silver-900">{formatNumber(s.resumen.fuid_creados)}</p>
           </div>
-        </Card>
-        <Card className="p-5 border-amber-200 bg-amber-50">
-          <div className="flex items-center gap-4">
-            <div className="flex size-12 shrink-0 items-center justify-center rounded-xl bg-amber-100 text-amber-700">
-              <TrendingUp className="size-6" />
-            </div>
-            <div>
-              <p className="text-sm font-medium text-silver-600">Último UPD Global</p>
-              <p className="text-xl font-bold font-mono text-silver-900">{formatUpd(s.resumen.ultimo_upd_global)}</p>
-            </div>
+          <div>
+            <p className="text-sm text-silver-600">Cajas asignadas</p>
+            <p className="text-2xl font-bold text-silver-900">
+              {s.resumen.cajas_asignadas}
+              {cajasSinTerminar.length > 0 && (
+                <span className="ml-2 text-sm font-medium text-amber-700">
+                  {cajasSinTerminar.length} sin terminar
+                </span>
+              )}
+            </p>
           </div>
-        </Card>
-      </div>
+          <div>
+            <p className="text-sm text-silver-600">Último UPD</p>
+            <p className="font-mono text-xl font-bold text-silver-900">{formatUpd(s.resumen.ultimo_upd_global)}</p>
+          </div>
+        </div>
+      </Card>
 
       {/* Detalle por caja */}
       <Card>
@@ -304,50 +327,11 @@ export default function TecnicaDashboardPage() {
         )}
       </Card>
 
-      {/* Progreso por rango */}
-      {s.detalle_cajas.length > 0 && (
-        <Card>
-          <div className="p-4 border-b border-silver-200">
-            <h3 className="text-lg font-semibold text-silver-800 flex items-center gap-2">
-              <TrendingUp className="size-5" />
-              Progreso de Rango UPD por Caja
-            </h3>
-          </div>
-          <div className="p-4 space-y-4">
-            {s.detalle_cajas.map((caja) => (
-              <div key={caja.id} className="rounded-lg border border-silver-200 p-4 bg-silver-50">
-                <div className="flex flex-wrap items-center justify-between gap-4 mb-3">
-                  <div>
-                    <p className="font-semibold text-silver-800">{caja.caja_modulo}</p>
-                    <p className="text-sm text-silver-500">
-                      Rango: <span className="font-mono">{formatUpd(caja.rango_inicio)}</span> →{' '}
-                      <span className="font-mono">{formatUpd(caja.rango_ultimo)}</span>
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-4 text-sm text-silver-600">
-                    <span><strong>{caja.fuid_creados}</strong> FUIDs creados</span>
-                    <span>Último real: <strong className="font-mono">{formatUpd(caja.ultimo_upd_caja)}</strong></span>
-                  </div>
-                </div>
-                <div className="flex items-center gap-4">
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    onClick={() => navigate(`/cajas/${caja.id}/datos`, { state: { from: '/mi-panel' } })}
-                  >
-                    <Package className="size-4" /> Continuar Digitación
-                  </Button>
-                  {caja.rango_inicio && caja.rango_ultimo && (
-                    <span className="text-xs text-silver-500 font-mono">
-                      {caja.rango_inicio} → {caja.rango_ultimo}
-                    </span>
-                  )}
-                </div>
-              </div>
-            ))}
-          </div>
-        </Card>
-      )}
+      {/*
+        El seguimiento va al final: se saca al cerrar el día o cuando lo pide
+        el líder, y lo que se viene a hacer a esta pantalla es retomar una caja.
+      */}
+      <MiSeguimiento />
     </div>
   );
 }
