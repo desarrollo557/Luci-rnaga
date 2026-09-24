@@ -167,8 +167,7 @@ export const JORNADA_TERMINADA = 'TERMINADA';
  *
  * Declarar dos veces el mismo día no duplica nada: se actualiza la cifra. Y
  * una vez terminada, si hace falta volver a ella, la técnica la reabre desde
- * la caja (`changeEstadoCaja`); al reabrirla vuelve a indicar el UPD con el
- * que continúa.
+ * la caja (`changeEstadoCaja`) y sigue con su mismo consecutivo de UPD.
  */
 export async function declararJornadaDeCaja(req: Request, res: Response): Promise<void> {
   const { id } = req.params;
@@ -321,9 +320,9 @@ export async function getNextUpdByCaja(req: Request, res: Response): Promise<voi
   //   1) Con historial (ultimo_upd) -> el siguiente del suyo.
   //   2) Sin historial pero con upd_inicio -> ese mismo, que es el primero a usar.
   //   3) Sin ninguno -> requiere_inicio: la interfaz le pide el número de arranque.
-  //      Pasa la primera vez en la caja y cada vez que la caja se reabre: al
-  //      reabrirla se borra el arranque para que indique con qué UPD continúa
-  //      (`SQL_REINICIAR_ARRANQUE_UPD`).
+  //      Pasa la primera vez que entra a la caja, y solo esa. Reabrir una caja
+  //      ya no borra el arranque: se retoma donde se dejó, porque muchas
+  //      reaperturas son para corregir un registro y no para seguir digitando.
   // NO cae al fallback genérico/cliente para evitar conflictos entre técnicos.
   if (user?.rol === 'TECNICA') {
     const caja = await queryOne<{ id: number | null }>('SELECT id FROM modulos_caja WHERE caja_modulo = ?', [cajaModulo]);
@@ -356,20 +355,8 @@ export async function getNextUpdByCaja(req: Request, res: Response): Promise<voi
       res.json({ upd: null, requiere_inicio: true, limite_alcanzado: true, message: UPD_LIMITE_MENSAJE });
       return;
     }
-    // Sin arranque. Si ya había digitado en esta caja es que se reabrió, y se
-    // le dice para que sepa por qué se lo vuelven a pedir.
-    const yaDigito = await queryOne<{ n: number | string }>(
-      'SELECT COUNT(*) AS n FROM fuiddatosreal WHERE caja = ? AND elaborado_por = ?',
-      [cajaModulo, `${user.nombre.toUpperCase()} (${user.cc})`],
-    );
-    res.json({
-      upd: null,
-      requiere_inicio: true,
-      message:
-        Number(yaDigito?.n ?? 0) > 0
-          ? 'La caja se reabrió: indica el número del UPD con el que continúas.'
-          : undefined,
-    });
+    // Sin arranque: es la primera vez que esta persona entra a esta caja.
+    res.json({ upd: null, requiere_inicio: true });
     return;
   }
 
@@ -905,8 +892,8 @@ export async function changeEstadoCaja(req: Request, res: Response): Promise<voi
    * no a quien pulsa ni al día en que pulsa, y deja ese cierre anotado en
    * `jornada_caja` para que el seguimiento lo cuente ese día.
    *
-   * Reabrirla la deja en proceso y borra el arranque de UPD de las técnicas
-   * asignadas, para que al volver a digitar indiquen con qué UPD continúan.
+   * Reabrirla la deja en proceso y no toca el consecutivo de UPD: se retoma
+   * donde se dejó, porque muchas reaperturas son para corregir un registro.
    * Si quien reabre es el líder o el administrador, la reapertura queda además
    * firmada y la técnica puede corregir sus registros de días anteriores
    * mientras siga abierta; la reapertura de la propia técnica no firma nada.
@@ -936,7 +923,7 @@ export async function changeEstadoCaja(req: Request, res: Response): Promise<voi
     message: reapertura
       ? 'Caja reabierta: la técnica puede corregir sus registros mientras siga abierta'
       : estado_caja === CAJA_EN_PROCESO
-        ? 'Caja reabierta: indica el UPD con el que continúas'
+        ? 'Caja reabierta: puedes seguir digitando o corregir lo que haga falta'
         : `Estado cambiado a ${estado_caja} correctamente`,
   });
 }
