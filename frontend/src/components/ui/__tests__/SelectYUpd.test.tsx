@@ -83,6 +83,70 @@ describe('el desplegable de catálogo', () => {
   });
 });
 
+/**
+ * El teclado del desplegable.
+ *
+ * Quien llena el FUID tiene las dos manos en el teclado, y soltar una para
+ * buscar el ratón cuesta más que la elección misma: se escriben las primeras
+ * letras y se confirma con Enter.
+ */
+describe('elegir del desplegable sin tocar el ratón', () => {
+  const ASUNTOS = [
+    'EXPEDIENTE ADQUISICION DE PREDIOS',
+    'INVERSIONES JMJ LA CANDELARIA SAS',
+    'SOPORTES DE PAGO Y SERVICIOS PUBLICOS',
+  ].map((a) => ({ value: a, label: a }));
+
+  function montar(alElegir = vi.fn()) {
+    render(<Select label="Asunto Automático" options={ASUNTOS} value="" onChange={alElegir} />);
+    return alElegir;
+  }
+
+  it('escribir las primeras letras y dar Enter elige esa opción', async () => {
+    const alElegir = montar();
+    const campo = screen.getByRole('button');
+    campo.focus();
+    await userEvent.keyboard('sopo{Enter}');
+    expect(alElegir).toHaveBeenCalledWith('SOPORTES DE PAGO Y SERVICIOS PUBLICOS');
+  });
+
+  it('bastan cuatro letras aunque la opción sea larga', async () => {
+    const alElegir = montar();
+    screen.getByRole('button').focus();
+    await userEvent.keyboard('inve{Enter}');
+    expect(alElegir).toHaveBeenCalledWith('INVERSIONES JMJ LA CANDELARIA SAS');
+  });
+
+  it('escribir abre el desplegable sin haberlo abierto antes', async () => {
+    montar();
+    screen.getByRole('button').focus();
+    await userEvent.keyboard('expe');
+    expect(screen.getByRole('listbox')).toBeInTheDocument();
+    expect(screen.getByText(/Buscando/)).toBeInTheDocument();
+  });
+
+  it('lo tecleado también busca dentro del texto, no solo al principio', async () => {
+    const alElegir = montar();
+    screen.getByRole('button').focus();
+    await userEvent.keyboard('candela{Enter}');
+    expect(alElegir).toHaveBeenCalledWith('INVERSIONES JMJ LA CANDELARIA SAS');
+  });
+
+  it('las flechas mueven la opción que se lleva el Enter', async () => {
+    const alElegir = montar();
+    screen.getByRole('button').focus();
+    await userEvent.keyboard('{ArrowDown}{ArrowDown}{Enter}');
+    expect(alElegir).toHaveBeenCalledWith('EXPEDIENTE ADQUISICION DE PREDIOS');
+  });
+
+  it('lo que no coincide con nada no elige nada al azar', async () => {
+    const alElegir = montar();
+    screen.getByRole('button').focus();
+    await userEvent.keyboard('zzzz{Enter}');
+    expect(alElegir).not.toHaveBeenCalled();
+  });
+});
+
 describe('conversión del UPD', () => {
   it('quita el prefijo para editarlo', () => {
     expect(updANumero('UPD0003133')).toBe('0003133');
